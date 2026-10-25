@@ -107,7 +107,7 @@ public final class PortalOrientationGameTests implements FabricGameTest {
             context.assertTrue(player.getPos().subtract(arrival).dotProduct(exit.normal) > 0.0 && feet >= arrival.y - 1.0 - EPSILON
                     && top <= arrival.y + 1.0 + EPSILON, pair + " : debout devant le cadre, dans sa hauteur : " + player.getPos() + ".");
         }
-        context.assertTrue(portal.withinArrivalWidth(player.getX(), player.getY(), player.getZ()),
+        context.assertTrue(portal.withinArrivalOpening(false, player.getX(), player.getY(), player.getZ()),
                 pair + " : en face de l'ouverture d'arrivee : " + player.getPos() + ".");
     }
 
@@ -147,7 +147,7 @@ public final class PortalOrientationGameTests implements FabricGameTest {
                     // L'air freine un objet de deux pour cent par tick : seule la direction se compare.
                     context.assertTrue(item.getVelocity().normalize().dotProduct(exits[i].normal) > 0.999,
                             pair + " : sa vitesse est transposee : " + item.getVelocity() + ".");
-                    context.assertTrue(portal.withinArrivalWidth(item.getX(), item.getY(), item.getZ()), pair + " : en face de l'ouverture d'arrivee.");
+                    context.assertTrue(portal.withinArrivalOpening(false, item.getX(), item.getY(), item.getZ()), pair + " : en face de l'ouverture d'arrivee.");
                 }
             } finally {
                 for (int i = 0; i < entries.length; i++) {

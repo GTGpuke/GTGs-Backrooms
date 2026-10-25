@@ -375,7 +375,7 @@ public final class TeleportExecutor {
     public static boolean crossedPortalPlane(
             BackroomsPortalEntity portal, Entity entity, double lastX, double lastY, double lastZ, double currentX, double currentY, double currentZ) {
         return crossedPortalPlane(portal, lastX, lastY, lastZ, currentX, currentY, currentZ, entity.getWidth() / 2.0, entity.getHeight(),
-                portal.crossingHeight(entity));
+                portal.crossingHeight(entity), entity instanceof PlayerEntity);
     }
 
     /**
@@ -405,7 +405,8 @@ public final class TeleportExecutor {
             double currentZ,
             double halfWidth,
             double height,
-            double lift) {
+            double lift,
+            boolean fullHeight) {
         double last = portal.signedDistance(lastX, lastY + lift, lastZ);
         double current = portal.signedDistance(currentX, currentY + lift, currentZ);
         if (last <= 0.0 || current > 0.0) {
@@ -417,7 +418,7 @@ public final class TeleportExecutor {
         double z = lastZ + (currentZ - lastZ) * t;
         // Au point de passage, la boite chevauche le plan : la toucher, c'est toucher le cadre en hauteur ; le point qui
         // decide, lui, doit etre en face de l'ouverture.
-        return portal.withinFrameWidth(x, y + lift, z)
+        return portal.withinOpening(fullHeight, x, y + lift, z)
                 && portal.detectionBox().intersects(x - halfWidth, y, z - halfWidth, x + halfWidth, y + height, z + halfWidth);
     }
 

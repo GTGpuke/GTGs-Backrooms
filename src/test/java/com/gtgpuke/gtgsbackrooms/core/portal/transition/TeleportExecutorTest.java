@@ -46,7 +46,19 @@ class TeleportExecutorTest {
     }
 
     private static boolean crossed(double lastX, double lastY, double lastZ, double currentX, double currentY, double currentZ) {
-        return TeleportExecutor.crossedPortalPlane(portal, lastX, lastY, lastZ, currentX, currentY, currentZ, HALF_WIDTH, HEIGHT, 0.0);
+        return TeleportExecutor.crossedPortalPlane(portal, lastX, lastY, lastZ, currentX, currentY, currentZ, HALF_WIDTH, HEIGHT, 0.0, false);
+    }
+
+    @Test
+    @DisplayName("Un joueur traverse aux yeux, qui doivent passer dans la hauteur du cadre ; un objet passe a toute hauteur des pieds")
+    void playersCrossAtTheEyesWithinTheHeight() {
+        double eyes = 1.62;
+        assertTrue(TeleportExecutor.crossedPortalPlane(portal, 0.0, 63.0, -0.5, 0.0, 63.0, 0.3, HALF_WIDTH, HEIGHT, eyes, true),
+                "Les yeux dans l'ouverture (63 a 65) : traversee.");
+        assertFalse(TeleportExecutor.crossedPortalPlane(portal, 0.0, 63.6, -0.5, 0.0, 63.6, 0.3, HALF_WIDTH, HEIGHT, eyes, true),
+                "Les yeux au-dessus du haut du cadre : pas de traversee pour un joueur.");
+        assertTrue(TeleportExecutor.crossedPortalPlane(portal, 0.0, 63.6, -0.5, 0.0, 63.6, 0.3, HALF_WIDTH, HEIGHT, 0.0, false),
+                "Aux pieds, a toute hauteur dans un cadre debout : un objet passe.");
     }
 
     @Test
@@ -97,7 +109,7 @@ class TeleportExecutorTest {
         double eyes = floor.crossingHeight(item);
         assertTrue(eyes > 0.1 && eyes < 0.3, "Au sol, le point de traversee d'un objet est a hauteur de ses yeux : " + eyes + ".");
         assertEquals(eyes, ceiling.crossingHeight(item), 1.0e-9, "Au plafond aussi : la camera ne passe jamais le plan avant lui.");
-        assertEquals(0.0, portal.crossingHeight(item), 1.0e-9, "Un cadre debout se franchit aux pieds.");
+        assertEquals(0.0, portal.crossingHeight(item), 1.0e-9, "Un cadre debout se franchit aux pieds pour un objet (aux yeux pour un joueur).");
         // Les pieds restent sous le plan (64,5) : seuls les yeux le passent, en tombant.
         assertTrue(TeleportExecutor.crossedPortalPlane(floor, item, 0.5, 64.4, 0.0, 0.5, 64.2, 0.0), "Les yeux passent le plan du sol : traversee.");
         assertFalse(TeleportExecutor.crossedPortalPlane(floor, item, 0.5, 64.2, 0.0, 0.5, 64.4, 0.0), "En remontant sous le plan, rien.");

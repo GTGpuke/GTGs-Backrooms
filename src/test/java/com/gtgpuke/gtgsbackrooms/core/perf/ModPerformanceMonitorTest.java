@@ -12,7 +12,9 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.sun.management.OperatingSystemMXBean;
 import com.sun.management.ThreadMXBean;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -182,13 +184,86 @@ class ModPerformanceMonitorTest {
     }
 
     @Test
-    @DisplayName("Sans extension JVM pour la charge CPU, l'instantane l'indique")
-    void snapshotWithoutOperatingSystemBean() {
-        ModPerformanceMonitor.Snapshot snapshot = ModPerformanceMonitor.Snapshot.capture(null);
+    @DisplayName("La charge CPU vient d'un echantillonneur a part : inconnue sans releve ou sans extension JVM, lue sans attendre ensuite")
+    void cpuLoadComesFromTheSampler() throws InterruptedException {
+        ModPerformanceMonitor.CpuSampler withoutBean = new ModPerformanceMonitor.CpuSampler(null);
+        withoutBean.sample();
+        ModPerformanceMonitor.Snapshot snapshot = ModPerformanceMonitor.Snapshot.capture(withoutBean);
         assertTrue(snapshot.heapMaxBytes() >= snapshot.heapUsedBytes(), "La memoire reste lue.");
-        assertTrue(snapshot.format().endsWith("cpuProc=n/a cpuSys=n/a"), "Charge CPU inconnue : " + snapshot.format());
+        assertTrue(snapshot.format().endsWith("cpuProc=n/a cpuSys=n/a"), "Sans extension JVM, charge inconnue : " + snapshot.format());
+        withoutBean.start(1_000_000_000L);
+        assertFalse(withoutBean.running(), "Sans extension JVM, aucun thread ne tourne.");
         assertEquals("n/a", ModPerformanceMonitor.Snapshot.formatPercent(-1.0D), "Charge negative : inconnue.");
         assertEquals("50.0%", ModPerformanceMonitor.Snapshot.formatPercent(0.5D), "Charge connue en pourcentage.");
+
+        OperatingSystemMXBean bean = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
+        ModPerformanceMonitor.CpuSampler sampler = new ModPerformanceMonitor.CpuSampler(bean);
+        assertTrue(ModPerformanceMonitor.Snapshot.capture(sampler).format().endsWith("cpuProc=n/a cpuSys=n/a"),
+                "Avant tout releve, la charge est inconnue : le thread de jeu n'attend pas.");
+        // La JVM rend une charge negative (inconnue) tant qu'elle n'a pas deux lectures : quelques releves peuvent y passer.
+        long known = System.nanoTime() + 5_000_000_000L;
+        sampler.sample();
+        while ((sampler.processCpuLoad() < 0.0D || sampler.systemCpuLoad() < 0.0D) && System.nanoTime() < known) {
+            Thread.sleep(10L);
+            sampler.sample();
+        }
+        assertTrue(sampler.processCpuLoad() >= 0.0D && sampler.systemCpuLoad() >= 0.0D,
+                "Un releve donne une charge connue : " + sampler.processCpuLoad() + " / " + sampler.systemCpuLoad() + ".");
+        // Un intervalle d'une milliseconde : la boucle fait plusieurs tours avant l'arret.
+        long before = sampler.samples();
+        sampler.start(1_000_000L);
+        assertTrue(sampler.running(), "L'echantillonneur tourne sur son thread.");
+        sampler.start(1_000_000L);
+        Thread thread = samplerThread();
+        assertTrue(thread != null, "Son thread porte le nom du mod.");
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (sampler.samples() < before + 3 && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        assertTrue(sampler.samples() >= before + 3, "La boucle releve a chaque intervalle : " + (sampler.samples() - before) + " releves.");
+        sampler.stop();
+        assertFalse(sampler.running() || thread.isAlive(), "Arrete, il ne tourne plus : son thread a fini avant de rendre la main.");
+        assertTrue(ModPerformanceMonitor.Snapshot.capture(sampler).format().endsWith("cpuProc=n/a cpuSys=n/a"),
+                "Arrete, ses valeurs sont oubliees.");
+        sampler.stop();
+        // Arrete depuis un thread deja interrompu : l'attente cede tout de suite et l'interruption est gardee.
+        sampler.start(1_000_000_000L);
+        Thread.currentThread().interrupt();
+        sampler.stop();
+        assertTrue(Thread.interrupted(), "L'interruption du thread appelant est gardee.");
+        assertFalse(sampler.running(), "Arrete quand meme.");
+        // La boucle de l'echantillonneur : un releve puis l'attente, qu'une interruption abrege et termine.
+        assertTrue(sampler.sampleThenWait(1L), "Sans interruption, la boucle continue.");
+        Thread.currentThread().interrupt();
+        assertFalse(sampler.sampleThenWait(1_000_000_000L), "Interrompue pendant l'attente, la boucle s'arrete sans attendre.");
+        assertTrue(Thread.interrupted(), "Et l'interruption est gardee.");
+    }
+
+    @Test
+    @DisplayName("Activer le moniteur lance l'echantillonneur CPU, le couper l'arrete")
+    void enablingStartsTheSampler() {
+        ModPerformanceMonitor.setEnabled(true);
+        Thread sampler = samplerThread();
+        assertTrue(sampler != null && sampler.isDaemon(), "Active a chaud, le moniteur lance un thread demon qui echantillonne la charge CPU.");
+        // Actif des le lancement (propriete systeme), l'echantillonneur pas encore lance : le demarrage du mod le lance.
+        ModPerformanceMonitor.CPU_SAMPLER.stop();
+        assertNull(samplerThread(), "Arrete, son thread a fini.");
+        ModPerformanceMonitor.init();
+        Thread started = samplerThread();
+        assertTrue(started != null && started.isDaemon(), "Actif au lancement, le demarrage du mod lance l'echantillonneur.");
+        ModPerformanceMonitor.setEnabled(false);
+        assertFalse(started.isAlive(), "Coupe, l'echantillonneur s'arrete avant de rendre la main.");
+        ModPerformanceMonitor.init();
+        assertNull(samplerThread(), "Inactif au lancement, rien ne demarre.");
+    }
+
+    private static @Nullable Thread samplerThread() {
+        for (Thread thread : Thread.getAllStackTraces().keySet()) {
+            if (thread.getName().equals("gtgs-backrooms-cpu-sampler") && thread.isAlive()) {
+                return thread;
+            }
+        }
+        return null;
     }
 
     @Test

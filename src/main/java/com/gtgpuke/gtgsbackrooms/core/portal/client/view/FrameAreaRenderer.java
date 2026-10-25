@@ -30,11 +30,26 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
  * <p>La boite se dessine sans elimination des faces arriere, le temps de son seul dessin : vanilla suppose cette
  * elimination toujours active (ses couches de terrain ne la retablissent pas), et une vue dessinee sans elle montrerait
  * les faces arriere de la glace, du verre et de l'eau, deux fois plus opaques qu'en vrai.
+ *
+ * <p>Contre un cadre plaque sur un mur (plan au bord du bloc), ou au sol sur un sol plein, la face du bloc est dans le
+ * plan, et dispute la profondeur a la zone. De loin, le decalage de polygone du marquage suffit ; de pres, l'imprecision
+ * des positions du terrain (en flottants, relatives a leur section) depasse de loin ce decalage : a quelques
+ * centimetres du plan, la face du mur l'emporterait, et apparaitrait a la place de la vue au moment de passer. La zone
+ * est donc avancee de {@link #TOWARD_CAMERA} vers la camera, une distance fixe qui l'emporte a toute distance proche,
+ * invisible a l'ecran. La decoupe logicielle, elle, passe un peu au-dela du plan proche vanilla ({@link #CLIP_Z}) : entre
+ * les deux, la section qui referme la boite est plus loin que la face du mur, et se marque sans test de profondeur
+ * ({@link #mark}).
  */
 public final class FrameAreaRenderer {
 
     /** Epaisseur de la boite derriere le plan : couvre le plan proche vanilla (0,05) meme vu de biais. */
     private static final double DEPTH = 0.2;
+    /**
+     * Avance de la zone vers la camera, en blocs : un dixieme de millimetre. Assez pour l'emporter sur l'imprecision des
+     * positions du terrain pres de la camera, assez peu pour que les bords de la zone ne bougent que d'un dixieme de pixel
+     * vus a 30 cm (un millimetre les deplacerait deja d'un pixel par endroits).
+     */
+    private static final double TOWARD_CAMERA = 1.0e-4;
     /** Plan de decoupe en espace camera, un peu au-dela du plan proche vanilla pour que la section ne soit pas coupee a son tour. */
     private static final float CLIP_Z = -(GameRenderer.CAMERA_DEPTH + 0.002f);
     private static final float WELD_EPSILON = 1.0e-5f;
@@ -72,12 +87,32 @@ public final class FrameAreaRenderer {
      * Zone de vue pour le marquage du stencil, tiree vers la camera le temps du dessin (decalage de polygone, celui des
      * fissures du minage) : posee sur une face de bloc (cadre au bord du bloc, au sol sur un sol plein), elle l'emporte sur
      * elle au test de profondeur ; a egalite, l'une ou l'autre gagnait selon le pixel et l'image, et le cadre scintillait.
+     *
+     * <p>La section du plan proche, elle, se marque sans test de profondeur : elle n'existe que si la camera est dans
+     * l'encadrement, a moins de {@link #DEPTH} du plan, et ne couvre que ce que la camera voit a travers le cadre ; ce qui
+     * se dessine devant elle, a moins de {@link #CLIP_Z} de la camera, est derriere le plan ou dans son plan (la face d'un
+     * mur contre lequel le cadre est plaque) : l'ouverture d'un cadre est libre de tout bloc plein. Seul un bloc remplacable
+     * (herbe, neige) laisse dans l'ouverture pourrait s'y trouver, sur les 2 mm entre le plan proche vanilla et la section.
      */
     public static void mark(BackroomsPortalEntity portal, Vec3d cameraPos, Matrix4f positionMatrix) {
         RenderSystem.polygonOffset(MARK_OFFSET_FACTOR, MARK_OFFSET_UNITS);
         RenderSystem.enablePolygonOffset();
         try {
-            draw(portal, cameraPos, positionMatrix);
+            RenderSystem.setShader(GameRenderer::getPositionProgram);
+            BufferBuilder faces = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION);
+            emitFaces(faces, portal, cameraPos, positionMatrix, false, 0.0f, 0.0f, 0.0f);
+            drawIfAny(faces);
+            // Une section n'existe que la camera contre le plan, dans l'encadrement : pas de second tampon le reste du temps.
+            if (capCount >= 3) {
+                BufferBuilder cap = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION);
+                emitCap(cap, false, 0.0f, 0.0f, 0.0f);
+                RenderSystem.depthFunc(GL11.GL_ALWAYS);
+                try {
+                    drawIfAny(cap);
+                } finally {
+                    RenderSystem.depthFunc(GL11.GL_LEQUAL);
+                }
+            }
         } finally {
             RenderSystem.polygonOffset(0.0f, 0.0f);
             RenderSystem.disablePolygonOffset();
@@ -156,12 +191,25 @@ public final class FrameAreaRenderer {
             float red,
             float green,
             float blue) {
+        emitFaces(buffer, portal, cameraPos, positionMatrix, colored, red, green, blue);
+        emitCap(buffer, colored, red, green, blue);
+    }
+
+    /** Les six faces de la boite, decoupees contre le plan proche ; les points de la section sont gardes pour {@link #emitCap}. */
+    private static void emitFaces(
+            BufferBuilder buffer,
+            BackroomsPortalEntity portal,
+            Vec3d cameraPos,
+            Matrix4f positionMatrix,
+            boolean colored,
+            float red,
+            float green,
+            float blue) {
         computeCorners(portal, cameraPos, positionMatrix);
         capCount = 0;
         for (int[] face : FACES) {
             emitFan(buffer, CLIPPED, clipFace(face), colored, red, green, blue);
         }
-        emitCap(buffer, colored, red, green, blue);
     }
 
     private static void computeCorners(BackroomsPortalEntity portal, Vec3d cameraPos, Matrix4f positionMatrix) {
@@ -173,7 +221,7 @@ public final class FrameAreaRenderer {
         for (int corner = 0; corner < CORNER_COUNT; corner++) {
             double sw = (corner & 1) != 0 ? halfWidth : -halfWidth;
             double sh = (corner & 2) != 0 ? halfHeight : -halfHeight;
-            double sn = (corner & 4) != 0 ? -depth : 0.0;
+            double sn = TOWARD_CAMERA + ((corner & 4) != 0 ? -depth : 0.0);
             float x = (float) (center.x - cameraPos.x + facing.axisW.x * sw + facing.axisH.x * sh + facing.normal.x * sn);
             float y = (float) (center.y - cameraPos.y + facing.axisW.y * sw + facing.axisH.y * sh + facing.normal.y * sn);
             float z = (float) (center.z - cameraPos.z + facing.axisW.z * sw + facing.axisH.z * sh + facing.normal.z * sn);

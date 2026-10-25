@@ -11,6 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockBox;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
@@ -69,22 +70,12 @@ public final class PortalTargets {
     }
 
     /**
-     * Resout la destination d'un bloc portail pose dans un monde serveur.
+     * Destination d'un bloc portail : vers la sortie fixee si les reglages en ont une, sinon vers la dimension choisie, ou,
+     * automatiquement, de tout portail vers le Level 0 et du Level 0 vers la surface de l'overworld.
      *
-     * @param world monde du bloc
-     * @param anchor position du bloc
-     * @param entryFacing orientation de sa face avant, normale vers le joueur qui l'a pose
-     * @param settings taille du cadre
-     * @return destination, ou {@code null} si la dimension cible est absente ou sans cellule ouverte
-     */
-    public static @Nullable Target resolve(ServerWorld world, BlockPos anchor, PortalFacing entryFacing, PortalSettings settings) {
-        return resolve(world.getServer(), world.getRegistryKey(), anchor, entryFacing, settings, world.getRandom());
-    }
-
-    /**
-     * Meme resolution, la dimension du bloc donnee par sa cle : vers la sortie fixee si les reglages en ont une, sinon vers
-     * la dimension choisie, ou, automatiquement, de tout portail vers le Level 0 et du Level 0 vers la surface de
-     * l'overworld.
+     * <p>Recherche synchrone : elle genere sur le thread serveur les chunks qu'elle lit. Le bloc emploie la recherche chunk
+     * par chunk ({@link #resolveLoadedOnly}), qui rend la meme arrivee ; celle-ci en est la reference, que les tests
+     * comparent a elle.
      *
      * @param server serveur dont on lit les mondes
      * @param dimension dimension du bloc
@@ -101,24 +92,53 @@ public final class PortalTargets {
             PortalFacing entryFacing,
             PortalSettings settings,
             Random random) {
+        return resolve(server, dimension, anchor, entryFacing, settings, random, false).target();
+    }
+
+    /**
+     * Meme resolution, chunk par chunk ({@link Search}) : pour un bloc, qui charge le chunk nomme par un ticket et rappelle
+     * au tick suivant, au lieu de generer sur le thread serveur ce que la recherche lit. Le Level 0 (calcul pur) et une
+     * dimension absente n'attendent jamais. Un chunk compte comme la s'il est entier et accessible ({@link #loaded}), pas
+     * des qu'un ticket lui donne son niveau.
+     *
+     * @return l'arrivee ({@code null} si la dimension cible est absente), ou le chunk a charger d'abord
+     */
+    public static Search resolveLoadedOnly(
+            MinecraftServer server,
+            RegistryKey<World> dimension,
+            BlockPos anchor,
+            PortalFacing entryFacing,
+            PortalSettings settings,
+            Random random) {
+        return resolve(server, dimension, anchor, entryFacing, settings, random, true);
+    }
+
+    private static Search resolve(
+            MinecraftServer server,
+            RegistryKey<World> dimension,
+            BlockPos anchor,
+            PortalFacing entryFacing,
+            PortalSettings settings,
+            Random random,
+            boolean loadedOnly) {
         PortalFacing exitFacing = settings.exit().arrivalFacing(entryFacing);
         Optional<PortalMark> mark = settings.mark();
         if (mark.isPresent()) {
             PortalFacing facing = settings.exit() == PortalExit.STRAIGHT ? mark.get().arrivalFacing() : exitFacing;
-            return toMark(server, mark.get(), facing, settings, random);
+            return toMark(server, mark.get(), facing, settings, random, loadedOnly);
         }
         RegistryKey<World> target = settings.destination().orElse(automatic(dimension));
         ServerWorld world = server.getWorld(target);
         if (world == null) {
-            return null;
+            return new Search(null, null);
         }
         double scale = scale(server.getWorld(dimension), world);
         int x = MathHelper.floor(anchor.getX() * scale) + scatter(random, settings.exitScatter());
         int z = MathHelper.floor(anchor.getZ() * scale) + scatter(random, settings.exitScatter());
         if (target.equals(BackroomsConstants.LEVEL_ZERO_WORLD)) {
-            return LevelZeroArrival.find(world, x, z, exitFacing, settings);
+            return new Search(LevelZeroArrival.find(world, x, z, exitFacing, settings), null);
         }
-        return arrive(world, x, anchor.getY(), z, exitFacing, settings);
+        return scan(world, x, anchor.getY(), z, exitFacing, settings, loadedOnly);
     }
 
     /** Destination automatique : la surface de l'overworld depuis le Level 0, le Level 0 depuis toute autre dimension. */
@@ -135,18 +155,21 @@ public final class PortalTargets {
      * Arrivee a une sortie fixee : sur le bloc ou elle a ete marquee, ou, avec un rayon de tirage au sort, sur un sol pres
      * d'un point tire autour d'elle.
      */
-    private static @Nullable Target toMark(MinecraftServer server, PortalMark mark, PortalFacing facing, PortalSettings settings, Random random) {
+    private static Search toMark(MinecraftServer server, PortalMark mark, PortalFacing facing, PortalSettings settings, Random random, boolean loadedOnly) {
         ServerWorld world = server.getWorld(mark.dimension());
         if (world == null) {
-            return null;
+            return new Search(null, null);
         }
         BlockPos pos = mark.pos();
         if (settings.exitScatter() > 0) {
-            return arrive(world, pos.getX() + scatter(random, settings.exitScatter()), pos.getY(),
-                    pos.getZ() + scatter(random, settings.exitScatter()), facing, settings);
+            return scan(world, pos.getX() + scatter(random, settings.exitScatter()), pos.getY(),
+                    pos.getZ() + scatter(random, settings.exitScatter()), facing, settings, loadedOnly);
         }
-        world.getChunk(ChunkSectionPos.getSectionCoord(pos.getX()), ChunkSectionPos.getSectionCoord(pos.getZ()));
-        return target(world, pos.getX(), floorHeight(world, pos.getX(), pos.getY(), pos.getZ()), pos.getZ(), facing, settings);
+        ChunkPos missing = missingChunk(world, pos.getX(), pos.getZ(), null, loadedOnly);
+        if (missing != null) {
+            return new Search(null, missing);
+        }
+        return new Search(target(world, pos.getX(), floorHeight(world, pos.getX(), pos.getY(), pos.getZ()), pos.getZ(), facing, settings), null);
     }
 
     /**
@@ -158,7 +181,34 @@ public final class PortalTargets {
      * @return destination
      */
     public static Target arrive(ServerWorld world, int x, int startY, int z, PortalFacing facing, PortalSettings settings) {
+        Search search = scan(world, x, startY, z, facing, settings, false);
+        // Tous les chunks sont charges a la demande : la recherche aboutit toujours.
+        return search.target();
+    }
+
+    /**
+     * Resultat d'une recherche chunk par chunk ({@link #resolveLoadedOnly}) : l'arrivee, ou le premier chunk absent dans
+     * l'ordre de la recherche. La recherche lit les colonnes dans le meme ordre que {@link #arrive}, mais s'arrete au
+     * premier chunk absent (pas entier et accessible) au lieu de le generer, et le nomme : le bloc le charge par un ticket
+     * et rappelle au tick suivant, et la premiere colonne avec un sol est la meme que celle de {@link #arrive}. Les deux
+     * champs ne sont jamais donnes ensemble.
+     *
+     * @param target arrivee, ou {@code null} si un chunk manque
+     * @param missingChunk chunk a charger d'abord, ou {@code null} si l'arrivee est trouvee
+     */
+    public record Search(@Nullable Target target, @Nullable ChunkPos missingChunk) {
+
+        /** {@code true} si un chunk doit etre charge avant de conclure. */
+        public boolean waits() {
+            return this.missingChunk != null;
+        }
+    }
+
+    private static Search scan(ServerWorld world, int x, int startY, int z, PortalFacing facing, PortalSettings settings, boolean loadedOnly) {
         boolean ceiling = world.getDimension().hasCeiling();
+        // Sous un plafond, chaque colonne ou l'on tient fait verifier le cadre ({@link #frameFits}), dont les cellules, jusqu'a
+        // huit blocs de la colonne, peuvent etre dans le chunk d'a cote : chunk par chunk, il doit etre la aussi.
+        BlockBox frame = loadedOnly && ceiling ? footprint(world, startY, facing, settings) : null;
         for (int ring = 0; ring <= SEARCH_RADIUS; ring++) {
             for (int dx = -ring; dx <= ring; dx++) {
                 for (int dz = -ring; dz <= ring; dz++) {
@@ -167,15 +217,64 @@ public final class PortalTargets {
                     }
                     int columnX = x + dx;
                     int columnZ = z + dz;
-                    world.getChunk(ChunkSectionPos.getSectionCoord(columnX), ChunkSectionPos.getSectionCoord(columnZ));
+                    ChunkPos missing = missingChunk(world, columnX, columnZ, frame, loadedOnly);
+                    if (missing != null) {
+                        return new Search(null, missing);
+                    }
                     Double floor = ceiling ? caveFloor(world, columnX, startY, columnZ, facing, settings) : surfaceFloor(world, columnX, columnZ);
                     if (floor != null) {
-                        return target(world, columnX, floor, columnZ, facing, settings);
+                        return new Search(target(world, columnX, floor, columnZ, facing, settings), null);
                     }
                 }
             }
         }
-        return onPlatform(world, x, startY, z, facing, settings);
+        // La plateforme et son cadre tiennent dans les colonnes lues (seize autour du depart) : leurs chunks sont tous la.
+        return new Search(onPlatform(world, x, startY, z, facing, settings), null);
+    }
+
+    /**
+     * Chunks qu'une colonne fait lire : le sien, et ceux de l'empreinte du cadre s'il y en a une. La recherche synchrone
+     * genere le chunk de la colonne (les cellules du cadre dans un chunk d'a cote le generent a la lecture) ; chunk par
+     * chunk, elle nomme le premier qui n'est pas la, pour que le bloc le charge d'abord.
+     *
+     * @param frame empreinte horizontale du cadre autour de la colonne, ou {@code null} si la colonne seule est lue
+     * @return le chunk a charger d'abord, ou {@code null} s'ils sont tous la
+     */
+    private static @Nullable ChunkPos missingChunk(ServerWorld world, int x, int z, @Nullable BlockBox frame, boolean loadedOnly) {
+        if (!loadedOnly) {
+            world.getChunk(ChunkSectionPos.getSectionCoord(x), ChunkSectionPos.getSectionCoord(z));
+            return null;
+        }
+        int minX = frame == null ? x : x + frame.getMinX();
+        int maxX = frame == null ? x : x + frame.getMaxX();
+        int minZ = frame == null ? z : z + frame.getMinZ();
+        int maxZ = frame == null ? z : z + frame.getMaxZ();
+        for (int chunkX = ChunkSectionPos.getSectionCoord(minX); chunkX <= ChunkSectionPos.getSectionCoord(maxX); chunkX++) {
+            for (int chunkZ = ChunkSectionPos.getSectionCoord(minZ); chunkZ <= ChunkSectionPos.getSectionCoord(maxZ); chunkZ++) {
+                if (!loaded(world, chunkX, chunkZ)) {
+                    return new ChunkPos(chunkX, chunkZ);
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@code true} si le chunk est entier et accessible, sans rien charger ni attendre. Pas {@code World.isChunkLoaded} :
+     * cote serveur, il repond vrai des qu'un ticket donne son niveau au chunk, avant toute generation, et la premiere
+     * lecture d'un bloc genererait alors le chunk sur le thread serveur, le gel que la recherche chunk par chunk evite.
+     */
+    static boolean loaded(ServerWorld world, int chunkX, int chunkZ) {
+        return world.getChunkManager().getWorldChunk(chunkX, chunkZ) != null;
+    }
+
+    /**
+     * Empreinte horizontale du cadre autour de sa colonne, la meme pour toute colonne : les cellules que {@link #frameFits}
+     * lit, en coordonnees relatives a la colonne.
+     */
+    private static BlockBox footprint(ServerWorld world, int startY, PortalFacing facing, PortalSettings settings) {
+        Vec3d center = target(world, 0, startY, 0, facing, settings).position();
+        return PortalArea.cells(PortalArea.anchor(center, facing, settings.width(), settings.height()), facing, settings);
     }
 
     /**

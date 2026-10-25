@@ -7,6 +7,100 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 
 ## [Unreleased]
 
+### Added
+- **Arrivées de référence** (`PortalArrivalReferenceGameTests`, garde-fou G3 du bilan de `docs/revue/`) : huit cas fixes
+  sur le terrain naturel du serveur de test, dont l'arrivée calculée par la 0.10.0 est figée dans le test. Tout
+  remaniement de la recherche d'arrivée (résolution asynchrone, point d'accès des destinations) qui en change une fait
+  échouer le build, sauf décision annoncée. Le terrain de chaque cas est généré d'abord, chunk par chunk dans un ordre
+  fixe : vanilla pose les features des chunks voisins en parallèle, dans un ordre qui change d'un lancement à l'autre,
+  et une feature qui déborde sur le chunk d'à côté (colonnes de basalte des deltas, arbres) donne un terrain différent
+  d'un monde neuf à l'autre, à graine égale ; sans cette préparation, un des huit cas changeait d'arrivée une fois sur
+  deux (relevé du 25 octobre 2026).
+
+### Changed
+- **Traversée décidée aux yeux pour les joueurs, et bords du cadre qui bloquent** (décisions de l'auteur du 25 octobre
+  2026) : un joueur franchissait un cadre debout aux pieds, et passait donc un cadre d'un bloc de haut la tête à travers
+  le haut du cadre ; le point qui décide de sa traversée est désormais ses yeux quel que soit le cadre (prédiction
+  client, vérification et secours du serveur, découpe du modèle), et les quatre bords du cadre sont pour lui de petites
+  parois (`PortalCollision.frameEdges`, un demi-bloc hors de l'ouverture, du plan à un demi-bloc derrière) : tête et
+  épaules doivent passer l'ouverture, un cadre trop bas l'arrête au front, un cadre surélevé se saute, un cadre étroit
+  se passe aligné en glissant le long du bord. Mobs, objets et projectiles gardent leur règle (les pieds pour un cadre
+  debout, les yeux pour un cadre couché, l'ouverture fermée sur un bord).
+- **Fenêtre gardée pour tout portail à portée de rendu, quel que soit le regard** (C60 du bilan de `docs/revue/`,
+  décision de l'auteur du 25 octobre 2026) : au-delà de 16 blocs, le serveur ne synchronisait l'autre côté d'un portail
+  que si le joueur le regardait, et retirait sa fenêtre cinq secondes après que le regard s'en était détourné ; le
+  regard qui revenait trouvait le brouillard le temps de la renvoyer. La fenêtre, et l'arrivée que le chargeur tient
+  chargée, sont désormais tenues pour tout portail à moins de 64 blocs (`PortalRelevance.isInRange`), devant comme dans
+  le dos ; le rendu, lui, ne dessine toujours que les portails devant le joueur (ou à moins de 16 blocs). Coût : les
+  chunks et les entités des fenêtres de portails dans le dos. Mesuré sur le banc de production (scène « dos tourné à
+  trois portails à portée », dix secondes passé le délai de grâce) : réseau et tick serveur inchangés une fois les
+  fenêtres envoyées (0 Kio/s, 3 ms par tick, avant comme après) ; le client garde les chunks de ces fenêtres (quelques
+  Mio par fenêtre de 49 chunks) au lieu de les recevoir de nouveau au prochain regard.
+- **Monde quitté allégé après un délai sans retour** (C63 du bilan de `docs/revue/`, décision de l'auteur du 25 octobre
+  2026) : un monde distant (celui d'un portail regardé, ou le monde quitté par une traversée, avec tous ses chunks, ses
+  entités et son renderer) n'était rendu qu'à la déconnexion ou au changement de dimension vanilla. Quand plus aucun
+  portail à portée ne montre une dimension depuis `gtgsbackrooms.portal.remoteWorldReleaseSeconds` (60 s par défaut,
+  jamais moins que les 5 s du déchargement de sa fenêtre), le serveur demande au client de libérer ce monde
+  (`portal_remote_dimension_release`) ; la dimension garde son index et est annoncée de nouveau avant tout nouvel envoi.
+  Un retour après ce délai voit la vue se reconstruire le temps de renvoyer la fenêtre, un retour avant reste sans
+  couture. Vérifié en production (mods de rendu du terrain et de shaders, pack actif) : traversée vers
+  l'Overworld, 75 s à 300 blocs de tout portail, libération envoyée une fois à 60 s, puis au retour devant le portail
+  l'End annoncé de nouveau, ses 121 chunks renvoyés, son monde recréé chez le client (8 ms) et sa vue reconstruite, sans
+  erreur. Le client vide le monde libéré avant de le jeter (`RemoteWorld.clear` : chaque chunk déchargé avec sa lumière,
+  ses entités et ses particules retirées, 7 ms une fois) et en détruit la lightmap : un vidage du tas du client de banc,
+  relu jusqu'aux racines du GC, montrait le monde quitté encore retenu après la libération avec tous ses chunks (1 056
+  références directes), par trois chemins. Le nôtre, les particules qu'un monde devenu principal gardait après les avoir
+  cédées, est corrigé, comme le champ où vanilla garde le monde de création du joueur
+  (`AbstractClientPlayerEntity.clientWorld`, final, que vanilla ne relit pas), désormais suivi à chaque traversée. Les
+  deux autres sont hors du mod : le contexte de rendu que Fabric API ajoute au renderer vanilla et l'état de chargement
+  vanilla du dernier changement de dimension ; ils ne gardent plus qu'un monde vide (12 références directes, aucun
+  chunk), jusqu'au prochain changement de dimension vanilla.
+- **Pose d'un portail vers une zone jamais générée, sans gel du serveur** (C56 du bilan de `docs/revue/`) : la recherche
+  d'arrivée lisait jusqu'à seize colonnes autour du point de départ, et générait sur le thread serveur chaque chunk
+  manquant (0,3 s par chunk du Nether sur le PC de référence, 0,7 à 2,9 s sur un portable, pour tous les joueurs). Le
+  bloc demande désormais ces chunks un à un par un ticket (`PortalTargets.resolveLoadedOnly`, `SEARCH_TICKET`), ceux que
+  la recherche synchrone lirait et pas d'autres (la colonne, et les cellules de son cadre quand elles débordent sur le
+  chunk d'à côté), et rappelle à chaque tick jusqu'à ce que le chunk soit entier : la même arrivée qu'avant
+  (`PortalArrivalReferenceGameTests` le vérifie), quelques ticks plus tard, le temps que vanilla génère le chunk sur ses
+  threads de travail. Entre la pose et la résolution, le cadre n'est pas encore un portail : un joueur qui le passe
+  aussitôt le traverse sans changer de monde. Décision de l'auteur du 25 octobre 2026. Rien ne change vers le Level 0
+  (calcul pur, sans chunk). Un chunk ne compte comme chargé que s'il est entier et accessible (`getWorldChunk`) : côté
+  serveur, `World.isChunkLoaded` répond vrai dès qu'un ticket donne son niveau au chunk, avant toute génération, et une
+  première version qui s'y fiait attendait un tick puis générait quand même (sonde du 25 octobre 2026). Mesuré sur le
+  banc de production du PC de référence (mods de rendu du terrain et de shaders, pack actif, scènes du banc
+  de performance, mêmes réglages avant et après) : pire tick serveur de la scène « pose vers une zone neuve » de 25 à
+  103 ms sur trois passes, contre 424 ms ; FPS, coût du rendu des vues et mémoire des autres scènes inchangés à la
+  variance près. Ce qui reste dans ce pire tick comprend le chargement vanilla des chunks du joueur téléporté en zone
+  neuve et la fin des chunks (conversion, lumière) sur le thread serveur.
+
+### Fixed
+- **Mur visible au moment de passer un cadre plaqué contre lui** (signalé par l'auteur le 25 octobre 2026) : contre un
+  cadre au bord du bloc posé sur un mur (ou au sol sur un sol plein), la face du bloc est dans le plan du portail, et la
+  zone du cadre ne l'emportait sur elle au test de profondeur que par un décalage de polygone de quelques unités. De
+  près, l'imprécision des positions du terrain dépasse ce décalage de plusieurs centaines d'unités : dans les derniers
+  centimètres avant de passer, le mur s'affichait à la place de la vue (mesuré sur le banc de production, un mod de
+  rendu du terrain sans pack de shaders : mur plein écran à 20, 12, 6, 5,5 et 5,1 cm du plan, vue intacte à 30 cm ;
+  après correction, la vue à toutes ces distances, et les poses à 30 cm, 1,5 m et 3 m identiques à l'image d'avant). La
+  zone est désormais avancée d'un dixième de millimètre vers la caméra (`FrameAreaRenderer`) : ses bords ne bougent que
+  d'un dixième de pixel vus à 30 cm (un millimètre suffisait aussi, mais déplaçait les bords d'un pixel par endroits).
+  Et sous 5,2 cm du plan, le polygone qui referme la zone, découpée 2 mm au-delà du plan proche du jeu, était plus loin
+  que la face du mur : il se marque désormais sans test de profondeur (il ne couvre que ce que la caméra voit à travers
+  le cadre ; seul un bloc remplaçable, herbe ou neige, laissé dans l'ouverture pourrait se trouver devant lui, sur ces 2
+  mm).
+- **Portail noir en troisième personne** (signalé par l'auteur le 25 octobre 2026, sans pack de shaders, vers le Level
+  0) : le serveur ne synchronisait l'autre côté d'un portail à plus de 16 blocs que s'il était devant le joueur, alors
+  que la caméra à la troisième personne, en vue de face, regarde à l'opposé du joueur, et voit donc des portails dans
+  son dos. Leur vue n'avait aucun chunk et prenait la couleur du brouillard de leur dimension, noire dans le Level 0.
+  Reproduit sur le banc de production avec le JAR d'avant la correction (portail à 25 blocs dans le dos du joueur, vue
+  de face : rectangle noir, aucun chunk envoyé tant que le joueur reste à plus de 16 blocs), et corrigé par la fenêtre
+  gardée pour tout portail à portée de rendu (C60, plus haut) : même scène, vue dessinée, la fenêtre part dès la pose.
+- **Moniteur de performance qui faussait ses mesures** : il lisait la charge CPU du processus et du système par un appel
+  natif bloquant (`getProcessCpuLoad`, 50 à 60 ms) sur le thread de rendu et sur le thread serveur, à chaque résumé.
+  Chaque résumé comptait ainsi une image lente et un pic de tick qui n'existaient pas sans lui (relevé de
+  `docs/revue/BILAN-CORRECTIONS.md`, PERF 3.8). La charge est désormais relevée par un thread démon à chaque intervalle
+  (`ModPerformanceMonitor.CpuSampler`), lancé avec le moniteur et arrêté avec lui ; les threads de jeu ne lisent plus
+  que la dernière valeur, inconnue (`n/a`) avant le premier relevé. Format des résumés inchangé.
+
 ---
 
 ## [0.10.0] - 2026-10-23

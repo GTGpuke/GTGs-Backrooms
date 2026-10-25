@@ -140,7 +140,7 @@ public final class RemoteWorld {
      * Particules de ce monde ; celles de l'ancien monde principal le suivent a la traversee. Aucune pour la vue
      * secondaire : elle montre celles du gestionnaire, et n'est jamais nourrie de paquets ; seule son horloge tique.
      */
-    private final @Nullable RemoteParticles particles;
+    private @Nullable RemoteParticles particles;
     private int centerChunkX = Integer.MIN_VALUE;
     private int centerChunkZ = Integer.MIN_VALUE;
     /** Camera de la derniere vue dessinee et heure du monde a ce moment : les particules naissent et vivent autour d'elle. */
@@ -286,6 +286,48 @@ public final class RemoteWorld {
      */
     @Nullable RemoteParticles particles() {
         return this.particles;
+    }
+
+    /**
+     * Rend les particules de ce monde, devenu principal a une traversee : elles partent avec l'ancien monde principal
+     * ({@link RemoteWorldRegistry#swapMainWorld}), et ce monde ne les garde pas, sans quoi l'ancien resterait retenu par
+     * elles une fois libere.
+     */
+    @Nullable RemoteParticles takeParticles() {
+        RemoteParticles taken = this.particles;
+        this.particles = null;
+        return taken;
+    }
+
+    /**
+     * Vide ce monde avant qu'il ne soit jete : chaque chunk charge est decharge comme a un dechargement du serveur (block
+     * entities et lumiere), la lumiere aussitot mise a jour (le monde ne tique plus), ses entities et ses particules
+     * retirees. Des objets hors du mod peuvent garder une reference au monde (le contexte de rendu que Fabric API ajoute
+     * au renderer vanilla, l'etat de chargement vanilla du dernier changement de dimension) : ils ne gardent alors qu'un
+     * monde vide. A appeler avant de detacher le renderer, que les dechargements previennent.
+     */
+    void clear() {
+        if (this.centerChunkX != Integer.MIN_VALUE) {
+            ClientChunkManager chunks = this.world.getChunkManager();
+            for (int x = this.centerChunkX - RemoteChunkWindow.MAP_RADIUS; x <= this.centerChunkX + RemoteChunkWindow.MAP_RADIUS; x++) {
+                for (int z = this.centerChunkZ - RemoteChunkWindow.MAP_RADIUS; z <= this.centerChunkZ + RemoteChunkWindow.MAP_RADIUS; z++) {
+                    if (chunks.getWorldChunk(x, z) != null) {
+                        unloadChunk(new ChunkPos(x, z));
+                    }
+                }
+            }
+        }
+        this.world.getLightingProvider().doLightUpdates();
+        List<Entity> entities = new ArrayList<>();
+        for (Entity entity : this.world.getEntities()) {
+            entities.add(entity);
+        }
+        for (int i = 0; i < entities.size(); i++) {
+            this.world.removeEntity(entities.get(i).getId(), Entity.RemovalReason.DISCARDED);
+        }
+        if (this.particles != null) {
+            this.particles.clear();
+        }
     }
 
     /** Une vue de ce monde vient d'etre dessinee depuis cette camera : particules et effets d'ambiance vivent autour d'elle. */

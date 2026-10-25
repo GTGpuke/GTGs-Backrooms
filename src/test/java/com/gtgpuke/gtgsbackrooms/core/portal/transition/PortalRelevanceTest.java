@@ -46,6 +46,15 @@ class PortalRelevanceTest {
     }
 
     @Test
+    @DisplayName("A portee, un portail compte pour la synchronisation quelle que soit la direction du regard")
+    void inRangeRegardlessOfLook() {
+        assertTrue(PortalRelevance.isInRange(EYE, new Vec3d(0.0, 65.0, 40.0), 64.0), "Derriere, a 40 blocs : a portee.");
+        assertTrue(PortalRelevance.isInRange(EYE, new Vec3d(0.0, 65.0, 64.0), 64.0), "Exactement a la limite.");
+        assertFalse(PortalRelevance.isInRange(EYE, new Vec3d(0.0, 65.0, 64.5), 64.0), "Juste au-dela.");
+        assertFalse(PortalRelevance.isRelevant(EYE, LOOK_NORTH, new Vec3d(0.0, 65.0, 40.0), 64.0), "Le rendu, lui, ne compte pas un portail dans le dos.");
+    }
+
+    @Test
     @DisplayName("Au-dela de la distance maximale, rien ne compte")
     void outOfRangeIsIgnored() {
         assertFalse(PortalRelevance.isRelevant(EYE, LOOK_NORTH, new Vec3d(0.0, 65.0, -65.0), 64.0), "Devant mais trop loin.");

@@ -15,6 +15,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteBlockUpdatePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkUnloadPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionPayload;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionReleasePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
 
 /**
@@ -33,6 +34,7 @@ public final class ModNetworking {
         PortalNetwork.registerS2C(RemoteDimensionPayload.ID, RemoteDimensionPayload.CODEC);
         PortalNetwork.registerS2C(RemoteChunkPayload.ID, RemoteChunkPayload.CODEC);
         PortalNetwork.registerS2C(RemoteChunkUnloadPayload.ID, RemoteChunkUnloadPayload.CODEC);
+        PortalNetwork.registerS2C(RemoteDimensionReleasePayload.ID, RemoteDimensionReleasePayload.CODEC);
         PortalNetwork.registerS2C(RemoteBlockUpdatePayload.ID, RemoteBlockUpdatePayload.CODEC);
         PortalNetwork.registerS2C(RemoteEntityPacketPayload.ID, RemoteEntityPacketPayload.CODEC);
         PortalNetwork.registerS2C(RemoteBlockBreakingPayload.ID, RemoteBlockBreakingPayload.CODEC);

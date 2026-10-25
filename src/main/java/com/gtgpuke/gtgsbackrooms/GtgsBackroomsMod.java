@@ -64,6 +64,7 @@ public class GtgsBackroomsMod implements ModInitializer {
     }
 
     private static void registerServerHooks() {
+        ModPerformanceMonitor.init();
         ServerTickEvents.START_SERVER_TICK.register(server -> ModPerformanceMonitor.onServerTickStart());
         ServerTickEvents.END_SERVER_TICK.register(server -> ModPerformanceMonitor.onServerTickEnd());
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> LevelZeroLayout.clearCache());

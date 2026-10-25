@@ -391,8 +391,10 @@ class BackroomsPortalEntityTest {
         assertEquals(new Box(1.25, -0.5, 0.5, 1.75, 2.5, 2.5), arrival, "Le cadre d'arrivee, d'un demi-bloc d'epaisseur.");
         assertSame(arrival, portal.arrivalBox(), "Gardee tant que l'arrivee ne bouge pas.");
         assertEquals(arrival.expand(3.0), portal.arrivalCrossingBox(), "Elargie de trois blocs pour la recherche.");
-        assertTrue(portal.withinArrivalWidth(1.5, 9.0, 2.4), "En face de l'ouverture d'arrivee, a toute hauteur.");
-        assertFalse(portal.withinArrivalWidth(1.5, 1.0, 2.6), "A cote du cadre d'arrivee.");
+        assertTrue(portal.withinArrivalOpening(false, 1.5, 9.0, 2.4), "En face de l'ouverture d'arrivee, a toute hauteur.");
+        assertFalse(portal.withinArrivalOpening(true, 1.5, 9.0, 2.4), "Pour un joueur, au-dessus du haut de l'ouverture d'arrivee.");
+        assertTrue(portal.withinArrivalOpening(true, 1.5, 1.0, 2.4), "Pour un joueur, dans sa hauteur.");
+        assertFalse(portal.withinArrivalOpening(false, 1.5, 1.0, 2.6), "A cote du cadre d'arrivee.");
         assertSame(portal.arrivalCrossingBox(), portal.arrivalCrossingBox(), "Elargie, gardee de meme.");
         portal.setDestinationPos(new Vec3d(4.5, 1.0, 1.5));
         assertEquals(new Box(4.25, -0.5, 0.5, 4.75, 2.5, 2.5), portal.arrivalBox(), "Recalculee quand l'arrivee bouge.");
@@ -408,8 +410,8 @@ class BackroomsPortalEntityTest {
         assertTrue(floor.withinFrameWidth(0.5, 66.0, 0.9), "Au-dessus de l'ouverture.");
         assertFalse(floor.withinFrameWidth(0.5, 66.0, 1.1), "Au-dessus du sol, a cote du cadre le long de sa hauteur : de cote, pas encore en face.");
         assertFalse(floor.withinFrameWidth(1.1, 66.0, 0.0), "A cote le long de sa largeur.");
-        assertTrue(floor.withinArrivalWidth(10.5, 60.0, -0.9), "Sous l'ouverture d'arrivee.");
-        assertFalse(floor.withinArrivalWidth(10.5, 60.0, -1.1), "A cote du cadre d'arrivee le long de sa hauteur.");
+        assertTrue(floor.withinArrivalOpening(false, 10.5, 60.0, -0.9), "Sous l'ouverture d'arrivee.");
+        assertFalse(floor.withinArrivalOpening(false, 10.5, 60.0, -1.1), "A cote du cadre d'arrivee le long de sa hauteur.");
     }
 
     @Test

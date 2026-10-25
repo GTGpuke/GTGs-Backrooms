@@ -23,6 +23,7 @@ class ModConfigTest {
         assertEquals(0, ModConfig.PORTAL_TELEPORT_COOLDOWN_TICKS, "Aucun delai entre deux traversees.");
         assertEquals(16, ModConfig.PORTAL_ACTIVATION_RADIUS_BLOCKS, "Rayon d'activation.");
         assertEquals(3, ModConfig.PORTAL_PRELOAD_RADIUS_CHUNKS, "Rayon de prechargement.");
+        assertEquals(60, ModConfig.PORTAL_REMOTE_WORLD_RELEASE_SECONDS, "Une minute sans portail a portee avant de liberer un monde distant.");
         assertEquals(64, ModConfig.PORTAL_RENDER_DISTANCE_BLOCKS, "Distance de rendu.");
     }
 

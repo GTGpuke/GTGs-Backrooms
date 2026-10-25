@@ -7,11 +7,13 @@ import net.minecraft.util.math.Vec3d;
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 
 /**
- * Decide si un portail compte pour un observateur : a portee d'activation, ou plus loin mais devant lui.
+ * Decide si un portail compte pour un observateur, selon deux criteres.
  *
- * <p>Ce critere unique pilote le prechargement des chunks destination, la synchronisation vers le client et
- * le rendu. A portee d'activation, la direction du regard ne compte pas : on peut s'engager dans un portail
- * a reculons ou de cote, l'autre cote est deja la. Plus loin, un portail dans le dos ne coute rien.
+ * <p>A portee ({@link #isInRange}), quelle que soit la direction du regard : le serveur precharge l'arrivee et
+ * synchronise la fenetre de tout portail a portee de rendu, meme dans le dos, pour que le regard qui revient trouve
+ * l'autre cote au lieu du brouillard (decision de l'auteur du 25 octobre 2026, C60 du bilan de {@code docs/revue/}).
+ * A portee et devant ({@link #isRelevant}) : le rendu, ou un portail dans le dos ne coute rien ; a portee
+ * d'activation, la direction du regard ne compte pas non plus, on peut s'engager dans un portail a reculons ou de cote.
  */
 public final class PortalRelevance {
 
@@ -33,21 +35,8 @@ public final class PortalRelevance {
      * @param maxDistance distance maximale en blocs
      * @return {@code true} si le portail doit etre pris en compte
      */
-    public static boolean isRelevant(Vec3d eyePosition, Vec3d lookVector, Vec3d portalPosition, double maxDistance) {
+    static boolean isRelevant(Vec3d eyePosition, Vec3d lookVector, Vec3d portalPosition, double maxDistance) {
         return isRelevant(eyePosition.x, eyePosition.y, eyePosition.z, lookVector.x, lookVector.y, lookVector.z, portalPosition, maxDistance);
-    }
-
-    /**
-     * Meme critere pour une entity, ses yeux et son regard du tick, sans les vecteurs que vanilla creerait
-     * ({@code getEyePos}, {@code getRotationVec}) : le serveur le pose pour chaque joueur et chaque portail.
-     *
-     * @param observer entity qui regarde
-     * @param portalPosition centre du portail
-     * @param maxDistance distance maximale en blocs
-     * @return {@code true} si le portail doit etre pris en compte
-     */
-    public static boolean isRelevant(Entity observer, Vec3d portalPosition, double maxDistance) {
-        return isRelevantFrom(observer.getX(), observer.getEyeY(), observer.getZ(), observer.getPitch(), observer.getYaw(), portalPosition, maxDistance);
     }
 
     /**
@@ -63,6 +52,38 @@ public final class PortalRelevance {
      */
     public static boolean isRelevant(Vec3d eyePosition, float pitch, float yaw, Vec3d portalPosition, double maxDistance) {
         return isRelevantFrom(eyePosition.x, eyePosition.y, eyePosition.z, pitch, yaw, portalPosition, maxDistance);
+    }
+
+    /**
+     * {@code true} si le portail est a portee, quelle que soit la direction du regard.
+     *
+     * @param eyePosition position des yeux de l'observateur
+     * @param portalPosition centre du portail
+     * @param maxDistance distance maximale en blocs
+     * @return {@code true} si le portail doit etre pris en compte
+     */
+    static boolean isInRange(Vec3d eyePosition, Vec3d portalPosition, double maxDistance) {
+        return isInRange(eyePosition.x, eyePosition.y, eyePosition.z, portalPosition, maxDistance);
+    }
+
+    /**
+     * Meme critere pour une entity et ses yeux du tick, sans le vecteur que vanilla creerait ({@code getEyePos}) : le
+     * serveur le pose pour chaque joueur et chaque portail.
+     *
+     * @param observer entity qui observe
+     * @param portalPosition centre du portail
+     * @param maxDistance distance maximale en blocs
+     * @return {@code true} si le portail doit etre pris en compte
+     */
+    public static boolean isInRange(Entity observer, Vec3d portalPosition, double maxDistance) {
+        return isInRange(observer.getX(), observer.getEyeY(), observer.getZ(), portalPosition, maxDistance);
+    }
+
+    private static boolean isInRange(double eyeX, double eyeY, double eyeZ, Vec3d portalPosition, double maxDistance) {
+        double dx = portalPosition.x - eyeX;
+        double dy = portalPosition.y - eyeY;
+        double dz = portalPosition.z - eyeZ;
+        return dx * dx + dy * dy + dz * dz <= maxDistance * maxDistance;
     }
 
     private static boolean isRelevantFrom(double eyeX, double eyeY, double eyeZ, float pitch, float yaw, Vec3d portalPosition, double maxDistance) {

@@ -1,7 +1,9 @@
 package com.gtgpuke.gtgsbackrooms.gametest.core.portal;
 
 import java.util.List;
+import java.util.UUID;
 
+import com.mojang.authlib.GameProfile;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.block.Block;
@@ -9,6 +11,7 @@ import net.minecraft.block.Blocks;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -18,6 +21,7 @@ import net.minecraft.test.GameTest;
 import net.minecraft.test.TestContext;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
 
@@ -28,6 +32,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalCrossPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.ArrivalGuard;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalCollision;
+import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestServerWorlds;
 
@@ -388,6 +393,85 @@ public final class PortalTunnelGameTests implements FabricGameTest {
     }
 
     /** Remplit de ce bloc la boite entre deux positions relatives a l'arene. */
+    /**
+     * Un joueur franchit tout cadre aux yeux, et sa tete comme ses epaules doivent passer l'ouverture : engage, il bute sur
+     * les bords du cadre qui depassent, et un cadre trop bas pour ses yeux ne se franchit pas, la ou un objet passe aux pieds.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 40)
+    public void aPlayerCrossesAtTheEyesAndMustFitTheOpening(TestContext context) {
+        ServerWorld world = context.getWorld();
+        // Cadre 1 x 2 oriente nord, centre en (8,5 ; 3 ; 8,5) : ouverture x 8..9, y 2..4, plan z = 8,5, entree au nord.
+        Vec3d center = context.getAbsolute(new Vec3d(8.5, 3.0, 8.5));
+        BackroomsPortalEntity frame = spawn(world, center, PortalFacing.NORTH, PortalFacing.SOUTH, context.getAbsolute(new Vec3d(8.5, 3.0, 20.5)));
+        // Cadre 1 x 1 a cote, centre en (12,5 ; 2,5 ; 8,5) : ouverture y 2..3, trop bas pour les yeux d'un joueur debout.
+        Vec3d lowCenter = context.getAbsolute(new Vec3d(12.5, 2.5, 8.5));
+        BackroomsPortalEntity low = BackroomsPortalEntity.builder(world).position(lowCenter).facingSource(PortalFacing.NORTH)
+                .facingDestination(PortalFacing.SOUTH).destinationDim(World.OVERWORLD).destinationPos(context.getAbsolute(new Vec3d(12.5, 2.5, 20.5)))
+                .size(1.0f, 1.0f).build();
+        world.spawnEntity(low);
+        PlayerEntity player = new PlayerEntity(world, BlockPos.ORIGIN, 0.0f, new GameProfile(UUID.randomUUID(), "bord")) {
+            @Override
+            public boolean isSpectator() {
+                return false;
+            }
+
+            @Override
+            public boolean isCreative() {
+                return false;
+            }
+        };
+        ServerPlayerEntity real = GameTestPlayers.connect(context, GameMode.SURVIVAL, center.add(0.0, -1.0, -0.5), 0.0f, 0.0f);
+        ItemEntity item = item(world, lowCenter.add(0.0, -0.5, -0.5), Items.STONE);
+        try {
+            double eyes = player.getEyeY() - player.getY();
+            context.assertTrue(Math.abs(frame.crossingHeight(player) - eyes) < 1.0e-9 && Math.abs(low.crossingHeight(player) - eyes) < 1.0e-9,
+                    "Un joueur franchit un cadre debout aux yeux : " + frame.crossingHeight(player) + ".");
+            context.assertTrue(frame.crossingHeight(item) == 0.0, "Un objet le franchit aux pieds.");
+            // Aligne devant le cadre, la tete dans l'ouverture : engage, rien de l'autre cote ne gene, aucun bord ne depasse.
+            player.setPosition(center.x, center.y - 1.0, center.z - 0.5);
+            List<VoxelShape> fitting = PortalCollision.withOtherSide(player, world, List.of(), player.getBoundingBox().stretch(0.0, 0.0, 0.5));
+            context.assertTrue(fitting.isEmpty(), "Tete et epaules dans l'ouverture : rien n'arrete le joueur : " + fitting + ".");
+            // Decale de trois dixiemes vers l'est : une epaule depasse, le bord est l'arrete (du plan a un demi-bloc derriere).
+            player.setPosition(center.x + 0.3, center.y - 1.0, center.z - 0.5);
+            List<VoxelShape> shoulder = PortalCollision.withOtherSide(player, world, List.of(), player.getBoundingBox().stretch(0.0, 0.0, 0.5));
+            context.assertTrue(shoulder.size() == 1 && near(shoulder.get(0).getBoundingBox().getMinPos(), new Vec3d(center.x + 0.5, center.y - 1.5, center.z))
+                    && near(shoulder.get(0).getBoundingBox().getMaxPos(), new Vec3d(center.x + 1.0, center.y + 1.5, center.z + 0.5)),
+                    "Une epaule qui depasse bute sur le bord est : " + shoulder + ".");
+            // Un demi-bloc plus bas (cadre sureleve) : les yeux encore dans l'ouverture, les pieds sous le bord bas, qui bloque.
+            player.setPosition(center.x, center.y - 1.5, center.z - 0.5);
+            List<VoxelShape> feet = PortalCollision.withOtherSide(player, world, List.of(), player.getBoundingBox().stretch(0.0, 0.0, 0.5));
+            context.assertTrue(feet.size() == 1 && near(feet.get(0).getBoundingBox().getMinPos(), new Vec3d(center.x - 0.5, center.y - 1.5, center.z))
+                    && near(feet.get(0).getBoundingBox().getMaxPos(), new Vec3d(center.x + 0.5, center.y - 1.0, center.z + 0.5)),
+                    "Les pieds sous le bord bas butent dessus : " + feet + ".");
+            // Devant le cadre trop bas, les yeux au-dessus de l'ouverture : pas engage, l'ouverture fermee l'arrete au front.
+            player.setPosition(lowCenter.x, lowCenter.y - 0.5, lowCenter.z - 0.5);
+            List<VoxelShape> front = PortalCollision.withOtherSide(player, world, List.of(), player.getBoundingBox().stretch(0.0, 0.0, 0.5));
+            context.assertTrue(front.size() == 1 && near(front.get(0).getBoundingBox().getMinPos(), new Vec3d(lowCenter.x - 0.5, lowCenter.y - 0.5, lowCenter.z))
+                    && near(front.get(0).getBoundingBox().getMaxPos(), new Vec3d(lowCenter.x + 0.5, lowCenter.y + 0.5, lowCenter.z + 0.5)),
+                    "Les yeux au-dessus d'un cadre trop bas : l'ouverture fermee l'arrete : " + front + ".");
+            // Le serveur juge de meme : un pas des pieds a travers le plan du cadre trop bas ne traverse pas pour un joueur, si pour un objet.
+            context.assertTrue(!TeleportExecutor.crossedPortalPlane(low, real, lowCenter.x, lowCenter.y - 0.5, lowCenter.z - 0.2,
+                    lowCenter.x, lowCenter.y - 0.5, lowCenter.z + 0.2), "Les yeux hors de l'ouverture : un joueur ne traverse pas un cadre trop bas.");
+            context.assertTrue(TeleportExecutor.crossedPortalPlane(frame, real, center.x, center.y - 1.0, center.z - 0.2,
+                    center.x, center.y - 1.0, center.z + 0.2), "Les yeux dans l'ouverture : il traverse le cadre a sa taille.");
+            context.assertTrue(TeleportExecutor.crossedPortalPlane(low, item, lowCenter.x, lowCenter.y - 0.5, lowCenter.z - 0.2,
+                    lowCenter.x, lowCenter.y - 0.5, lowCenter.z + 0.2), "Un objet, aux pieds, traverse le cadre trop bas.");
+            // Au retour, face au cadre d'arrivee (centre 8,5 ; 3 ; 20,5, sortie au sud) : la meme regle, aux yeux et dans sa hauteur.
+            Vec3d arrival = frame.destinationPos();
+            context.assertTrue(frame.crossingPointFacesArrival(player, arrival.x, arrival.y - 1.0, arrival.z + 0.3),
+                    "Les yeux dans l'ouverture d'arrivee : un joueur y est engage au retour.");
+            context.assertTrue(!frame.crossingPointFacesArrival(player, arrival.x, arrival.y - 0.2, arrival.z + 0.3),
+                    "Les yeux au-dessus de l'ouverture d'arrivee : un joueur n'y est pas engage.");
+            context.assertTrue(frame.crossingPointFacesArrival(item, arrival.x, arrival.y - 0.2, arrival.z + 0.3),
+                    "Un objet, aux pieds, l'est a cette hauteur.");
+        } finally {
+            GameTestPlayers.disconnect(real);
+            item.discard();
+            discard(frame, low);
+        }
+        context.complete();
+    }
+
     private static void fill(TestContext context, BlockPos from, BlockPos to, Block block) {
         for (BlockPos pos : BlockPos.iterate(from, to)) {
             context.setBlockState(pos, block);

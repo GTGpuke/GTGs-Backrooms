@@ -62,6 +62,7 @@ public final class RemoteWorldRegistry {
     private static final String PERF_WORLD_CREATE = "client.portal.world_create";
     private static final String PERF_MIRROR_CREATE = "client.portal.mirror_create";
     private static final String PERF_TICK = "client.portal.tick";
+    private static final String PERF_WORLD_RELEASE = "client.portal.world_release";
 
     private RemoteWorldRegistry() {
         throw new UnsupportedOperationException("Classe de registre.");
@@ -197,6 +198,47 @@ public final class RemoteWorldRegistry {
         return WORLD_LIST.get(index).world();
     }
 
+    /**
+     * Le serveur libere une dimension distante : plus aucun portail a portee ne la montre depuis un moment (reglage
+     * {@code remoteWorldReleaseSeconds}). Son monde, ses chunks, ses entites, ses vues secondaires et son renderer sont
+     * jetes ; le serveur l'annoncera de nouveau, sous le meme index, avant d'en renvoyer les chunks. Le monde principal
+     * n'est jamais jete, ni le renderer vanilla (celui que vanilla recharge avec les ressources), qui perd seulement son
+     * monde et ses sections.
+     *
+     * @param dimension dimension liberee, ou {@code null} : index jamais annonce
+     */
+    @SuppressWarnings("try")
+    public static void release(@Nullable RegistryKey<World> dimension) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        RemoteWorld remote = dimension == null ? null : WORLDS.get(dimension);
+        if (remote == null || remote.world() == client.world) {
+            return;
+        }
+        WORLDS.remove(dimension);
+        WORLD_LIST.remove(remote);
+        // Vide d'abord (chunks, lumiere, entities) : ce qui garderait encore le monde ne garde qu'un monde vide.
+        try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_WORLD_RELEASE)) {
+            remote.clear();
+        }
+        ClientPortalIndex.forget(remote.world());
+        ViewLightmaps.forget(remote.world());
+        for (int i = MIRRORS.size() - 1; i >= 0; i--) {
+            RemoteWorld mirror = MIRRORS.get(i);
+            if (mirror.world() == remote.world()) {
+                mirror.dispose();
+                MIRRORS.remove(i);
+            }
+        }
+        if (remote.renderer() == vanillaRenderer) {
+            vanillaRenderer.setWorld(null);
+        } else {
+            remote.dispose();
+        }
+        // Detacher un renderer debranche le repartiteur d'entities partage : on le rend au monde principal.
+        client.getEntityRenderDispatcher().setWorld(client.world);
+        ModConstants.LOGGER.debug("[Portal] Monde distant libere : {}.", dimension.getValue());
+    }
+
     /** Oublie tous les mondes distants si le monde principal n'est plus celui de la derniere operation. */
     public static void syncWithMainWorld(@Nullable ClientWorld currentMainWorld) {
         if (currentMainWorld != mainWorld) {
@@ -235,7 +277,7 @@ public final class RemoteWorldRegistry {
         WORLDS.remove(promoted.world().getRegistryKey());
         WORLD_LIST.remove(promoted);
         // Les particules du monde d'arrivee deviennent celles du gestionnaire, celles de l'ancien monde le suivent : rien ne s'efface.
-        RemoteParticles oldParticles = promoted.particles();
+        RemoteParticles oldParticles = promoted.takeParticles();
         oldParticles.exchange(MinecraftClient.getInstance().particleManager);
         RemoteWorld adopted = RemoteWorld.adopt(oldWorld, oldRenderer, playerChunkX, playerChunkZ, oldParticles);
         WORLDS.put(oldWorld.getRegistryKey(), adopted);

@@ -39,7 +39,7 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
 - `compat/iris/` : compatibilité avec le mod de shaders Iris, seul mod nommé dans le code (exception accordée) : son API publique dit si un pack est actif, et les vues de portail se dessinent alors après l'image (`ShaderPackPortalRenderer`). Dépendance `modCompileOnly` depuis le maven Modrinth, jamais embarquée ni requise.
-- `mixin/` : commun (relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
+- `mixin/` : commun (relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, monde de création du joueur suivi aux traversées, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
 - `src/gametest/` : tests en jeu, mod séparé `gtgs_backrooms_gametest` chargé par `runGameTest` seulement (jamais dans le JAR, `verifyJarContents` le vérifie).
 
 ## Règles de code
@@ -206,6 +206,18 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 - Sortie fugace et traversée prédite : le serveur supprime le retour d'une sortie fugace perdue de vue et ne le repose
   qu'à l'annonce du passage par l'entrée, après la bascule du client ; un retour prédit (`ClientPortalIndex.predict`)
   tient sa place chez le client, sinon le joueur qui se retourne voit ce qu'il y a derrière le cadre.
+- Monde client gardé après une traversée par portail : le joueur garde à part le monde où vanilla l'a créé
+  (`AbstractClientPlayerEntity.clientWorld`, final, que vanilla ne relit pas : `ClientPortalCrossing` le suit par un
+  accesseur `@Mutable`), l'état de chargement du gestionnaire (`ClientPlayNetworkHandler.worldLoadingState`, vidé
+  seulement à la déconnexion) et le contexte de rendu que Fabric API ajoute à chaque `WorldRenderer` (posé au seul rendu
+  de ce renderer) gardent le monde de la dernière entrée vanilla. Un monde distant libéré se vide donc avant d'être jeté
+  (`RemoteWorld.clear`, avant de détacher son renderer, que les déchargements préviennent). Pour trouver ce qui retient
+  un objet : vidage du tas du client de banc (`jmap -dump:live`), puis plus court chemin depuis les racines du GC.
+- Géométrie posée dans le plan d'une face de bloc (zone d'un cadre plaqué sur un mur ou posé sur un sol plein) : un
+  `glPolygonOffset` de quelques unités suffit de loin, pas de près, où l'imprécision des positions du terrain (en
+  flottants, relatives à leur section) vaut des centaines d'unités de profondeur ; à quelques centimètres de la caméra,
+  la face du bloc l'emporte. Avancer la géométrie d'une distance fixe vers la caméra (`FrameAreaRenderer.TOWARD_CAMERA`,
+  un dixième de millimètre : un millimètre déplaçait déjà ses bords d'un pixel par endroits).
 - Rendu au milieu de `WorldRenderer.render` (les portails passent avant la couche translucide) : les couches de terrain et
   d'entités vanilla supposent l'élimination des faces arrière active, `RenderPhase.ENABLE_CULLING` ne l'active pas ; un
   `disableCull` laissé actif fait dessiner les deux faces de l'eau et du verre (opacité doublée). Ne couper le culling
@@ -227,8 +239,8 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   (`EntityHandover` garde l'ancienne jusqu'à l'arrivée de la nouvelle, dessinée ensuite des deux côtés par
   `StraddlingEntityRenderer`). Une décision de rendu se prend sur la position affichée (`lerp(tickDelta, lastRenderX,
   getX())`), jamais sur celle du tick, qui a jusqu'à un tick d'avance, et au point de traversée, comme la traversée
-  (`crossingPointFaces`, `crossingPointFacesArrival` : les yeux pour un cadre couché), jamais aux pieds : sur un cadre au
-  sol, les pieds passent le plan bien avant les yeux.
+  (`crossingPointFaces`, `crossingPointFacesArrival` : les yeux pour un joueur ou un cadre couché, les pieds sinon),
+  jamais aux pieds d'office : sur un cadre au sol, les pieds d'une entité passent le plan bien avant ses yeux.
 - Moteur de lumière (sources virtuelles, celles de la lumière transmise par les portails) : `ChunkBlockLightProvider.getLightSourceLuminance` est l'entrée des sources
   des mises à jour (`checkBlock`) ; l'éclairage initial d'un chunk lit `getLuminance()` sans elle, et la lumière sauvée
   avec un chunk revient telle quelle (re-signaler ce qui manque ou ce qui a pu s'éteindre). Le moteur serveur
@@ -327,6 +339,19 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   distant du client) peuvent partager : une table par entity est une `IdentityHashMap`, une liste tenue à côté se vide
   par identité. Un tick la parcourt par index : l'itérateur d'une `IdentityHashMap` alloue une entrée par élément
   (`PortalCollision.Side`).
+- Chunks côté serveur : `World.isChunkLoaded` (`ServerChunkManager`) ne regarde que le niveau du holder (ticket ≤ 33) :
+  vrai dès qu'un ticket est posé, avant toute génération, et la première lecture d'un bloc génère alors le chunk sur le
+  thread serveur. Un chunk entier et accessible se teste sans attendre par `getChunkManager().getWorldChunk(x, z) != null`
+  (`ChunkHolder.getOrNull(FULL)`). Un ticket de rayon 0 demande le statut entier ; vanilla génère sur ses threads de
+  travail et finit le chunk (conversion, lumière) par des tâches du thread serveur exécutées dans le temps libre du tick.
+  Le serveur de test tique en une fraction de milliseconde (mille ticks en 0,15 s au repos) : un chunk demandé par
+  ticket y met des milliers de ticks à être entier (le temps mural de sa génération, 0,3 s pour un chunk du Nether sur
+  le PC de référence) ; attendre son état, pas un nombre de ticks, avec une limite de ticks large.
+- Génération vanilla non déterministe près des bords de chunks : charger un chunk entier demande les features de ses huit
+  voisins, posées par les threads de travail dans un ordre qui change d'un lancement à l'autre ; une feature qui déborde
+  sur le chunk d'à côté (colonnes de basalte des deltas, arbres) donne un terrain différent d'un monde neuf à l'autre,
+  à graine égale. Un test qui fige une arrivée prépare son terrain chunk par chunk au statut `FEATURES` dans un ordre
+  fixe (`PortalArrivalReferenceGameTests.prepare`).
 - L'extension Java de VSCode compile avec JDT dans `build/classes/java/main` (même dossier que Gradle) ; avec un modèle de projet périmé, elle y écrit des classes `Unresolved compilation problems` qui font planter le client au chargement. L'autobuild est coupé dans `.vscode/settings.json` ; ne jamais le réactiver sans un import Gradle sain (JDK 21).
 
 ## Avant de push

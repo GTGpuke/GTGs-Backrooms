@@ -210,6 +210,18 @@ class PortalCollisionTest {
     }
 
     @Test
+    @DisplayName("Les quatre bords d'un cadre entourent l'ouverture d'un demi-bloc, du plan a un demi-bloc derriere")
+    void frameEdgesSurroundTheOpening() {
+        // Cadre 1 x 2 oriente nord en (0, 64, 0) : ouverture x -0,5..0,5, y 63..65 ; derriere le plan, z 0..0,5.
+        Box[] edges = PortalCollision.frameEdges(northPortal());
+        assertEquals(4, edges.length, "Quatre bords.");
+        assertBox(new Box(-1.0, 62.5, 0.0, -0.5, 65.5, 0.5), edges[0], "Bord a l'ouest, coins compris.");
+        assertBox(new Box(0.5, 62.5, 0.0, 1.0, 65.5, 0.5), edges[1], "Bord a l'est, coins compris.");
+        assertBox(new Box(-0.5, 65.0, 0.0, 0.5, 65.5, 0.5), edges[2], "Bord du haut.");
+        assertBox(new Box(-0.5, 62.5, 0.0, 0.5, 63.0, 0.5), edges[3], "Bord du bas.");
+    }
+
+    @Test
     @DisplayName("L'ouverture fermee (paroi d'un bord, sol d'une garde) va du plan a un demi-bloc derriere")
     void closedOpeningRunsFromThePlaneBehindIt() {
         BackroomsPortalEntity floor = BackroomsPortalEntity.builder(null).position(new Vec3d(0.5, 64.0, 0.0)).facingSource(PortalFacing.UP)

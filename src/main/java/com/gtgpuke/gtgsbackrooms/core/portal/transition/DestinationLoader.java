@@ -30,28 +30,29 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntityRegistry;
 
 /**
- * Garde charges les chunks d'arrivee des portails qu'un joueur regarde.
+ * Garde charges les chunks d'arrivee des portails a portee d'un joueur (portee de rendu, quelle que soit la direction
+ * de son regard).
  *
  * <p>Un ticket de chunk par fenetre d'arrivee, partage entre les portails qui menent au meme endroit
- * et retire dix secondes apres que plus aucun joueur ne regarde : un coup d'oeil ailleurs ne decharge
+ * et retire dix secondes apres que plus aucun joueur n'est a portee : un pas au-dela ne decharge
  * rien, et la fenetre survit a celle du client, dechargee avant elle. Le chargement reste asynchrone : la synchronisation
  * vers le client envoie chaque chunk des qu'il est pret.
  */
 public final class DestinationLoader {
 
-    /** Intervalle de reevaluation des portails regardes. */
+    /** Intervalle de reevaluation des portails a portee. */
     private static final int CHECK_INTERVAL_TICKS = 10;
     /** A cette distance d'un portail, la traversee est imminente : fenetre synchronisee plus large, arrivee chargee comme si le joueur y etait. */
     private static final double NEAR_DISTANCE_BLOCKS = 8.0;
     /** Chunks ajoutes au rayon de la fenetre synchronisee quand le joueur est pres du portail. */
     private static final int NEAR_EXTRA_RADIUS = 2;
-    /** Ticks pendant lesquels une fenetre reste chargee apres que plus personne ne regarde son portail : plus que la fenetre client. */
+    /** Ticks pendant lesquels une fenetre reste chargee apres que plus personne n'est a portee de son portail : plus que la fenetre client. */
     private static final int RELEASE_GRACE_TICKS = 200;
     private static final String PERF_DESTINATION_TICK = "portal.destination.tick";
 
     private static final ChunkTicketType<ChunkPos> TICKET_TYPE =
             ChunkTicketType.create("gtgsbackrooms_portal", Comparator.comparingLong(ChunkPos::toLong));
-    /** Cote quitte par un joueur qui change de dimension, tenu autant qu'une fenetre qu'on cesse de regarder. */
+    /** Cote quitte par un joueur qui change de dimension, tenu autant qu'une fenetre dont on s'eloigne. */
     private static final ChunkTicketType<ChunkPos> DEPARTURE_TICKET_TYPE =
             ChunkTicketType.create("gtgsbackrooms_portal_departure", Comparator.comparingLong(ChunkPos::toLong), RELEASE_GRACE_TICKS);
     /** Fenetre tenue par chaque portail precharge. */
@@ -62,7 +63,7 @@ public final class DestinationLoader {
     private static final Map<DestinationWindow, Integer> TICKET_RADIUS = new HashMap<>();
     private static final Map<DestinationWindow, Integer> WANTED_RADIUS_SCRATCH = new HashMap<>();
     private static final List<UUID> RELEASE_SCRATCH = new ArrayList<>();
-    /** Tick ou chaque portail actif a cesse d'etre regarde ; absent tant qu'il l'est. */
+    /** Tick ou chaque portail actif a cesse d'avoir un joueur a portee ; absent tant qu'il en a un. */
     private static final Object2LongMap<UUID> UNWATCHED_SINCE = new Object2LongOpenHashMap<>();
     private static boolean initialized;
 
@@ -210,7 +211,7 @@ public final class DestinationLoader {
         List<ServerPlayerEntity> players = world.getPlayers();
         for (int i = 0; i < players.size(); i++) {
             ServerPlayerEntity player = players.get(i);
-            if (PortalRelevance.isRelevant(player, portal.getPos(), PortalRelevance.MAX_DISTANCE)) {
+            if (PortalRelevance.isInRange(player, portal.getPos(), PortalRelevance.MAX_DISTANCE)) {
                 return true;
             }
         }

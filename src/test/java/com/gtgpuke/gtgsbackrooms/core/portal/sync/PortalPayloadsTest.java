@@ -74,6 +74,14 @@ class PortalPayloadsTest {
     }
 
     @Test
+    @DisplayName("La liberation d'une dimension survit a un aller-retour reseau avec son index")
+    void dimensionReleaseRoundTrip() {
+        RemoteDimensionReleasePayload payload = new RemoteDimensionReleasePayload(3);
+        assertEquals(payload, roundTrip(RemoteDimensionReleasePayload.CODEC, payload), "Aller-retour identique.");
+        assertEquals(RemoteDimensionReleasePayload.ID, payload.getId(), "Identifiant du payload.");
+    }
+
+    @Test
     @DisplayName("La mise a jour de bloc transporte l'etat complet, proprietes comprises")
     void blockUpdatePayload() {
         RemoteBlockUpdatePayload payload = new RemoteBlockUpdatePayload(

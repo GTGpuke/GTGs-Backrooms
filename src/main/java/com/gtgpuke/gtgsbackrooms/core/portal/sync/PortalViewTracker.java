@@ -2,8 +2,10 @@ package com.gtgpuke.gtgsbackrooms.core.portal.sync;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import it.unimi.dsi.fastutil.longs.LongIterator;
@@ -14,6 +16,7 @@ import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.SharedConstants;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.network.listener.ClientPlayPacketListener;
@@ -41,6 +44,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 
+import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntityRegistry;
@@ -53,11 +57,11 @@ import com.gtgpuke.gtgsbackrooms.mixin.EntityTrackerEntryAccessor;
  * Envoie a chaque joueur ce qu'il voit a travers ses portails, et le tient a jour : chunks, blocs et entities.
  *
  * <p>Vanilla ne synchronise qu'une dimension par joueur : celle ou il se trouve. Pour montrer l'autre
- * cote d'un portail, le serveur choisit pour chaque dimension distante un foyer (le portail regarde le
- * plus proche), envoie la fenetre de chunks autour de son arrivee, relaie les changements de blocs,
- * branche le joueur sur le suivi des entities de la fenetre, et retire tout ce qui n'est plus regarde.
- * Tout vit sur le thread serveur ; les structures sont reutilisees d'un tick a l'autre pour ne rien
- * allouer quand personne ne regarde de portail.
+ * cote d'un portail, le serveur choisit pour chaque dimension distante un foyer (le portail a portee le
+ * plus proche, devant le joueur ou dans son dos), envoie la fenetre de chunks autour de son arrivee, relaie les
+ * changements de blocs, branche le joueur sur le suivi des entities de la fenetre, et retire tout ce qui n'est
+ * plus a portee. Tout vit sur le thread serveur ; les structures sont reutilisees d'un tick a l'autre pour ne rien
+ * allouer quand personne n'a de portail a portee.
  */
 public final class PortalViewTracker {
 
@@ -65,8 +69,16 @@ public final class PortalViewTracker {
     static final int UPDATE_INTERVAL_TICKS = 5;
     /** Chunks complets envoyes au plus par joueur et par recalcul, pour lisser la bande passante. */
     static final int MAX_CHUNKS_PER_UPDATE = 8;
-    /** Delai avant de decharger une dimension que le joueur ne regarde plus : un demi-tour ne doit pas tout renvoyer. */
+    /** Delai avant de decharger une dimension dont le joueur n'a plus aucun portail a portee : un pas au-dela ne doit pas tout renvoyer. */
     static final int UNLOAD_GRACE_TICKS = 100;
+    /**
+     * Ticks sans aucun portail a portee vers une dimension avant de demander au client d'en liberer le monde distant
+     * (chunks, entites, renderer), jamais moins que le delai de grace qui decharge sa fenetre. Un retour apres ce delai
+     * voit la vue se reconstruire, le temps de renvoyer la fenetre (decision de l'auteur du 25 octobre 2026, C63 du bilan
+     * de {@code docs/revue/}).
+     */
+    static final int RELEASE_DELAY_TICKS =
+            Math.max(UNLOAD_GRACE_TICKS, ModConfig.PORTAL_REMOTE_WORLD_RELEASE_SECONDS * SharedConstants.TICKS_PER_SECOND);
     private static final String PERF_SYNC_TICK = "portal.sync.tick";
     private static final String PERF_SYNC_CHUNKS = "portal.sync.chunks";
     private static final String PERF_SYNC_ENTITIES = "portal.sync.entities";
@@ -110,6 +122,8 @@ public final class PortalViewTracker {
         final Map<RegistryKey<World>, LongSet> pendingBlockUpdates = new HashMap<>();
         final Map<RegistryKey<World>, RemoteEntityView> entities = new HashMap<>();
         final List<RegistryKey<World>> announcedDimensions = new ArrayList<>();
+        /** Dimensions annoncees dont le client a ete prie de liberer le monde : a annoncer de nouveau avant tout envoi. */
+        final Set<RegistryKey<World>> releasedDimensions = new HashSet<>();
         /** Dernier tick ou chaque dimension etait voulue (zero si jamais). */
         final Object2LongMap<RegistryKey<World>> lastWantedTick = new Object2LongOpenHashMap<>();
         boolean hasPendingBlockUpdates;
@@ -418,8 +432,12 @@ public final class PortalViewTracker {
         for (Map.Entry<RegistryKey<World>, LongSet> entry : view.sentChunks.entrySet()) {
             // Toute dimension deja synchronisee a son ensemble voulu : les ensembles ne quittent jamais WANTED_SCRATCH.
             boolean unwanted = WANTED_SCRATCH.get(entry.getKey()).isEmpty();
-            if (unwanted && tick - view.lastWantedTick.getLong(entry.getKey()) > UNLOAD_GRACE_TICKS) {
+            long unwantedFor = tick - view.lastWantedTick.getLong(entry.getKey());
+            if (unwanted && unwantedFor > UNLOAD_GRACE_TICKS) {
                 unloadAll(server, player, view, entry.getKey(), entry.getValue());
+            }
+            if (unwanted && unwantedFor > RELEASE_DELAY_TICKS) {
+                release(server, player, view, entry.getKey(), entry.getValue());
             }
         }
         for (int i = 0; i < DIMENSION_SCRATCH.size(); i++) {
@@ -428,7 +446,7 @@ public final class PortalViewTracker {
         }
     }
 
-    /** Portails du monde du joueur qu'il regarde et qui menent dans une autre dimension. */
+    /** Portails du monde du joueur a sa portee de rendu, devant comme dans son dos, qui menent dans une autre dimension. */
     private static void collectRelevantPortals(ServerPlayerEntity player, ServerWorld world) {
         RELEVANT_SCRATCH.clear();
         List<BackroomsPortalEntity> portals = BackroomsPortalEntityRegistry.all();
@@ -437,7 +455,7 @@ public final class PortalViewTracker {
             if (portal.getWorld() != world || !portal.visible() || portal.destinationDim().equals(world.getRegistryKey())) {
                 continue;
             }
-            if (PortalRelevance.isRelevant(player, portal.getPos(), PortalRelevance.MAX_DISTANCE)) {
+            if (PortalRelevance.isInRange(player, portal.getPos(), PortalRelevance.MAX_DISTANCE)) {
                 RELEVANT_SCRATCH.add(portal);
             }
         }
@@ -540,18 +558,35 @@ public final class PortalViewTracker {
      * Annonce la dimension au joueur si ce n'est pas deja fait, et rend son index chez lui : l'ordre des annonces de la vue.
      * Les payloads frequents (entities, blocs, dechargements) portent cet index, un octet, a la place de l'identifiant ;
      * le client le resout par la derniere annonce recue pour cet index, et l'ordre des paquets d'une connexion garantit
-     * qu'une annonce precede tout ce qui s'en reclame.
+     * qu'une annonce precede tout ce qui s'en reclame. Une dimension dont le monde a ete libere ({@link #release}) est
+     * annoncee de nouveau, sous le meme index, avant tout nouvel envoi.
      */
     private static int announceDimension(ServerPlayerEntity player, PlayerView view, ServerWorld destination) {
         RegistryKey<World> dimension = destination.getRegistryKey();
         int index = view.announcedDimensions.indexOf(dimension);
-        if (index >= 0) {
+        if (index >= 0 && !view.releasedDimensions.remove(dimension)) {
             return index;
         }
-        index = view.announcedDimensions.size();
+        if (index < 0) {
+            index = view.announcedDimensions.size();
+            view.announcedDimensions.add(dimension);
+        }
         PortalNetwork.send(player, RemoteDimensionPayload.of(destination, index));
-        view.announcedDimensions.add(dimension);
         return index;
+    }
+
+    /**
+     * Demande au client de liberer le monde distant d'une dimension que plus aucun portail a portee ne montre depuis
+     * {@link #RELEASE_DELAY_TICKS} : sa fenetre, dechargee depuis le delai de grace, ne lui laissait que son monde, ses
+     * entites et son renderer. Une fois par liberation ; la dimension garde son index et sera annoncee de nouveau avant
+     * tout nouvel envoi.
+     */
+    private static void release(MinecraftServer server, ServerPlayerEntity player, PlayerView view, RegistryKey<World> dimension, LongSet sent) {
+        if (!view.releasedDimensions.add(dimension)) {
+            return;
+        }
+        unloadAll(server, player, view, dimension, sent);
+        PortalNetwork.send(player, new RemoteDimensionReleasePayload(view.announcedDimensions.indexOf(dimension)));
     }
 
     private static void unloadAll(MinecraftServer server, ServerPlayerEntity player, PlayerView view, RegistryKey<World> dimension, LongSet sent) {

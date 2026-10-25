@@ -7,6 +7,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.network.listener.ClientPlayPacketListener;
@@ -348,15 +349,42 @@ public class BackroomsPortalEntity extends Entity {
      * {@code true} si un point est en face de l'ouverture, dans la largeur du cadre : une entity dont le centre passe le
      * plan ici entre dans le portail ; a cote, elle le contourne, meme si son epaule frole le bord. Pour un cadre couche,
      * dont la hauteur est horizontale elle aussi, dans sa hauteur aussi : qui arrive de cote n'est pas au-dessus (ou
-     * au-dessous) de l'ouverture tant qu'il n'a pas franchi son bord.
+     * au-dessous) de l'ouverture tant qu'il n'a pas franchi son bord. Un cadre debout laisse passer un point a toute
+     * hauteur : les pieds d'un mob ; pour un joueur, dont la tete doit passer, {@link #withinOpening(Entity, double,
+     * double, double)}.
      */
     public boolean withinFrameWidth(double x, double y, double z) {
         return facesOpening(facingSource(), getPos(), width(), height(), x, y, z);
     }
 
-    /** Comme {@link #withinFrameWidth}, pour le cadre d'arrivee : un point du monde d'arrivee en face de son ouverture. */
-    public boolean withinArrivalWidth(double x, double y, double z) {
-        return facesOpening(facingDestination(), destinationPos(), width(), height(), x, y, z);
+    /**
+     * {@code true} si le point qui decide de la traversee d'une entity est en face de l'ouverture : dans sa largeur, et dans
+     * sa hauteur aussi pour un joueur (ses yeux doivent passer l'ouverture, un cadre trop bas l'arrete) ou un cadre couche.
+     */
+    public boolean withinOpening(Entity entity, double x, double y, double z) {
+        return withinOpening(entity instanceof PlayerEntity, x, y, z);
+    }
+
+    /**
+     * Comme {@link #withinOpening(Entity, double, double, double)}, la hauteur verifiee d'office si {@code fullHeight}.
+     *
+     * @param fullHeight {@code true} pour verifier la hauteur meme sur un cadre debout : le point d'un joueur
+     */
+    public boolean withinOpening(boolean fullHeight, double x, double y, double z) {
+        return facesOpening(facingSource(), getPos(), width(), height(), x, y, z, fullHeight);
+    }
+
+    /** Comme {@link #withinOpening(Entity, double, double, double)}, pour le cadre d'arrivee. */
+    public boolean withinArrivalOpening(Entity entity, double x, double y, double z) {
+        return withinArrivalOpening(entity instanceof PlayerEntity, x, y, z);
+    }
+
+    /**
+     * Comme {@link #withinOpening(boolean, double, double, double)}, pour le cadre d'arrivee : un point du monde d'arrivee
+     * en face de son ouverture.
+     */
+    public boolean withinArrivalOpening(boolean fullHeight, double x, double y, double z) {
+        return facesOpening(facingDestination(), destinationPos(), width(), height(), x, y, z, fullHeight);
     }
 
     /**
@@ -369,13 +397,21 @@ public class BackroomsPortalEntity extends Entity {
      * @param height hauteur du cadre, en blocs
      */
     public static boolean facesOpening(PortalFacing facing, Vec3d center, float width, float height, double x, double y, double z) {
+        return facesOpening(facing, center, width, height, x, y, z, false);
+    }
+
+    /**
+     * Comme {@link #facesOpening(PortalFacing, Vec3d, float, float, double, double, double)}, la hauteur verifiee d'office
+     * si {@code fullHeight}, meme sur un cadre debout.
+     */
+    public static boolean facesOpening(PortalFacing facing, Vec3d center, float width, float height, double x, double y, double z, boolean fullHeight) {
         double dx = x - center.x;
         double dy = y - center.y;
         double dz = z - center.z;
         if (Math.abs(dx * facing.axisW.x + dy * facing.axisW.y + dz * facing.axisW.z) > width / 2.0) {
             return false;
         }
-        return facing.normal.y == 0.0 || Math.abs(dx * facing.axisH.x + dy * facing.axisH.y + dz * facing.axisH.z) <= height / 2.0;
+        return !fullHeight && facing.normal.y == 0.0 || Math.abs(dx * facing.axisH.x + dy * facing.axisH.y + dz * facing.axisH.z) <= height / 2.0;
     }
 
     /**
@@ -473,24 +509,31 @@ public class BackroomsPortalEntity extends Entity {
     }
 
     /**
-     * Hauteur, au-dessus des pieds, du point d'une entity qui decide de sa traversee de ce portail : ses yeux pour un cadre
-     * couche (au sol, on y tombe la tete la derniere ; au plafond, on y monte la tete la premiere) : la vue bascule avec la
-     * camera, qui ne passe jamais le plan avant elle, meme contre un bloc ; ses pieds pour un cadre debout (on y entre de
-     * front, les yeux au-dessus des pieds).
+     * Hauteur, au-dessus des pieds, du point d'une entity qui decide de sa traversee de ce portail. Pour un joueur, ses
+     * yeux quel que soit le cadre : la vue bascule avec la camera, qui ne passe jamais le plan avant elle, et ce sont sa
+     * tete et ses epaules qui doivent passer l'ouverture, pas ses pieds (un cadre trop bas l'arrete au front, un cadre
+     * sureleve se passe la tete dedans ; decision de l'auteur du 25 octobre 2026). Pour les autres entities, leurs yeux
+     * pour un cadre couche (au sol, on y tombe la tete la derniere ; au plafond, on y monte la tete la premiere), leurs
+     * pieds pour un cadre debout (on y entre de front, les yeux au-dessus des pieds).
      */
     public double crossingHeight(Entity entity) {
-        return facingSource().normal.y != 0.0 ? entity.getEyeY() - entity.getY() : 0.0;
+        return crossingHeight(entity, facingSource());
+    }
+
+    /** Meme hauteur pour un cadre de l'orientation donnee : celle de l'arrivee pour le retour. */
+    private static double crossingHeight(Entity entity, PortalFacing facing) {
+        return entity instanceof PlayerEntity || facing.normal.y != 0.0 ? entity.getEyeY() - entity.getY() : 0.0;
     }
 
     /**
      * {@code true} si le point qui decide de la traversee d'une entity ({@link #crossingHeight}), ses pieds en (x, y, z), est
      * devant le plan et en face de l'ouverture : elle n'a pas encore traverse, et ce qui d'elle touche le cadre y entre.
-     * Le rendu qui la coupe au plan en decide comme la traversee : sur un cadre au sol, les pieds passent le plan bien avant
-     * les yeux.
+     * Le rendu qui la coupe au plan en decide comme la traversee : sur un cadre au sol, les pieds d'une entity passent le
+     * plan bien avant ses yeux.
      */
     public boolean crossingPointFaces(Entity entity, double x, double y, double z) {
         double crossingY = y + crossingHeight(entity);
-        return signedDistance(x, crossingY, z) > 0.0 && withinFrameWidth(x, crossingY, z);
+        return signedDistance(x, crossingY, z) > 0.0 && withinOpening(entity, x, crossingY, z);
     }
 
     /**
@@ -500,10 +543,10 @@ public class BackroomsPortalEntity extends Entity {
      */
     public boolean crossingPointFacesArrival(Entity entity, double x, double y, double z) {
         PortalFacing arrival = facingDestination();
-        double crossingY = y + (arrival.normal.y != 0.0 ? entity.getEyeY() - entity.getY() : 0.0);
+        double crossingY = y + crossingHeight(entity, arrival);
         Vec3d center = destinationPos();
         return (x - center.x) * arrival.normal.x + (crossingY - center.y) * arrival.normal.y + (z - center.z) * arrival.normal.z > 0.0
-                && withinArrivalWidth(x, crossingY, z);
+                && withinArrivalOpening(entity, x, crossingY, z);
     }
 
     /** Variante sans allocation de {@link #signedDistance(Vec3d)}. */

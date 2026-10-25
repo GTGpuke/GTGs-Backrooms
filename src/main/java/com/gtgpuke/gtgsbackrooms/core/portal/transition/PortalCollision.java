@@ -8,6 +8,7 @@ import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -98,6 +99,11 @@ public final class PortalCollision {
     /** Epaisseur, derriere le plan, de l'ouverture fermee ({@link #closedOpening}) : paroi d'un bord, sol d'une garde. */
     static final double CLOSED_DEPTH = 0.5;
     /**
+     * Largeur, hors de l'ouverture, des bords d'un cadre pour un joueur : une petite paroi contre laquelle sa tete ou ses
+     * epaules butent, et le long de laquelle il glisse jusqu'a s'aligner.
+     */
+    static final double EDGE_REACH = 0.5;
+    /**
      * Ticks pendant lesquels une entity reste engagee apres l'avoir ete, son point de traversee passe derriere le plan : au
      * plus le delai que le serveur laisse au client pour annoncer sa traversee, et de la marge. {@link #tick} oublie
      * ensuite l'engagement.
@@ -155,6 +161,9 @@ public final class PortalCollision {
                     result = editable(result, collisions);
                     addOtherSide(portal, destination, movingBox, result);
                 }
+                if (entity instanceof PlayerEntity) {
+                    result = withFrameEdges(portal, movingBox, result, collisions);
+                }
             } else if (walls(portal, entity, movingBox)) {
                 result = withClosedOpening(portal, movingBox, result, collisions);
             }
@@ -164,6 +173,50 @@ public final class PortalCollision {
 
     private static List<VoxelShape> editable(List<VoxelShape> result, List<VoxelShape> collisions) {
         return result == collisions ? new ArrayList<>(collisions) : result;
+    }
+
+    /**
+     * Les quatre bords d'un cadre, pour un joueur engage dedans : de minces parois autour de l'ouverture, du plan a
+     * {@value #CLOSED_DEPTH} bloc derriere comme l'ouverture fermee, d'{@value #EDGE_REACH} bloc hors de l'ouverture, coins
+     * compris. Sa tete et ses epaules doivent passer l'ouverture : un cadre trop bas l'arrete au front, un cadre sureleve
+     * se saute, un cadre etroit se passe aligne (decision de l'auteur du 25 octobre 2026). Les autres entities gardent
+     * la seule ouverture fermee ({@link #walls}) : leur point de traversee decide seul.
+     */
+    static Box[] frameEdges(BackroomsPortalEntity portal) {
+        PortalFacing facing = portal.facingSource();
+        Vec3d center = portal.getPos();
+        Vec3d depth = facing.normal.multiply(CLOSED_DEPTH);
+        double halfWidth = portal.width() / 2.0;
+        double halfHeight = portal.height() / 2.0;
+        return new Box[] {
+            edge(center, facing, depth, halfWidth, halfWidth + EDGE_REACH, -halfHeight - EDGE_REACH, halfHeight + EDGE_REACH),
+            edge(center, facing, depth, -halfWidth - EDGE_REACH, -halfWidth, -halfHeight - EDGE_REACH, halfHeight + EDGE_REACH),
+            edge(center, facing, depth, -halfWidth, halfWidth, halfHeight, halfHeight + EDGE_REACH),
+            edge(center, facing, depth, -halfWidth, halfWidth, -halfHeight - EDGE_REACH, -halfHeight),
+        };
+    }
+
+    /** Boite d'un bord : de {@code w1} a {@code w2} le long de la largeur, de {@code h1} a {@code h2} le long de la hauteur, du plan a {@code depth} derriere. */
+    private static Box edge(Vec3d center, PortalFacing facing, Vec3d depth, double w1, double w2, double h1, double h2) {
+        Vec3d near = center.add(facing.axisW.multiply(w1)).add(facing.axisH.multiply(h1));
+        Vec3d far = center.add(facing.axisW.multiply(w2)).add(facing.axisH.multiply(h2)).subtract(depth);
+        return new Box(near, far);
+    }
+
+    /**
+     * Ajoute aux collisions les bords du cadre que la boite deplacee d'un joueur engage atteint. Comme l'autre cote et
+     * l'ouverture fermee, cela alloue (bords, formes) : pour un joueur engage dans un cadre seulement, le temps qu'il le
+     * touche.
+     */
+    private static List<VoxelShape> withFrameEdges(BackroomsPortalEntity portal, Box movingBox, List<VoxelShape> result, List<VoxelShape> collisions) {
+        List<VoxelShape> edited = result;
+        for (Box edge : frameEdges(portal)) {
+            if (edge.intersects(movingBox)) {
+                edited = editable(edited, collisions);
+                edited.add(VoxelShapes.cuboid(edge));
+            }
+        }
+        return edited;
     }
 
     /** Ajoute l'ouverture fermee du portail aux collisions, si la boite deplacee l'atteint. */
@@ -333,8 +386,8 @@ public final class PortalCollision {
     }
 
     /**
-     * L'entity a son point de traversee (pieds, ou yeux pour un cadre couche) devant le plan d'un portail ouvert, le centre
-     * en face de l'ouverture, et sa boite deplacee touche le cadre.
+     * L'entity a son point de traversee (les yeux pour un joueur ou un cadre couche, les pieds sinon) devant le plan d'un
+     * portail ouvert, en face de l'ouverture, et sa boite deplacee touche le cadre.
      */
     static boolean engages(BackroomsPortalEntity portal, Entity entity, Box movingBox) {
         return portal.teleportable()
@@ -350,7 +403,7 @@ public final class PortalCollision {
         double y = entity.getY() + portal.crossingHeight(entity);
         return portal.teleportable()
                 && portal.signedDistance(entity.getX(), y, entity.getZ()) > 0.0
-                && !portal.withinFrameWidth(entity.getX(), y, entity.getZ())
+                && !portal.withinOpening(entity, entity.getX(), y, entity.getZ())
                 && portal.detectionBox().intersects(movingBox);
     }
 

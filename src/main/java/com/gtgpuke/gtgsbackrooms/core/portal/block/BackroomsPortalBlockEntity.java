@@ -29,6 +29,7 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.GlobalPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
@@ -68,6 +69,15 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
     /** Charge le chunk d'arrivee sans bloquer le serveur : le retour y est pose des qu'il est la. */
     private static final ChunkTicketType<ChunkPos> ARRIVAL_TICKET =
             ChunkTicketType.create("gtgs_backrooms_portal_arrival", Comparator.comparingLong(ChunkPos::toLong), ARRIVAL_TICKET_TICKS);
+    /**
+     * Charge, un apres l'autre, les chunks que la recherche d'arrivee lit, sans bloquer le serveur : la recherche s'arrete
+     * au premier chunk qui n'est pas entier, le bloc le demande et rappelle a chaque tick jusqu'a ce qu'il le soit. Sans
+     * lui, la recherche genererait jusqu'a seize colonnes autour du point de depart sur le thread serveur, d'un tiers de
+     * seconde a trois secondes de gel pour tous les joueurs (bilan de performance, PERF 3.2). Un chunk a la fois : ceux que
+     * la recherche synchrone lirait, ni plus ni moins.
+     */
+    private static final ChunkTicketType<ChunkPos> SEARCH_TICKET =
+            ChunkTicketType.create("gtgs_backrooms_portal_search", Comparator.comparingLong(ChunkPos::toLong), ARRIVAL_TICKET_TICKS);
 
     /** Portails actives par le point d'entree du mod ; desactives, le bloc reste inerte, sans portail. */
     private static boolean portalsEnabled;
@@ -132,6 +142,14 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
     /** Ce bloc, dimension comprise : la sortie par laquelle un joueur arrive se reconnait a son bloc proprietaire. */
     private @Nullable GlobalPos exitOwner;
     private int ticksSinceLoad;
+    /** Un chunk de la recherche d'arrivee se charge : un essai par tick, jusqu'a ce qu'elle aboutisse. */
+    private boolean searchLoading;
+    /**
+     * Graine du tirage des X/Z de l'arrivee d'une recherche en cours, la meme d'un tick a l'autre : la recherche synchrone
+     * ne tire qu'une fois, celle-ci reprend chaque tick avec le meme tirage. Tiree au premier essai, oubliee a la resolution.
+     */
+    private long searchSeed;
+    private boolean searchSeeded;
 
     /** Block entity du bloc portail, creee par le bloc a la pose ou au chargement. */
     public BackroomsPortalBlockEntity(BlockPos pos, BlockState state) {
@@ -186,7 +204,8 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
         }
         this.ticksSinceLoad++;
         if (!isConfigured()) {
-            if (this.ticksSinceLoad % TARGET_RETRY_INTERVAL_TICKS == 1) {
+            // Tant qu'un chunk de la recherche se charge, un essai par tick ; sinon un essai periodique.
+            if (this.searchLoading || this.ticksSinceLoad % TARGET_RETRY_INTERVAL_TICKS == 1) {
                 resolveTarget(serverWorld);
             }
             return;
@@ -406,13 +425,48 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
         }
     }
 
+    /**
+     * Resout la destination chunk par chunk : la recherche lit les chunks charges et s'arrete au premier absent, que le bloc
+     * demande par un ticket avant de rappeler au tick suivant. Le resultat est celui de la recherche synchrone, inchange :
+     * seul le moment change, quelques ticks par chunk a generer vers une zone jamais visitee (vanilla le genere sur ses
+     * threads de travail), au lieu d'un gel du serveur. Entre-temps, le cadre n'est pas encore un portail. Chaque essai
+     * alloue sa recherche (tirage, resultat, chunk demande) : un essai par tick le temps de cette attente seulement, apres
+     * la pose ou le chargement du bloc.
+     */
     private void resolveTarget(ServerWorld world) {
-        PortalTargets.Target target = PortalTargets.resolve(world, this.pos, entryFacing(), this.settings);
+        if (!this.searchSeeded) {
+            this.searchSeed = world.getRandom().nextLong();
+            this.searchSeeded = true;
+        }
+        PortalTargets.Search search = PortalTargets.resolveLoadedOnly(world.getServer(), world.getRegistryKey(), this.pos, entryFacing(), this.settings,
+                Random.create(this.searchSeed));
+        if (search.waits()) {
+            // Une recherche qui attend un chunk a trouve son monde : sans lui, elle ne rend rien et n'attend pas.
+            ChunkPos missing = search.missingChunk();
+            searchWorld(world).getChunkManager().addTicket(SEARCH_TICKET, missing, 0, missing);
+            this.searchLoading = true;
+            return;
+        }
+        this.searchLoading = false;
+        this.searchSeeded = false;
+        PortalTargets.Target target = search.target();
         if (target == null) {
             ModConstants.LOGGER.debug("[Portal] Bloc portail {} sans destination pour l'instant.", this.pos);
             return;
         }
         configureTarget(target.dimension(), target.position(), target.facing());
+    }
+
+    /** Dimension ou la recherche d'arrivee lit ses chunks : celle de la sortie fixee, sinon la destination (ou le Level 0). */
+    private ServerWorld searchWorld(ServerWorld world) {
+        RegistryKey<World> dimension = this.settings.mark().map(PortalMark::dimension)
+                .orElseGet(() -> this.settings.destination().orElse(PortalTargets.automatic(world.getRegistryKey())));
+        return world.getServer().getWorld(dimension);
+    }
+
+    /** {@code true} tant que le bloc attend qu'un chunk de sa recherche d'arrivee se charge. */
+    public boolean isSearchLoading() {
+        return this.searchLoading;
     }
 
     /** Orientation d'une face : la face avant suit l'orientation donnee, la face arriere regarde a l'oppose. */

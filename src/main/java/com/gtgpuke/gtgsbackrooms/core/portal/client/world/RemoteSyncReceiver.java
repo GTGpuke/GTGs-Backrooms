@@ -19,6 +19,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteBlockUpdatePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkUnloadPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionPayload;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionReleasePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
 
 /**
@@ -43,6 +44,8 @@ public final class RemoteSyncReceiver {
                 (payload, context) -> onChunk(context.client(), payload));
         ClientPlayNetworking.registerGlobalReceiver(RemoteChunkUnloadPayload.ID,
                 (payload, context) -> onChunkUnload(context.client(), payload));
+        ClientPlayNetworking.registerGlobalReceiver(RemoteDimensionReleasePayload.ID,
+                (payload, context) -> onDimensionRelease(context.client(), payload));
         ClientPlayNetworking.registerGlobalReceiver(RemoteBlockUpdatePayload.ID,
                 (payload, context) -> onBlockUpdate(context.client(), payload));
         ClientPlayNetworking.registerGlobalReceiver(RemoteEntityPacketPayload.ID,
@@ -65,6 +68,14 @@ public final class RemoteSyncReceiver {
         if (remote != null) {
             remote.loadChunk(payload.chunkX(), payload.chunkZ(), payload.chunkData(), payload.lightData());
         }
+    }
+
+    private static void onDimensionRelease(MinecraftClient client, RemoteDimensionReleasePayload payload) {
+        if (!ModConfig.ENABLE_PORTAL_FEATURE) {
+            return;
+        }
+        RemoteWorldRegistry.syncWithMainWorld(client.world);
+        RemoteWorldRegistry.release(RemoteWorldRegistry.dimensionAt(payload.dimension()));
     }
 
     private static void onChunkUnload(MinecraftClient client, RemoteChunkUnloadPayload payload) {

@@ -111,6 +111,17 @@ public final class ViewLightmaps {
         manager.enable();
     }
 
+    /**
+     * Monde distant libere par le serveur : sa texture est detruite, et le monde n'est plus retenu par la table (sinon ses
+     * chunks et ses entites resteraient en memoire).
+     */
+    public static void forget(ClientWorld world) {
+        Lightmap lightmap = LIGHTMAPS.remove(world);
+        if (lightmap != null) {
+            MinecraftClient.getInstance().getTextureManager().destroyTexture(lightmap.id);
+        }
+    }
+
     /** Fin de session ou changement de monde vanilla : les textures des vues sont detruites. */
     public static void clear() {
         MinecraftClient client = MinecraftClient.getInstance();

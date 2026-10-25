@@ -48,6 +48,15 @@ public final class ModConfig {
     public static final int PORTAL_RENDER_DISTANCE_BLOCKS =
             intProperty("gtgsbackrooms.portal.renderDistanceBlocks", 64);
 
+    /**
+     * Secondes sans aucun portail a portee vers une dimension distante avant que le serveur ne demande au client d'en
+     * liberer le monde distant (chunks, entites, renderer) : un reglage de memoire. Un retour apres ce delai voit la vue
+     * se reconstruire, le temps de renvoyer la fenetre. Jamais moins que les cinq secondes du dechargement de la fenetre ;
+     * une valeur tres grande revient a ne jamais liberer.
+     */
+    public static final int PORTAL_REMOTE_WORLD_RELEASE_SECONDS =
+            intProperty("gtgsbackrooms.portal.remoteWorldReleaseSeconds", 60);
+
     /** Active les logs detailles du rendu de portail. */
     public static final boolean DEBUG_PORTAL_RENDERING =
             booleanProperty("gtgsbackrooms.portal.debugRendering", false);

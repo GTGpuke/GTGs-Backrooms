@@ -9,6 +9,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.SharedConstants;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.SnowBlock;
 import net.minecraft.block.entity.SignBlockEntity;
@@ -55,6 +56,7 @@ import net.minecraft.world.chunk.WorldChunk;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 
+import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntityRegistry;
@@ -65,6 +67,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteBlockUpdatePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkUnloadPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionPayload;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionReleasePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.DestinationLoader;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
@@ -90,6 +93,8 @@ public final class PortalSyncGameTests implements FabricGameTest {
     private static final List<Entity> LEFTOVERS = new ArrayList<>();
     /** Ticks laisses a la generation du Nether avant de declarer un test en echec (le serveur de test tique sans attendre). */
     private static final int SYNC_PATIENCE_TICKS = 2000;
+    /** Ticks sans portail a portee avant que le serveur ne fasse liberer un monde distant, par les reglages par defaut. */
+    private static final int RELEASE_DELAY_TICKS = ModConfig.PORTAL_REMOTE_WORLD_RELEASE_SECONDS * SharedConstants.TICKS_PER_SECOND;
     /** Arrivee du portail invisible du test de fenetre, a 480 blocs a l'ouest : ses chunks sont loin de tous les autres. */
     private static final Vec3d HIDDEN_EXIT = NETHER_EXIT.add(-480.0, 0.0, 0.0);
     /** Arrivee du second portail du test a deux dimensions, dans le vide de l'End : rien a y generer. */
@@ -290,7 +295,17 @@ public final class PortalSyncGameTests implements FabricGameTest {
                                     .anyMatch(payload -> payload.packet() instanceof EntitiesDestroyS2CPacket destroy
                                             && destroy.getEntityIds().contains(destroyedId[0])),
                                     "L'objet disparu est retire chez le joueur.");
-                            // Puis le joueur part a cent blocs : plus aucun portail regarde, tout est decharge apres le delai de grace.
+                            // Puis le joueur tourne le dos aux portails, a trente blocs : a portee de rendu, leurs fenetres restent.
+                            moveTo(player, context.getAbsolute(VIEWER).add(0.0, 0.0, -30.0), 180.0f);
+                            phase[0] = 5;
+                            phaseStart[0] = now;
+                        }
+                    }
+                    case 5 -> {
+                        if (elapsed == 120) {
+                            context.assertTrue(PortalViewTracker.watchedChunkCount() > 0,
+                                    "Dos tourne mais a portee de rendu, la fenetre reste chez le joueur, meme passe le delai de grace.");
+                            // Puis le joueur part a cent blocs : plus aucun portail a portee, tout est decharge apres le delai de grace.
                             moveTo(player, context.getAbsolute(VIEWER).add(100.0, 0.0, 0.0), 0.0f);
                             phase[0] = 4;
                             phaseStart[0] = now;
@@ -1166,6 +1181,78 @@ public final class PortalSyncGameTests implements FabricGameTest {
     /** Apres le lot du cote quitte, reussi ou non : joueur deconnecte, portail et statue retires, loin de l'arene. */
     @AfterBatch(batchId = "portal_departure")
     public void afterDeparture(ServerWorld world) {
+        releaseLeftovers();
+    }
+
+    // Deux attentes de synchronisation, le delai de liberation par defaut (1200 ticks) et une marge.
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 6000, batchId = "portal_sync_release")
+    public void aDimensionWithNoPortalInRangeIsReleasedThenAnnouncedAgain(TestContext context) {
+        prepareNether(context);
+        BackroomsPortalEntity portal = netherPortal(context);
+        LEFTOVERS.add(portal);
+        ServerPlayerEntity player = viewer(context, GameMode.CREATIVE);
+        int[] phase = {0};
+        int[] phaseStart = {0};
+        for (int tick = 1; tick < 2 * SYNC_PATIENCE_TICKS + RELEASE_DELAY_TICKS + 390; tick++) {
+            int now = tick;
+            context.runAtTick(tick, () -> {
+                int elapsed = now - phaseStart[0];
+                switch (phase[0]) {
+                    case 0 -> {
+                        // La fenetre arrive : la dimension a ete annoncee une fois, sous l'index 0.
+                        if (PortalViewTracker.watchedChunkCount() > 0) {
+                            List<RemoteDimensionPayload> announced = GameTestPlayers.sent(player, RemoteDimensionPayload.class);
+                            context.assertTrue(announced.size() == 1 && announced.get(0).index() == 0,
+                                    "Le Nether est annonce une fois, sous l'index 0 : " + announced + ".");
+                            // Puis le joueur part a cent blocs : plus aucun portail a portee.
+                            moveTo(player, context.getAbsolute(VIEWER).add(100.0, 0.0, 0.0), 0.0f);
+                            phase[0] = 1;
+                            phaseStart[0] = now;
+                        } else if (now > SYNC_PATIENCE_TICKS) {
+                            throw new GameTestException("Aucun chunk du Nether envoye au joueur en " + now + " ticks.");
+                        }
+                    }
+                    case 1 -> {
+                        if (elapsed == 120) {
+                            // Passe le delai de grace (cent ticks), la fenetre est dechargee, le monde distant garde.
+                            context.assertTrue(PortalViewTracker.watchedChunkCount() == 0
+                                    && GameTestPlayers.sent(player, RemoteDimensionReleasePayload.class).isEmpty(),
+                                    "Passe le delai de grace, la fenetre est dechargee mais le monde distant est garde.");
+                        } else if (elapsed == RELEASE_DELAY_TICKS + 20) {
+                            List<RemoteDimensionReleasePayload> released = GameTestPlayers.sent(player, RemoteDimensionReleasePayload.class);
+                            context.assertTrue(released.size() == 1 && released.get(0).dimension() == 0,
+                                    "Passe le delai de liberation, le serveur fait liberer le Nether, une fois : " + released + ".");
+                            // Le joueur revient devant le portail : le Nether est annonce de nouveau, sous le meme index, puis renvoye.
+                            moveTo(player, context.getAbsolute(VIEWER), 0.0f);
+                            phase[0] = 2;
+                            phaseStart[0] = now;
+                        }
+                    }
+                    case 2 -> {
+                        if (PortalViewTracker.watchedChunkCount() > 0) {
+                            List<RemoteDimensionPayload> again = GameTestPlayers.sent(player, RemoteDimensionPayload.class);
+                            context.assertTrue(again.size() == 1 && again.get(0).index() == 0
+                                    && !GameTestPlayers.sent(player, RemoteChunkPayload.class).isEmpty(),
+                                    "De retour, le Nether est annonce de nouveau sous l'index 0 et ses chunks renvoyes : " + again + ".");
+                            context.assertTrue(GameTestPlayers.sent(player, RemoteDimensionReleasePayload.class).isEmpty(),
+                                    "Une seule liberation, pas une par passage.");
+                            phase[0] = 3;
+                            context.complete();
+                        } else if (elapsed > SYNC_PATIENCE_TICKS) {
+                            throw new GameTestException("La fenetre n'est pas renvoyee apres la liberation.");
+                        }
+                    }
+                    default -> {
+                        // Test termine.
+                    }
+                }
+            });
+        }
+    }
+
+    /** Apres le lot de la liberation, reussi ou non : joueur deconnecte, portail retire. */
+    @AfterBatch(batchId = "portal_sync_release")
+    public void afterRelease(ServerWorld world) {
         releaseLeftovers();
     }
 

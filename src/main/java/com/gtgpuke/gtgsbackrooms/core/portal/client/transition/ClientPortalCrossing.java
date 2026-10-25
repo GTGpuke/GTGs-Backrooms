@@ -43,6 +43,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.transition.ArrivalGuard;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalCollision;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
 import com.gtgpuke.gtgsbackrooms.mixin.EntityAccessor;
+import com.gtgpuke.gtgsbackrooms.mixin.client.AbstractClientPlayerEntityAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.ClientPlayNetworkHandlerAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.LightmapTextureManagerAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.MinecraftClientAccessor;
@@ -437,6 +438,8 @@ public final class ClientPortalCrossing {
         oldWorld.removeEntity(player.getId(), Entity.RemovalReason.CHANGED_DIMENSION);
         ((EntityAccessor) player).backrooms$unsetRemoved();
         ((EntityAccessor) player).backrooms$setWorld(newWorld);
+        // Le monde ou vanilla a cree le joueur, garde a part : sans cela, il resterait vivant une fois libere.
+        ((AbstractClientPlayerEntityAccessor) player).backrooms$setClientWorld(newWorld);
         placement.run();
         newWorld.addEntity(player);
 

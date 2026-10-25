@@ -30,7 +30,8 @@
     "client.ClientWorldAccessor",
     "client.ParticleManagerAccessor",
     "client.LimbAnimatorAccessor",
-    "client.BackgroundRendererAccessor"
+    "client.BackgroundRendererAccessor",
+    "client.AbstractClientPlayerEntityAccessor"
   ],
   "mixins": [
     "MixinServerChunkManager",

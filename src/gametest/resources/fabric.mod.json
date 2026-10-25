@@ -19,6 +19,7 @@
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalOrientationGameTests",
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalTunnelGameTests",
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalDestinationGameTests",
+      "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalArrivalReferenceGameTests",
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalWandGameTests"
     ]
   },

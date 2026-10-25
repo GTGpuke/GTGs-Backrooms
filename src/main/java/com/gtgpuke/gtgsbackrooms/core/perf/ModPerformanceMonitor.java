@@ -26,6 +26,10 @@ import com.gtgpuke.gtgsbackrooms.core.ModConstants;
  * envoyes par type de payload du mod, la memoire JVM et la charge CPU ; cote client, les FPS, l'image la plus longue et le
  * nombre d'images lentes de l'intervalle, et le top des sections client (celles dont le nom commence par
  * {@value #CLIENT_SECTION_PREFIX}). Complete le F3. Desactive, chaque appel se reduit a un test de booleen.
+ *
+ * <p>La charge CPU vient d'un echantillonneur sur son propre thread ({@link CpuSampler}) : lue sur un thread de jeu, elle
+ * bloquerait le thread de rendu ou le serveur de 50 a 60 ms a chaque resume, et le moniteur compterait lui-meme une image
+ * lente et un pic de tick par resume.
  */
 public final class ModPerformanceMonitor {
 
@@ -41,6 +45,8 @@ public final class ModPerformanceMonitor {
     private static final AtomicLong LAST_SERVER_LOG_NANOS = new AtomicLong();
     private static final AtomicLong LAST_CLIENT_LOG_NANOS = new AtomicLong();
     private static final OperatingSystemMXBean OPERATING_SYSTEM_MX_BEAN = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
+    /** Charge CPU du processus et du systeme, relevee a part : les resumes la lisent sans attendre. */
+    static final CpuSampler CPU_SAMPLER = new CpuSampler(OPERATING_SYSTEM_MX_BEAN);
     /** Octets alloues par le thread courant, pour compter ce qu'une section alloue ; absent sur une JVM qui ne le mesure pas. */
     private static final @Nullable ThreadMXBean THREAD_MX_BEAN = threadAllocationBean(ManagementFactory.getThreadMXBean());
 
@@ -76,9 +82,21 @@ public final class ModPerformanceMonitor {
         return enabled;
     }
 
-    /** Active ou desactive le monitoring a chaud (tests, commandes de debug). */
+    /** Active ou desactive le monitoring a chaud (tests, commandes de debug) ; l'echantillonneur CPU suit. */
     public static void setEnabled(boolean value) {
         enabled = value;
+        if (value) {
+            CPU_SAMPLER.start(intervalNanos());
+        } else {
+            CPU_SAMPLER.stop();
+        }
+    }
+
+    /** Demarre l'echantillonneur CPU si le moniteur est actif au lancement (propriete systeme). */
+    public static void init() {
+        if (enabled) {
+            CPU_SAMPLER.start(intervalNanos());
+        }
     }
 
     /** Oublie la date du dernier resume : le prochain tick en publie un (tests). */
@@ -159,7 +177,7 @@ public final class ModPerformanceMonitor {
         if (!isEnabled() || !shouldLog(LAST_CLIENT_LOG_NANOS)) {
             return;
         }
-        Snapshot snapshot = Snapshot.capture(OPERATING_SYSTEM_MX_BEAN);
+        Snapshot snapshot = Snapshot.capture(CPU_SAMPLER);
         lastClientSummary = String.format(Locale.ROOT, "client: fps=%d pic=%.1fms lentes=%d %s top=%s",
                 fps, nanosToMillis(frameMaxNanos), slowFrames, snapshot.format(), formatTopSections(true));
         frameMaxNanos = 0L;
@@ -308,7 +326,7 @@ public final class ModPerformanceMonitor {
                 "serveur: mspt=%.3f/%.3f %s top=%s reseau=%s",
                 averageMspt,
                 nanosToMillis(maxTickNanos),
-                Snapshot.capture(OPERATING_SYSTEM_MX_BEAN).format(),
+                Snapshot.capture(CPU_SAMPLER).format(),
                 formatTopSections(false),
                 formatNetwork(true));
         ModConstants.LOGGER.info("[perf] {}", lastServerSummary);
@@ -447,16 +465,107 @@ public final class ModPerformanceMonitor {
     private record NetworkSnapshot(String name, long packets, long bytes) {
     }
 
-    /** Memoire et charge CPU a un instant ; {@code bean} absent (JVM sans extension com.sun) : charge inconnue. */
+    /**
+     * Charge CPU du processus et du systeme, relevee sur un thread demon a chaque intervalle de resume. Les threads de jeu
+     * ne lisent que les deux dernieres valeurs ; inconnues (negatives) tant qu'aucun releve n'a eu lieu, ou sans bean
+     * (JVM sans extension com.sun).
+     */
+    static final class CpuSampler {
+
+        /** Attente de la fin du thread a l'arret : un releve en cours dure quelques millisecondes. */
+        private static final long STOP_WAIT_MILLIS = 1_000L;
+
+        private final @Nullable OperatingSystemMXBean bean;
+        private volatile double processCpuLoad = -1.0D;
+        private volatile double systemCpuLoad = -1.0D;
+        private volatile long samples;
+        private @Nullable Thread thread;
+
+        CpuSampler(@Nullable OperatingSystemMXBean bean) {
+            this.bean = bean;
+        }
+
+        /** Un releve, maintenant, sur le thread appelant : celui de l'echantillonneur, ou d'un test. */
+        void sample() {
+            if (this.bean != null) {
+                this.processCpuLoad = this.bean.getProcessCpuLoad();
+                this.systemCpuLoad = this.bean.getCpuLoad();
+            }
+            this.samples++;
+        }
+
+        /** Nombre de releves depuis la creation (tests : la boucle tourne). */
+        long samples() {
+            return this.samples;
+        }
+
+        double processCpuLoad() {
+            return this.processCpuLoad;
+        }
+
+        double systemCpuLoad() {
+            return this.systemCpuLoad;
+        }
+
+        /** Lance le thread demon s'il ne tourne pas : un releve tout de suite, puis un par intervalle. */
+        synchronized void start(long intervalNanos) {
+            if (this.thread != null || this.bean == null) {
+                return;
+            }
+            Thread sampler = new Thread(() -> run(intervalNanos), "gtgs-backrooms-cpu-sampler");
+            sampler.setDaemon(true);
+            this.thread = sampler;
+            sampler.start();
+        }
+
+        /** Arrete le thread demon, s'il tourne, attend sa fin (bornee), et oublie les dernieres valeurs. */
+        synchronized void stop() {
+            Thread sampler = this.thread;
+            this.thread = null;
+            if (sampler != null) {
+                sampler.interrupt();
+                try {
+                    sampler.join(STOP_WAIT_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            this.processCpuLoad = -1.0D;
+            this.systemCpuLoad = -1.0D;
+        }
+
+        boolean running() {
+            return this.thread != null;
+        }
+
+        private void run(long intervalNanos) {
+            while (sampleThenWait(intervalNanos)) {
+                // Un releve par intervalle, jusqu'a l'interruption.
+            }
+        }
+
+        /** Un releve, puis l'attente de l'intervalle ; {@code false} des que le thread est interrompu. */
+        boolean sampleThenWait(long intervalNanos) {
+            sample();
+            try {
+                Thread.sleep(intervalNanos / 1_000_000L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return !Thread.currentThread().isInterrupted();
+        }
+    }
+
+    /** Memoire et charge CPU a un instant, la charge etant la derniere relevee par l'echantillonneur. */
     record Snapshot(long heapUsedBytes, long heapMaxBytes, double processCpuLoad, double systemCpuLoad) {
 
-        static Snapshot capture(@Nullable OperatingSystemMXBean bean) {
+        static Snapshot capture(CpuSampler sampler) {
             Runtime runtime = Runtime.getRuntime();
             return new Snapshot(
                     runtime.totalMemory() - runtime.freeMemory(),
                     runtime.maxMemory(),
-                    bean != null ? bean.getProcessCpuLoad() : -1.0D,
-                    bean != null ? bean.getCpuLoad() : -1.0D);
+                    sampler.processCpuLoad(),
+                    sampler.systemCpuLoad());
         }
 
         String format() {

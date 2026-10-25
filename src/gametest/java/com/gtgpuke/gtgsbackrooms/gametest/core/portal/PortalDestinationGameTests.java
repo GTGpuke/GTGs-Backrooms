@@ -18,6 +18,7 @@ import net.minecraft.test.TestContext;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
@@ -185,6 +186,45 @@ public final class PortalDestinationGameTests implements FabricGameTest {
         context.assertTrue(PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT.withExit(Optional.empty(),
                 Optional.of(new PortalMark(GameTestServerWorlds.nowhere(), markPos, Direction.EAST))), Random.create(1L)) == null,
                 "Une sortie fixee dans une dimension absente : rien.");
+        // Chunk par chunk : une sortie fixee exacte n'attend rien (son chunk est charge par la resolution), une sortie tiree au
+        // sort loin de tout s'arrete au premier chunk absent, une dimension absente ne donne rien, le Level 0 (calcul pur) non plus.
+        context.assertTrue(!PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(mark)), Random.create(1L)).waits(),
+                "Une sortie fixee exacte n'attend aucun chunk.");
+        PortalMark farMark = new PortalMark(World.NETHER, new BlockPos(-60_000, 64, -60_000), Direction.EAST);
+        PortalTargets.Search far = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                settings(PortalExit.STRAIGHT, scatter, Optional.of(farMark)), Random.create(7L));
+        context.assertTrue(far.waits() && far.target() == null && Math.abs(far.missingChunk().x - (-60_000 >> 4)) <= 2,
+                "Tiree au sort loin de tout, la recherche s'arrete au premier chunk absent, pres de la marque : " + far.missingChunk() + ".");
+        PortalTargets.Search nowhere = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                settings(PortalExit.STRAIGHT, scatter, Optional.of(new PortalMark(GameTestServerWorlds.nowhere(), markPos, Direction.EAST))), Random.create(1L));
+        context.assertTrue(!nowhere.waits() && nowhere.target() == null, "Une marque dans une dimension absente : rien, sans attendre.");
+        context.assertTrue(!PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT, Random.create(1L)).waits(),
+                "Vers le Level 0 (calcul pur), aucun chunk a attendre.");
+        // Une sortie fixee exacte dans un chunk jamais genere attend ce chunk ; a ciel ouvert, la colonne de depart attend le sien.
+        PortalMark farExact = new PortalMark(World.NETHER, new BlockPos(-52_000, 64, 20_000), Direction.EAST);
+        PortalTargets.Search exactFar = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(farExact)), Random.create(1L));
+        context.assertTrue(exactFar.waits() && exactFar.missingChunk().equals(new ChunkPos(farExact.pos())),
+                "Une sortie fixee exacte loin de tout attend son chunk : " + exactFar.missingChunk() + ".");
+        PortalTargets.Search surface = PortalTargets.resolveLoadedOnly(server, World.NETHER, new BlockPos(-7_000, 64, 5_000), PortalFacing.SOUTH,
+                PortalSettings.DEFAULT.withExit(Optional.of(World.OVERWORLD), Optional.empty()), Random.create(1L));
+        context.assertTrue(surface.waits() && surface.missingChunk().equals(new ChunkPos(-56_000 >> 4, 40_000 >> 4)),
+                "A ciel ouvert, loin de tout, la colonne de depart (les X/Z fois huit) attend son chunk : " + surface.missingChunk() + ".");
+        // Sous un plafond, le cadre d'une colonne au bord d'un chunk deborde sur le chunk d'a cote : il doit etre la aussi.
+        ChunkPos corner = new ChunkPos(-2_000, 3_000);
+        netherWorld.getChunk(corner.x, corner.z);
+        PortalSettings wide = new PortalSettings(8, 3, true).withExit(Optional.of(World.NETHER), Optional.empty());
+        BlockPos cornerAnchor = new BlockPos(corner.getStartX() * 8, 64, corner.getStartZ() * 8);
+        PortalTargets.Search beside = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, cornerAnchor, PortalFacing.NORTH, wide, Random.create(1L));
+        // Tourne vers le nord, le cadre s'etend vers l'ouest : le chunk a l'ouest, pas celui que la colonne suivante de l'anneau
+        // (au nord-ouest) demanderait si l'empreinte du cadre n'etait pas verifiee.
+        context.assertTrue(beside.waits() && beside.missingChunk().equals(new ChunkPos(corner.x - 1, corner.z)),
+                "La colonne de depart est chargee, son cadre de huit deborde sur le chunk voisin a l'ouest, absent : " + beside.missingChunk() + ".");
+        netherWorld.getChunk(beside.missingChunk().x, beside.missingChunk().z);
+        PortalTargets.Search further = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, cornerAnchor, PortalFacing.NORTH, wide, Random.create(1L));
+        context.assertTrue(!further.waits() || !further.missingChunk().equals(corner) && !further.missingChunk().equals(beside.missingChunk()),
+                "Les deux chunks la, la recherche avance : " + further + ".");
         context.complete();
     }
 

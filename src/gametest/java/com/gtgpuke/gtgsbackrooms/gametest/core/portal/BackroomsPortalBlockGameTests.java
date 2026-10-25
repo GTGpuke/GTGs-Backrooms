@@ -3,6 +3,7 @@ package com.gtgpuke.gtgsbackrooms.gametest.core.portal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 import net.minecraft.block.BlockState;
@@ -28,6 +29,7 @@ import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
@@ -963,7 +965,8 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
             context.assertTrue(scattered != null && scattered.facing() == PortalFacing.NORTH && (dx != 0 || dz != 0)
                     && scattered.position().x == anchor.getX() + dx + 0.5 && scattered.position().z == anchor.getZ() + dz + 0.5,
                     "Arrivee tiree au sort : aux X/Z tires dans le rayon autour du bloc, sans tourner.");
-            context.assertTrue(PortalTargets.resolve(world, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT) == null,
+            context.assertTrue(PortalTargets.resolve(world.getServer(), world.getRegistryKey(), anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT,
+                    world.getRandom()) == null,
                     "Sans Level 0 sur ce serveur, un portail de l'overworld n'a pas de cible.");
         } finally {
             GameTestPlayers.disconnect(player);
@@ -1124,6 +1127,61 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
         });
     }
 
+    /**
+     * Garde-fou G4 du bilan de performance : vers une zone jamais generee, le bloc ne genere aucun chunk sur le thread
+     * serveur a la pose. Il demande la zone de sa recherche par un ticket, attend qu'elle soit chargee, puis resout : la
+     * meme arrivee que la recherche synchrone. Assertion de structure, sans chronometre (le serveur de test tique sans
+     * attendre).
+     */
+    // Le serveur de test tique en une fraction de milliseconde : un chunk du Nether genere par vanilla sur ses threads de
+    // travail (quelques centaines de millisecondes) met des milliers de ticks a etre entier.
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 20_000)
+    public void aBlockTowardsAnUngeneratedAreaWaitsForItsChunksInsteadOfGeneratingThem(TestContext context) {
+        ServerWorld world = context.getWorld();
+        ServerWorld nether = GameTestServerWorlds.nether(context);
+        // Un bloc de l'overworld dont l'image au huitieme tombe dans une zone du Nether que personne n'a jamais generee.
+        BlockPos anchor = context.getAbsolutePos(PORTAL);
+        PortalSettings toNether = PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.empty());
+        PortalTargets.Search first = PortalTargets.resolveLoadedOnly(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
+                Random.create(1L));
+        context.assertTrue(first.waits() && first.target() == null && !nether.isChunkLoaded(first.missingChunk().x, first.missingChunk().z),
+                "Avant la pose, la recherche s'arrete a son premier chunk, absent : " + first.missingChunk() + ".");
+        BackroomsPortalBlockEntity block = placePortal(context, PORTAL, Direction.NORTH, toNether);
+        block.serverTick();
+        context.assertTrue(!block.isConfigured() && block.isSearchLoading(), "Au tick de la pose, le bloc attend son premier chunk au lieu de le generer.");
+        context.assertTrue(!nether.isChunkLoaded(first.missingChunk().x, first.missingChunk().z),
+                "Rien n'a ete genere de facon synchrone : le chunk demande n'est pas encore la.");
+        ChunkPos missing = first.missingChunk();
+        context.createTimedTaskRunner()
+                // Des que le ticket du bloc a donne son niveau au chunk (un tick), vanilla le genere sur ses threads de travail :
+                // pour World.isChunkLoaded il est deja charge, pour la recherche il ne l'est pas tant qu'il n'est pas entier.
+                .createAndAdd(() -> context.assertTrue(nether.isChunkLoaded(missing.x, missing.z), "Le ticket du bloc n'a pas encore donne son niveau au chunk."))
+                .createAndAddReported(() -> {
+                    context.assertTrue(nether.getChunkManager().getWorldChunk(missing.x, missing.z) == null,
+                            "Le chunk demande a son ticket et n'est pas encore entier : " + missing + ".");
+                    PortalTargets.Search again = PortalTargets.resolveLoadedOnly(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
+                            Random.create(1L));
+                    context.assertTrue(again.waits() && nether.getChunkManager().getWorldChunk(missing.x, missing.z) == null,
+                            "La recherche attend ce chunk sans le generer elle-meme : " + again.missingChunk() + ".");
+                })
+                .createAndAdd(() -> context.assertTrue(block.isConfigured(), "Des chunks manquent encore, le bloc attend."))
+                .createAndAddReported(() -> {
+                    try {
+                        context.assertTrue(!block.isSearchLoading() && nether.isChunkLoaded(first.missingChunk().x, first.missingChunk().z),
+                                "Resolu, le bloc n'attend plus et son premier chunk est charge.");
+                        PortalTargets.Target synchronous = PortalTargets.resolve(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
+                                Random.create(1L));
+                        BackroomsPortalEntity entry = portal(world, block.entryPortal(FRONT));
+                        context.assertTrue(synchronous != null && entry != null && entry.destinationDim().equals(World.NETHER)
+                                && entry.destinationPos().squaredDistanceTo(synchronous.position()) < EPSILON,
+                                "La meme arrivee que la recherche synchrone : " + (entry == null ? null : entry.destinationPos()) + ".");
+                    } finally {
+                        context.setBlockState(PORTAL, Blocks.AIR);
+                    }
+                })
+                .completeIfSuccessful();
+    }
+
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400, batchId = "portal_level_zero_stand_in")
     public void blockResolvesItsLevelZeroTargetWhenTheDimensionExists(TestContext context) {
         ServerWorld world = context.getWorld();
@@ -1131,7 +1189,8 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
         ServerWorld standIn = GameTestServerWorlds.nether(context);
         GameTestServerWorlds.registerStandInLevelZero(server, standIn);
         // L'arrivee se calcule d'avance : son chunk est force, les retours y sont suivis et partent avec le bloc.
-        PortalTargets.Target target = PortalTargets.resolve(world, context.getAbsolutePos(PORTAL), PortalFacing.NORTH, PortalSettings.DEFAULT);
+        PortalTargets.Target target = PortalTargets.resolve(world.getServer(), world.getRegistryKey(), context.getAbsolutePos(PORTAL), PortalFacing.NORTH,
+                PortalSettings.DEFAULT, world.getRandom());
         if (target == null) {
             throw new GameTestException("Le Level 0 prete n'offre aucune arrivee.");
         }
