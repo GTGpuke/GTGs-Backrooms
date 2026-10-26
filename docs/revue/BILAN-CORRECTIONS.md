@@ -2505,6 +2505,46 @@ des milliers d'objets), le principe redevient pertinent pour ce système-là.
 - **Les deux chemins de rendu** : un palier doit exister sur le chemin vanilla et sous un pack, ou se couper sous un
   pack.
 
+#### EXPLO 5.5 Étude du 26 octobre 2026 : ce que coûte le terrain lointain d'une vue
+
+L'auteur a demandé d'étudier un « vrai LOD » des blocs (géométrie simplifiée au-delà d'une distance où la différence ne se
+voit plus) avant toute décision. Une géométrie simplifiée ne retire pas d'appel de dessin : elle retire des sommets, du
+travail de la carte graphique. La mesure porte donc sur le temps GPU du terrain des vues.
+
+- **Méthode.** Sonde jamais livrée : horodatages GPU (`GL_TIMESTAMP`, lus aussitôt) autour du dessin de chaque couche de
+  terrain d'une vue et de la vue entière, moyennés chaque seconde par palier. Borne haute d'un LOD : les sections au-delà
+  de D blocs de la caméra de la vue retirées du dessin, D changeant toutes les quatre secondes (aucune, 48, 32, 16).
+  Scènes `make_lodlab.py` vers un site enneigé de l'overworld et vers le Level 0 (murs denses), rendu vanilla, RTX 5070 Ti.
+- **Résultats.**
+
+| Vue | Terrain, toutes sections | Sections au-delà de 16 blocs retirées | Vue entière |
+|---|---|---|---|
+| Level 0, cadre à 10 blocs (pleine) | 104 µs | 91 µs | 256 µs |
+| Level 0, cadre à 30 blocs (allégée) | 96 µs | 98 µs | 231 µs |
+| Site enneigé, cadre à 10 blocs (pleine) | 120 µs | 105 µs | 492 µs |
+
+  À 30 blocs, la caméra de la vue est elle-même à 30 blocs du plan d'arrivée : la limite de 16 blocs retire tout le
+  terrain, et le temps ne baisse pas. Ce qui reste est le coût fixe des couches et celui de la sonde (chaque horodatage
+  lu attend la carte). Le terrain lointain d'une vue coûte au plus une quinzaine de microsecondes par vue sur ce PC, une
+  quarantaine sur la puce Intel du portable (une vue y coûte 2,9 fois plus, PERF 2.1).
+- **Conclusion.** Un LOD des blocs gagnerait moins que ce retrait complet : au mieux quelques dizaines de microsecondes
+  par vue lointaine et par image, contre un maillage simplifié à construire et garder par section (mémoire, threads), une
+  image qui change, et rien sous un mod de rendu du terrain qui construit ses propres sections. Le palier allégé déjà en
+  place (météo, particules, entités figées) divise par deux à deux et demi le coût d'une vue lointaine ; le terrain n'y est
+  pas le poste qui compte. Recommandation : ne pas faire de LOD des blocs, décision de l'auteur.
+- **Suite (26 octobre 2026, au soir).** L'auteur a demandé le LOD des blocs malgré tout, pour de grandes pièces pleines
+  de portails « qui gardent un visuel, sans fond noir », avec une image figée au-delà et une fenêtre en cône (réponses au
+  questionnaire : taille d'un bloc à l'écran, fenêtre en cône, texture par vue figée, jusqu'à 128 blocs). En le faisant,
+  le fond noir s'est révélé sans rapport avec le terrain : le parcours des sections d'une vue partait de sa caméra, en
+  deçà du plan d'arrivée, et ne l'atteignait pas (une section dessinée à 30 blocs). La ligne « cadre à 30 blocs » du
+  tableau ci-dessus mesurait donc une vue presque vide ; celles à 10 blocs restent valables. Corrigé (`ViewSectionWalker`
+  part des sections du cadre), le terrain simplifié livré (géométrie exacte, faces coplanaires fusionnées) ne fait
+  toujours rien gagner de mesurable sur ce PC (environ 0,065 ms par vue avec ou sans, cadre de 12 × 6 compris). Ce qui
+  gagne est l'image figée : 0,010 ms par image au lieu de 0,076 ms pour une vue à 58 blocs, et une vue de 64 à 128 blocs
+  là où il n'y avait rien. Au vu des captures et de ces mesures, l'auteur a gardé le terrain simplifié, mais seulement
+  plus loin : une section garde son maillage vanilla tant que son bloc le plus proche fait au moins 12 pixels (au lieu
+  de 24) ; l'image figée garde son seuil de 6 pixels.
+
 ---
 
 ### EXPLO 6. Ne pas dessiner ce qu'on ne voit pas, et le remettre aussitôt

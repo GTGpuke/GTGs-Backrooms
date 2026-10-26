@@ -95,10 +95,17 @@ class PortalFacingTest {
         Vec3d sourceCenter = new Vec3d(10.0, 64.0, 20.0);
         Vec3d destinationCenter = new Vec3d(100.0, 30.0, -50.0);
         Vec3d offset = new Vec3d(1.0, 2.0, 3.0);
-        Vec3d transformedOffset = PortalFacing.transformPoint(source, sourceCenter, destination, destinationCenter,
-                sourceCenter.add(offset)).subtract(destinationCenter);
+        Vec3d point = sourceCenter.add(offset);
+        Vec3d image = PortalFacing.transformPoint(source, sourceCenter, destination, destinationCenter, point);
+        Vec3d transformedOffset = image.subtract(destinationCenter);
         assertEquals(0.0, transformedOffset.subtract(PortalFacing.transformVector(source, destination, offset)).length(), EPS,
                 "Le point transforme suit la transformation du vecteur.");
+        assertEquals(image.x, PortalFacing.transformCoordinate(source, sourceCenter, destination, destinationCenter, point.x, point.y, point.z, 0),
+                EPS, "Coordonnee x sans allocation, la meme.");
+        assertEquals(image.y, PortalFacing.transformCoordinate(source, sourceCenter, destination, destinationCenter, point.x, point.y, point.z, 1),
+                EPS, "Coordonnee y sans allocation, la meme.");
+        assertEquals(image.z, PortalFacing.transformCoordinate(source, sourceCenter, destination, destinationCenter, point.x, point.y, point.z, 2),
+                EPS, "Coordonnee z sans allocation, la meme.");
 
         Vec3d a = PortalFacing.transformVector(source, destination, source.axisW);
         Vec3d b = PortalFacing.transformVector(source, destination, source.axisH);

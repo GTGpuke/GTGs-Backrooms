@@ -180,7 +180,8 @@ public final class ShaderPackPortalRenderer {
         Vec2f remoteLook = PortalStencilRenderer.aimCamera(remoteCamera, remoteCameraPos, portal, camera, VIEW_POSITION);
         VIEW_POSITION.mulLocal(VIEW_EXTRA);
         client.getFramebuffer().beginWrite(false);
-        Matrix4f drawn = renderView(client, view, tickCounter, camera, remoteCamera, remoteCameraPos, VIEW_POSITION, projection, lightmap, portal, null);
+        Matrix4f drawn = renderView(client, view, tickCounter, camera, remoteCamera, remoteCameraPos, VIEW_POSITION, projection, lightmap, portal, null,
+                false);
         if (drawn == null) {
             return;
         }
@@ -267,7 +268,7 @@ public final class ShaderPackPortalRenderer {
         limitedToFrame = true;
         try {
             Matrix4f drawn = renderView(client, view, tickCounter, camera, remoteCamera, remoteCameraPos, VIEW_POSITION, projection, lightmap, portal,
-                    cameraPos);
+                    cameraPos, PortalStencilRenderer.reducedDetail(portal, cameraPos, projection));
             if (drawn == null) {
                 FrameAreaRenderer.fill(portal, cameraPos, positionMatrix, 0.0f, 0.0f, 0.0f);
             } else {
@@ -357,7 +358,7 @@ public final class ShaderPackPortalRenderer {
         limitedToFrame = true;
         try {
             if (renderView(client, innerView, tickCounter, camera, nestedCamera, innerCameraPos, NESTED_POSITION, projection, lightmap, inner,
-                    remoteCameraPos) == null) {
+                    remoteCameraPos, PortalStencilRenderer.reducedDetail(inner, remoteCameraPos, projection)) == null) {
                 FrameAreaRenderer.fill(inner, remoteCameraPos, VIEW_POSITION, 0.0f, 0.0f, 0.0f);
             }
         } finally {
@@ -420,7 +421,8 @@ public final class ShaderPackPortalRenderer {
             Matrix4f projection,
             LightmapTextureManager lightmap,
             BackroomsPortalEntity portal,
-            @Nullable Vec3d frameCameraPos) {
+            @Nullable Vec3d frameCameraPos,
+            boolean reduced) {
         MinecraftClientAccessor clientAccessor = (MinecraftClientAccessor) client;
         CameraAccessor mainCamera = (CameraAccessor) camera;
         CameraAccessor remoteCamera = (CameraAccessor) viewCamera;
@@ -470,7 +472,7 @@ public final class ShaderPackPortalRenderer {
             drawnHidden = hidden;
             drawnCameraPos = viewCameraPos;
             drawnPosition = viewPosition;
-            return view.viewRenderer().renderWhole(client, tickCounter, viewCamera, viewCameraPos, viewPosition, projection, frame, lightmap);
+            return view.viewRenderer().renderWhole(client, tickCounter, viewCamera, viewCameraPos, viewPosition, projection, frame, lightmap, reduced);
         } catch (RuntimeException exception) {
             PortalRenderState.disableRemoteRendering("exception pendant le rendu distant sous un pack de shaders", exception);
             return null;

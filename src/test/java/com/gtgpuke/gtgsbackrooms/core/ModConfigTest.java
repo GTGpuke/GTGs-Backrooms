@@ -19,6 +19,8 @@ class ModConfigTest {
         assertFalse(ModConfig.DEBUG_PERFORMANCE_MONITOR, "Le moniteur de performance est inactif par defaut.");
         assertTrue(ModConfig.ENABLE_PORTAL_FEATURE, "Les portails sont actifs par defaut.");
         assertFalse(ModConfig.DEBUG_PORTAL_RENDERING, "Le debug du rendu portail est inactif par defaut.");
+        assertTrue(ModConfig.ENABLE_PORTAL_OCCLUSION, "Une vue cachee derriere un mur ne se dessine pas, par defaut.");
+        assertTrue(ModConfig.ENABLE_PORTAL_LOD, "La vue d'un cadre lointain s'allege, par defaut.");
         assertEquals(10, ModConfig.PERFORMANCE_LOG_INTERVAL_SECONDS, "Dix secondes entre deux resumes.");
         assertEquals(0, ModConfig.PORTAL_TELEPORT_COOLDOWN_TICKS, "Aucun delai entre deux traversees.");
         assertEquals(16, ModConfig.PORTAL_ACTIVATION_RADIUS_BLOCKS, "Rayon d'activation.");

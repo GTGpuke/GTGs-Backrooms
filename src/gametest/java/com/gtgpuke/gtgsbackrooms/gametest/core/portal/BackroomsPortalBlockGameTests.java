@@ -59,6 +59,7 @@ import com.gtgpuke.gtgsbackrooms.core.registry.ModBlocks;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModDataComponents;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModEntities;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModItems;
+import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestArrivals;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestServerWorlds;
 
@@ -115,14 +116,14 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
             // Un portail du Level 0 pose son cadre sur le sol que voit la heightmap, a l'aplomb du bloc : ici le plafond de
             // barrieres de l'arene. Le centre est a mi-hauteur du cadre.
             int surface = world.getTopY(Heightmap.Type.MOTION_BLOCKING, slab.getX(), slab.getZ());
-            PortalTargets.Target target = PortalTargets.resolve(server, BackroomsConstants.LEVEL_ZERO_WORLD, slab, PortalFacing.NORTH,
-                    new PortalSettings(1, 4, true), world.getRandom());
+            PortalTargets.Target target = GameTestArrivals.resolve(server, BackroomsConstants.LEVEL_ZERO_WORLD, slab, PortalFacing.NORTH,
+                    new PortalSettings(1, 4, true), 0L);
             context.assertTrue(target != null && Math.abs(target.position().y - (surface + 2.0)) < EPSILON,
                     "Le centre d'arrivee d'un cadre de quatre blocs est deux blocs au-dessus du sol vu par la heightmap.");
             context.assertTrue(target.facing() == PortalFacing.SOUTH, "Traverser ne fait pas tourner : la sortie regarde a l'oppose de l'entree.");
             // Un sens de sortie impose tourne le cadre d'arrivee.
-            PortalTargets.Target east = PortalTargets.resolve(server, BackroomsConstants.LEVEL_ZERO_WORLD, slab, PortalFacing.NORTH,
-                    new PortalSettings(1, 2, true, true, false, false, PortalExit.EAST, 0), world.getRandom());
+            PortalTargets.Target east = GameTestArrivals.resolve(server, BackroomsConstants.LEVEL_ZERO_WORLD, slab, PortalFacing.NORTH,
+                    new PortalSettings(1, 2, true, true, false, false, PortalExit.EAST, 0), 0L);
             context.assertTrue(east != null && east.facing() == PortalFacing.EAST && east.position().x == slab.getX() + 0.5
                     && east.position().z == slab.getZ() + 0.5, "Sortie vers l'est : le cadre d'arrivee regarde l'est, a l'aplomb du bloc.");
         } finally {
@@ -943,16 +944,16 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
             player.setSneaking(true);
 
             // Un portail du Level 0 mene a la surface de l'overworld ; un portail de l'overworld cherche le Level 0, absent ici.
-            PortalTargets.Target surface = PortalTargets.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
-                    PortalSettings.DEFAULT, world.getRandom());
+            PortalTargets.Target surface = GameTestArrivals.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
+                    PortalSettings.DEFAULT, 0L);
             context.assertTrue(surface != null && surface.dimension().equals(World.OVERWORLD) && surface.facing() == PortalFacing.NORTH,
                     "Depuis le Level 0, la cible est la surface de l'overworld, sans demi-tour.");
             context.assertTrue(surface.position().x == anchor.getX() + 0.5 && surface.position().z == anchor.getZ() + 0.5,
                     "La cible est a l'aplomb du bloc.");
             // Sortie par le plafond : le cadre d'arrivee est couche face au bas, releve de deux blocs au-dessus du sol pour
             // que qui en tombe ait encore les pieds au-dessus du sol.
-            PortalTargets.Target overhead = PortalTargets.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
-                    new PortalSettings(1, 2, true, true, false, false, PortalExit.CEILING, 0), world.getRandom());
+            PortalTargets.Target overhead = GameTestArrivals.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
+                    new PortalSettings(1, 2, true, true, false, false, PortalExit.CEILING, 0), 0L);
             context.assertTrue(overhead != null && overhead.facing() == PortalFacing.DOWN
                     && Math.abs(overhead.position().y - (surface.position().y - 1.0 + 2.0 + 0.5)) < EPSILON,
                     "Par le plafond : cadre face au bas, deux blocs et demi au-dessus du sol : " + overhead.position() + ".");
@@ -960,13 +961,13 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
             Random draw = Random.create(7L);
             int dx = draw.nextBetween(-6, 6);
             int dz = draw.nextBetween(-6, 6);
-            PortalTargets.Target scattered = PortalTargets.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
-                    new PortalSettings(1, 2, true, true, false, false, PortalExit.STRAIGHT, 6), Random.create(7L));
+            PortalTargets.Target scattered = GameTestArrivals.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
+                    new PortalSettings(1, 2, true, true, false, false, PortalExit.STRAIGHT, 6), 7L);
             context.assertTrue(scattered != null && scattered.facing() == PortalFacing.NORTH && (dx != 0 || dz != 0)
                     && scattered.position().x == anchor.getX() + dx + 0.5 && scattered.position().z == anchor.getZ() + dz + 0.5,
                     "Arrivee tiree au sort : aux X/Z tires dans le rayon autour du bloc, sans tourner.");
-            context.assertTrue(PortalTargets.resolve(world.getServer(), world.getRegistryKey(), anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT,
-                    world.getRandom()) == null,
+            context.assertTrue(GameTestArrivals.resolve(world.getServer(), world.getRegistryKey(), anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT,
+                    0L) == null,
                     "Sans Level 0 sur ce serveur, un portail de l'overworld n'a pas de cible.");
         } finally {
             GameTestPlayers.disconnect(player);
@@ -1130,8 +1131,8 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
     /**
      * Garde-fou G4 du bilan de performance : vers une zone jamais generee, le bloc ne genere aucun chunk sur le thread
      * serveur a la pose. Il demande la zone de sa recherche par un ticket, attend qu'elle soit chargee, puis resout : la
-     * meme arrivee que la recherche synchrone. Assertion de structure, sans chronometre (le serveur de test tique sans
-     * attendre).
+     * meme arrivee que la recherche menee d'un trait par le test. Assertion de structure, sans chronometre (le serveur de
+     * test tique sans attendre).
      */
     // Le serveur de test tique en une fraction de milliseconde : un chunk du Nether genere par vanilla sur ses threads de
     // travail (quelques centaines de millisecondes) met des milliers de ticks a etre entier.
@@ -1142,7 +1143,7 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
         // Un bloc de l'overworld dont l'image au huitieme tombe dans une zone du Nether que personne n'a jamais generee.
         BlockPos anchor = context.getAbsolutePos(PORTAL);
         PortalSettings toNether = PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.empty());
-        PortalTargets.Search first = PortalTargets.resolveLoadedOnly(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
+        PortalTargets.Search first = PortalTargets.resolve(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
                 Random.create(1L));
         context.assertTrue(first.waits() && first.target() == null && !nether.isChunkLoaded(first.missingChunk().x, first.missingChunk().z),
                 "Avant la pose, la recherche s'arrete a son premier chunk, absent : " + first.missingChunk() + ".");
@@ -1159,7 +1160,7 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
                 .createAndAddReported(() -> {
                     context.assertTrue(nether.getChunkManager().getWorldChunk(missing.x, missing.z) == null,
                             "Le chunk demande a son ticket et n'est pas encore entier : " + missing + ".");
-                    PortalTargets.Search again = PortalTargets.resolveLoadedOnly(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
+                    PortalTargets.Search again = PortalTargets.resolve(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
                             Random.create(1L));
                     context.assertTrue(again.waits() && nether.getChunkManager().getWorldChunk(missing.x, missing.z) == null,
                             "La recherche attend ce chunk sans le generer elle-meme : " + again.missingChunk() + ".");
@@ -1169,12 +1170,12 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
                     try {
                         context.assertTrue(!block.isSearchLoading() && nether.isChunkLoaded(first.missingChunk().x, first.missingChunk().z),
                                 "Resolu, le bloc n'attend plus et son premier chunk est charge.");
-                        PortalTargets.Target synchronous = PortalTargets.resolve(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether,
-                                Random.create(1L));
+                        // La meme recherche, menee d'un trait (chaque chunk demande genere sur place), apres celle du bloc.
+                        PortalTargets.Target direct = GameTestArrivals.resolve(world.getServer(), World.OVERWORLD, anchor, PortalFacing.NORTH, toNether, 1L);
                         BackroomsPortalEntity entry = portal(world, block.entryPortal(FRONT));
-                        context.assertTrue(synchronous != null && entry != null && entry.destinationDim().equals(World.NETHER)
-                                && entry.destinationPos().squaredDistanceTo(synchronous.position()) < EPSILON,
-                                "La meme arrivee que la recherche synchrone : " + (entry == null ? null : entry.destinationPos()) + ".");
+                        context.assertTrue(direct != null && entry != null && entry.destinationDim().equals(World.NETHER)
+                                && entry.destinationPos().squaredDistanceTo(direct.position()) < EPSILON,
+                                "La meme arrivee que la recherche menee d'un trait : " + (entry == null ? null : entry.destinationPos()) + ".");
                     } finally {
                         context.setBlockState(PORTAL, Blocks.AIR);
                     }
@@ -1189,8 +1190,8 @@ public final class BackroomsPortalBlockGameTests implements FabricGameTest {
         ServerWorld standIn = GameTestServerWorlds.nether(context);
         GameTestServerWorlds.registerStandInLevelZero(server, standIn);
         // L'arrivee se calcule d'avance : son chunk est force, les retours y sont suivis et partent avec le bloc.
-        PortalTargets.Target target = PortalTargets.resolve(world.getServer(), world.getRegistryKey(), context.getAbsolutePos(PORTAL), PortalFacing.NORTH,
-                PortalSettings.DEFAULT, world.getRandom());
+        PortalTargets.Target target = GameTestArrivals.resolve(world.getServer(), world.getRegistryKey(), context.getAbsolutePos(PORTAL), PortalFacing.NORTH,
+                PortalSettings.DEFAULT, 0L);
         if (target == null) {
             throw new GameTestException("Le Level 0 prete n'offre aucune arrivee.");
         }

@@ -48,6 +48,7 @@ import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntityRegistry;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.DestinationLoader;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalRelevance;
 import com.gtgpuke.gtgsbackrooms.mixin.EntityTrackerAccessor;
@@ -478,23 +479,61 @@ public final class PortalViewTracker {
         for (int i = 0; i < RELEVANT_SCRATCH.size(); i++) {
             BackroomsPortalEntity portal = RELEVANT_SCRATCH.get(i);
             // Pres du portail, la traversee est imminente : fenetre plus large pour que l'arrivee soit deja construite.
-            int radius = DestinationLoader.syncRadius(DestinationLoader.isNear(player, portal));
+            boolean near = DestinationLoader.isNear(player, portal);
+            int radius = DestinationLoader.syncRadius(near);
             RegistryKey<World> dimension = portal.destinationDim();
             Vec3d anchorPos = ANCHOR_SCRATCH.get(dimension).destinationPos();
             Vec3d destinationPos = portal.destinationPos();
+            int anchorX = ChunkSectionPos.getSectionCoord(anchorPos.x);
+            int anchorZ = ChunkSectionPos.getSectionCoord(anchorPos.z);
             int chunkX = ChunkSectionPos.getSectionCoord(destinationPos.x);
             int chunkZ = ChunkSectionPos.getSectionCoord(destinationPos.z);
-            if (!RemoteChunkWindow.fitsAround(
-                    ChunkSectionPos.getSectionCoord(anchorPos.x), ChunkSectionPos.getSectionCoord(anchorPos.z), chunkX, chunkZ, radius)) {
+            if (!RemoteChunkWindow.fitsAround(anchorX, anchorZ, chunkX, chunkZ, radius)) {
                 continue;
             }
             // Ensemble ordonne : les chunks partent du centre vers l'exterieur, et l'appartenance se teste sans parcours.
             LongSet wanted = WANTED_SCRATCH.computeIfAbsent(dimension, key -> new LongLinkedOpenHashSet());
-            if (wanted.isEmpty()) {
+            boolean first = wanted.isEmpty();
+            if (near) {
+                RemoteChunkWindow.collect(chunkX, chunkZ, radius, wanted);
+            } else if (!collectFar(player, portal, radius, Math.max(Math.abs(chunkX - anchorX), Math.abs(chunkZ - anchorZ)), wanted)) {
+                continue;
+            }
+            if (first) {
                 DIMENSION_SCRATCH.add(dimension);
             }
-            RemoteChunkWindow.collect(chunkX, chunkZ, radius, wanted);
         }
+    }
+
+    /**
+     * Fenetre d'un portail regarde de loin, ajoutee a {@code wanted} : le meme nombre de chunks que la fenetre carree, dans
+     * l'axe de ce que montre un cadre d'arrivee debout ({@link RemoteChunkWindow#collectCone}), la fenetre carree pour une
+     * arrivee couchee. Joueur a cote du cadre ou derriere : la vue ne se voit pas d'ou il est, aucune fenetre
+     * ({@code false}). La portee du cone tient dans la carte du client avec la fenetre du foyer, et dans la distance de vue
+     * du joueur, sans jamais descendre sous le rayon de la fenetre carree.
+     *
+     * @param anchorDistance ecart, en chunks, entre l'arrivee de ce portail et celle du foyer de sa dimension
+     */
+    private static boolean collectFar(ServerPlayerEntity player, BackroomsPortalEntity portal, int radius, int anchorDistance, LongSet wanted) {
+        // La camera de la vue, image de l'oeil du joueur, est en deca du plan d'arrivee de la distance de l'oeil au portail.
+        double eyeY = player.getEyeY();
+        if (portal.signedDistance(player.getX(), eyeY, player.getZ()) < RemoteChunkWindow.MIN_VIEW_DEPTH) {
+            return false;
+        }
+        Vec3d center = portal.destinationPos();
+        PortalFacing arrival = portal.facingDestination();
+        if (!arrival.direction.getAxis().isHorizontal()) {
+            RemoteChunkWindow.collect(ChunkSectionPos.getSectionCoord(center.x), ChunkSectionPos.getSectionCoord(center.z), radius, wanted);
+            return true;
+        }
+        int maxReach = Math.min((RemoteChunkWindow.MAP_RADIUS - anchorDistance) / 2, Math.max(radius, player.getViewDistance()));
+        // Camera de la vue, comme le client place la sienne (PortalFacing.transformPoint), sans allocation.
+        PortalFacing source = portal.facingSource();
+        double apexX = PortalFacing.transformCoordinate(source, portal.getPos(), arrival, center, player.getX(), eyeY, player.getZ(), 0);
+        double apexZ = PortalFacing.transformCoordinate(source, portal.getPos(), arrival, center, player.getX(), eyeY, player.getZ(), 2);
+        RemoteChunkWindow.collectCone(apexX, apexZ, center.x, center.z, arrival.axisW.x, arrival.axisW.z, arrival.normal.x, arrival.normal.z,
+                portal.width() / 2.0, radius, maxReach, wanted);
+        return true;
     }
 
     @SuppressWarnings("try")
@@ -524,9 +563,11 @@ public final class PortalViewTracker {
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_SYNC_CHUNKS)) {
             int budget = MAX_CHUNKS_PER_UPDATE;
             LongIterator wantedKeys = wanted.iterator();
-            while (budget > 0 && wantedKeys.hasNext()) {
+            while (wantedKeys.hasNext()) {
                 long key = wantedKeys.nextLong();
-                if (sent.contains(key)) {
+                // Chaque chunk voulu reste charge tant qu'il l'est : une fenetre en cone deborde du ticket de l'arrivee.
+                DestinationLoader.holdWindowChunk(destination, key);
+                if (budget == 0 || sent.contains(key)) {
                     continue;
                 }
                 WorldChunk chunk = destination.getChunkManager().getWorldChunk(ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key));

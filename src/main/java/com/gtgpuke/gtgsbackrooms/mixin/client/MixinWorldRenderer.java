@@ -198,4 +198,16 @@ public abstract class MixinWorldRenderer {
     private void backrooms$mirrorChunkRender(int x, int y, int z, boolean important, CallbackInfo ci) {
         RemoteWorldRegistry.onChunkRenderScheduled((WorldRenderer) (Object) this, this.world, x, y, z, important);
     }
+
+    /**
+     * Vue allegee d'un portail (palier de detail) : ni pluie ni neige, sur les deux chemins de rendu (le dessin d'une vue
+     * l'appelle directement, le rendu complet de son renderer sous un pack de shaders depuis {@code render}).
+     */
+    @Inject(method = "renderWeather", at = @At("HEAD"), cancellable = true)
+    private void backrooms$noWeatherInReducedView(
+            LightmapTextureManager manager, float tickDelta, double cameraX, double cameraY, double cameraZ, CallbackInfo ci) {
+        if (PortalRenderState.reducedView()) {
+            ci.cancel();
+        }
+    }
 }

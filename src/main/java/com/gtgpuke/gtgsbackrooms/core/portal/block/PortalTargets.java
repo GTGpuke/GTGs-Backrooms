@@ -73,59 +73,33 @@ public final class PortalTargets {
      * Destination d'un bloc portail : vers la sortie fixee si les reglages en ont une, sinon vers la dimension choisie, ou,
      * automatiquement, de tout portail vers le Level 0 et du Level 0 vers la surface de l'overworld.
      *
-     * <p>Recherche synchrone : elle genere sur le thread serveur les chunks qu'elle lit. Le bloc emploie la recherche chunk
-     * par chunk ({@link #resolveLoadedOnly}), qui rend la meme arrivee ; celle-ci en est la reference, que les tests
-     * comparent a elle.
+     * <p>Recherche chunk par chunk ({@link Search}) : elle ne lit que des chunks deja la et s'arrete au premier absent, que
+     * le bloc charge par un ticket avant de rappeler au tick suivant, au lieu de le generer sur le thread serveur. Le
+     * Level 0 (calcul pur) et une dimension absente n'attendent jamais. Un chunk compte comme la s'il est entier et
+     * accessible ({@link #loaded}), pas des qu'un ticket lui donne son niveau. Rappelee avec le meme tirage une fois le
+     * chunk la, elle reprend du debut et rend l'arrivee qu'elle aurait trouvee si tout avait ete charge d'emblee.
      *
      * @param server serveur dont on lit les mondes
      * @param dimension dimension du bloc
      * @param anchor position du bloc
      * @param entryFacing orientation de sa face avant
      * @param settings taille du cadre, sens de sortie, rayon de tirage au sort, destination et sortie fixee
-     * @param random tirage des X/Z de l'arrivee, quand les reglages en veulent un
-     * @return destination, ou {@code null} si la dimension cible est absente ou sans arrivee pres du point de depart
+     * @param random tirage des X/Z de l'arrivee, quand les reglages en veulent un : le meme a chaque essai d'une recherche
+     * @return l'arrivee ({@code null} si la dimension cible est absente), ou le chunk a charger d'abord, dans la dimension
+     *     {@link #searchDimension}
      */
-    public static @Nullable Target resolve(
+    public static Search resolve(
             MinecraftServer server,
             RegistryKey<World> dimension,
             BlockPos anchor,
             PortalFacing entryFacing,
             PortalSettings settings,
             Random random) {
-        return resolve(server, dimension, anchor, entryFacing, settings, random, false).target();
-    }
-
-    /**
-     * Meme resolution, chunk par chunk ({@link Search}) : pour un bloc, qui charge le chunk nomme par un ticket et rappelle
-     * au tick suivant, au lieu de generer sur le thread serveur ce que la recherche lit. Le Level 0 (calcul pur) et une
-     * dimension absente n'attendent jamais. Un chunk compte comme la s'il est entier et accessible ({@link #loaded}), pas
-     * des qu'un ticket lui donne son niveau.
-     *
-     * @return l'arrivee ({@code null} si la dimension cible est absente), ou le chunk a charger d'abord
-     */
-    public static Search resolveLoadedOnly(
-            MinecraftServer server,
-            RegistryKey<World> dimension,
-            BlockPos anchor,
-            PortalFacing entryFacing,
-            PortalSettings settings,
-            Random random) {
-        return resolve(server, dimension, anchor, entryFacing, settings, random, true);
-    }
-
-    private static Search resolve(
-            MinecraftServer server,
-            RegistryKey<World> dimension,
-            BlockPos anchor,
-            PortalFacing entryFacing,
-            PortalSettings settings,
-            Random random,
-            boolean loadedOnly) {
         PortalFacing exitFacing = settings.exit().arrivalFacing(entryFacing);
         Optional<PortalMark> mark = settings.mark();
         if (mark.isPresent()) {
             PortalFacing facing = settings.exit() == PortalExit.STRAIGHT ? mark.get().arrivalFacing() : exitFacing;
-            return toMark(server, mark.get(), facing, settings, random, loadedOnly);
+            return toMark(server, mark.get(), facing, settings, random);
         }
         RegistryKey<World> target = settings.destination().orElse(automatic(dimension));
         ServerWorld world = server.getWorld(target);
@@ -138,7 +112,19 @@ public final class PortalTargets {
         if (target.equals(BackroomsConstants.LEVEL_ZERO_WORLD)) {
             return new Search(LevelZeroArrival.find(world, x, z, exitFacing, settings), null);
         }
-        return scan(world, x, anchor.getY(), z, exitFacing, settings, loadedOnly);
+        return scan(world, x, anchor.getY(), z, exitFacing, settings);
+    }
+
+    /**
+     * Dimension ou la recherche d'arrivee lit ses chunks : celle de la sortie fixee, sinon la destination choisie, ou la
+     * destination automatique.
+     *
+     * @param dimension dimension du bloc
+     * @param settings destination et sortie fixee
+     * @return dimension dont la recherche demande les chunks
+     */
+    public static RegistryKey<World> searchDimension(RegistryKey<World> dimension, PortalSettings settings) {
+        return settings.mark().map(PortalMark::dimension).orElseGet(() -> settings.destination().orElse(automatic(dimension)));
     }
 
     /** Destination automatique : la surface de l'overworld depuis le Level 0, le Level 0 depuis toute autre dimension. */
@@ -155,7 +141,7 @@ public final class PortalTargets {
      * Arrivee a une sortie fixee : sur le bloc ou elle a ete marquee, ou, avec un rayon de tirage au sort, sur un sol pres
      * d'un point tire autour d'elle.
      */
-    private static Search toMark(MinecraftServer server, PortalMark mark, PortalFacing facing, PortalSettings settings, Random random, boolean loadedOnly) {
+    private static Search toMark(MinecraftServer server, PortalMark mark, PortalFacing facing, PortalSettings settings, Random random) {
         ServerWorld world = server.getWorld(mark.dimension());
         if (world == null) {
             return new Search(null, null);
@@ -163,9 +149,9 @@ public final class PortalTargets {
         BlockPos pos = mark.pos();
         if (settings.exitScatter() > 0) {
             return scan(world, pos.getX() + scatter(random, settings.exitScatter()), pos.getY(),
-                    pos.getZ() + scatter(random, settings.exitScatter()), facing, settings, loadedOnly);
+                    pos.getZ() + scatter(random, settings.exitScatter()), facing, settings);
         }
-        ChunkPos missing = missingChunk(world, pos.getX(), pos.getZ(), null, loadedOnly);
+        ChunkPos missing = missingChunk(world, pos.getX(), pos.getZ(), null);
         if (missing != null) {
             return new Search(null, missing);
         }
@@ -173,25 +159,10 @@ public final class PortalTargets {
     }
 
     /**
-     * Arrivee hors du Level 0, la colonne de depart d'abord puis des anneaux de colonnes autour d'elle, jusqu'a
-     * {@value #SEARCH_RADIUS} : sur le haut du sol dans une dimension a ciel ouvert (un vide sans sol ne compte pas), sur le
-     * premier sol ou l'on tient debout sous le point de depart, le cadre entier hors des blocs et des fluides, dans une
-     * dimension a plafond, ou au-dessus a defaut. Sans sol a portee, sur une plateforme au point de depart ({@link #onPlatform}).
-     *
-     * @return destination
-     */
-    public static Target arrive(ServerWorld world, int x, int startY, int z, PortalFacing facing, PortalSettings settings) {
-        Search search = scan(world, x, startY, z, facing, settings, false);
-        // Tous les chunks sont charges a la demande : la recherche aboutit toujours.
-        return search.target();
-    }
-
-    /**
-     * Resultat d'une recherche chunk par chunk ({@link #resolveLoadedOnly}) : l'arrivee, ou le premier chunk absent dans
-     * l'ordre de la recherche. La recherche lit les colonnes dans le meme ordre que {@link #arrive}, mais s'arrete au
-     * premier chunk absent (pas entier et accessible) au lieu de le generer, et le nomme : le bloc le charge par un ticket
-     * et rappelle au tick suivant, et la premiere colonne avec un sol est la meme que celle de {@link #arrive}. Les deux
-     * champs ne sont jamais donnes ensemble.
+     * Resultat d'une recherche chunk par chunk ({@link #resolve}) : l'arrivee, ou le premier chunk absent (pas entier et
+     * accessible) dans l'ordre de la recherche, qu'elle nomme au lieu de le generer. Le bloc le charge par un ticket et
+     * rappelle au tick suivant ; les colonnes se relisent dans le meme ordre, et la premiere avec un sol ne depend pas du
+     * moment ou chaque chunk est arrive. Les deux champs ne sont jamais donnes ensemble.
      *
      * @param target arrivee, ou {@code null} si un chunk manque
      * @param missingChunk chunk a charger d'abord, ou {@code null} si l'arrivee est trouvee
@@ -204,11 +175,17 @@ public final class PortalTargets {
         }
     }
 
-    private static Search scan(ServerWorld world, int x, int startY, int z, PortalFacing facing, PortalSettings settings, boolean loadedOnly) {
+    /**
+     * Arrivee hors du Level 0, la colonne de depart d'abord puis des anneaux de colonnes autour d'elle, jusqu'a
+     * {@value #SEARCH_RADIUS} : sur le haut du sol dans une dimension a ciel ouvert (un vide sans sol ne compte pas), sur le
+     * premier sol ou l'on tient debout sous le point de depart, le cadre entier hors des blocs et des fluides, dans une
+     * dimension a plafond, ou au-dessus a defaut. Sans sol a portee, sur une plateforme au point de depart ({@link #onPlatform}).
+     */
+    private static Search scan(ServerWorld world, int x, int startY, int z, PortalFacing facing, PortalSettings settings) {
         boolean ceiling = world.getDimension().hasCeiling();
         // Sous un plafond, chaque colonne ou l'on tient fait verifier le cadre ({@link #frameFits}), dont les cellules, jusqu'a
-        // huit blocs de la colonne, peuvent etre dans le chunk d'a cote : chunk par chunk, il doit etre la aussi.
-        BlockBox frame = loadedOnly && ceiling ? footprint(world, startY, facing, settings) : null;
+        // huit blocs de la colonne, peuvent etre dans le chunk d'a cote : il doit etre la aussi.
+        BlockBox frame = ceiling ? footprint(world, startY, facing, settings) : null;
         for (int ring = 0; ring <= SEARCH_RADIUS; ring++) {
             for (int dx = -ring; dx <= ring; dx++) {
                 for (int dz = -ring; dz <= ring; dz++) {
@@ -217,7 +194,7 @@ public final class PortalTargets {
                     }
                     int columnX = x + dx;
                     int columnZ = z + dz;
-                    ChunkPos missing = missingChunk(world, columnX, columnZ, frame, loadedOnly);
+                    ChunkPos missing = missingChunk(world, columnX, columnZ, frame);
                     if (missing != null) {
                         return new Search(null, missing);
                     }
@@ -233,18 +210,12 @@ public final class PortalTargets {
     }
 
     /**
-     * Chunks qu'une colonne fait lire : le sien, et ceux de l'empreinte du cadre s'il y en a une. La recherche synchrone
-     * genere le chunk de la colonne (les cellules du cadre dans un chunk d'a cote le generent a la lecture) ; chunk par
-     * chunk, elle nomme le premier qui n'est pas la, pour que le bloc le charge d'abord.
+     * Premier chunk absent parmi ceux qu'une colonne fait lire : le sien, et ceux de l'empreinte du cadre s'il y en a une.
      *
      * @param frame empreinte horizontale du cadre autour de la colonne, ou {@code null} si la colonne seule est lue
      * @return le chunk a charger d'abord, ou {@code null} s'ils sont tous la
      */
-    private static @Nullable ChunkPos missingChunk(ServerWorld world, int x, int z, @Nullable BlockBox frame, boolean loadedOnly) {
-        if (!loadedOnly) {
-            world.getChunk(ChunkSectionPos.getSectionCoord(x), ChunkSectionPos.getSectionCoord(z));
-            return null;
-        }
+    private static @Nullable ChunkPos missingChunk(ServerWorld world, int x, int z, @Nullable BlockBox frame) {
         int minX = frame == null ? x : x + frame.getMinX();
         int maxX = frame == null ? x : x + frame.getMaxX();
         int minZ = frame == null ? z : z + frame.getMinZ();
@@ -278,7 +249,7 @@ public final class PortalTargets {
     }
 
     /**
-     * Arrivee sans sol a portee, repli de {@link #arrive} : au point de depart, a sa hauteur ramenee dans la hauteur logique
+     * Arrivee sans sol a portee, repli de la recherche d'un sol : au point de depart, a sa hauteur ramenee dans la hauteur logique
      * du monde (et au-dessus d'un fluide), sur une plateforme d'obsidienne de {@value #PLATFORM_MARGIN} bloc de marge autour
      * du cadre, la place du cadre et du corps degagee de tout bloc et de tout fluide. Pose la plateforme dans le monde.
      *
@@ -313,7 +284,7 @@ public final class PortalTargets {
 
     /** Haut reel du sol d'une colonne a ciel ouvert, ou {@code null} si elle n'a aucun bloc (le vide de l'End). */
     private static @Nullable Double surfaceFloor(ServerWorld world, int x, int z) {
-        // World.getTopY renvoie le fond du monde si le chunk n'est pas charge : il l'est deja (une fois, a la pose).
+        // World.getTopY renvoie le fond du monde si le chunk n'est pas charge : la recherche n'arrive ici qu'avec son chunk.
         int surfaceY = world.getTopY(Heightmap.Type.MOTION_BLOCKING, x, z);
         return surfaceY <= world.getBottomY() ? null : floorHeight(world, x, surfaceY, z);
     }

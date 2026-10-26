@@ -124,6 +124,13 @@ Confrontation de la première version de ce guide au dépôt complet :
   `ModSounds`). L'arrivée dans le Level 0 est calculée par le Level 0 (`backrooms/level0/LevelZeroArrival`), que
   `PortalTargets` interroge. La cible de la section 3.4 suit : `render/` et `audio/` iront sous `core/`, à côté de `portal/` dont ils consomment l'API.
 - Les anciennes specs (`docs/backrooms/1 - Arborescence`, `3 - Portails`, `4 - Veil Shaders`, `to-check`, `docs/DEPENDENCIES.md`), qui bâtissaient le rendu sur une bibliothèque tierce et une autre arborescence, ont été retirées : ce guide les remplace. Restent la spec du générateur du Level 0, sa roadmap et les règles de contenu.
+- Le 26 octobre 2026, à la demande de l'auteur : une vue lointaine (un bloc y fait moins de 6 pixels à l'écran, ou le
+  cadre est au-delà de la distance de rendu des vues, jusqu'à 128 blocs) n'est plus qu'une **image figée**, dessinée de
+  temps en temps dans un framebuffer à elle puis collée sur le cadre (`FrozenViews`). C'est un framebuffer de vue séparé
+  hors du chemin sous pack, que la section 3.5 et `CLAUDE.md` écartent : l'écart est accordé pour ce seul palier, sur le
+  chemin sans pack. La vue y est le rendu de la vue lui-même, avec la projection du joueur et sous le stencil de son
+  propre framebuffer (portails imbriqués compris) ; ce n'est ni un post-process par vue ni une composition, et le rendu
+  des vues vivantes reste dans le framebuffer principal.
 
 ---
 
@@ -216,7 +223,7 @@ Règles de dépendance :
 
 | Idée de la première version du guide | Décision | Raison |
 |---|---|---|
-| Un framebuffer par vue, post-process par vue puis composition | Écartée comme défaut ; sous un pack de shaders, la vue est un rendu complet dans le pipeline du pack, après l'image (section 7.3) | Le projet dessine déjà les vues dans le framebuffer principal sous stencil, avec la projection du joueur et la découpe par shaders. Un second chemin de composition coûterait un rendu de plus par vue et dupliquerait ce qui marche |
+| Un framebuffer par vue, post-process par vue puis composition | Écartée comme défaut ; sous un pack de shaders, la vue est un rendu complet dans le pipeline du pack, après l'image (section 7.3) ; seule exception, l'image figée d'une vue lointaine (section 2.4, 26 octobre 2026), rendue de temps en temps, jamais à chaque image | Le projet dessine déjà les vues dans le framebuffer principal sous stencil, avec la projection du joueur et la découpe par shaders. Un second chemin de composition coûterait un rendu de plus par vue et dupliquerait ce qui marche |
 | Séparation systématique `api/` et `impl/` par système | Écartée | Règle du dépôt : pas de couche d'abstraction sans deuxième implémentation réelle. Une API publique ne se crée que quand un second consommateur existe |
 | `WorldProfile` comme hiérarchie d'interfaces | Remplacée par un record de données chargé depuis les ressources | Même règle ; deux profils réels (Overworld, Level 0) suffisent et se décrivent en données |
 | `CLAUDE.md` fourni comme fichier complet | Remplacé par un bloc à insérer (section 4.2) | Le `CLAUDE.md` du dépôt est riche et fait autorité sur les règles de code ; on le complète |

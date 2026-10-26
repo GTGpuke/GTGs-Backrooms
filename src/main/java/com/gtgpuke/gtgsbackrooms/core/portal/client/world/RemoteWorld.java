@@ -616,6 +616,7 @@ public final class RemoteWorld {
 
     /** Libere le renderer, son chunk builder et ses tampons de dessin (voir {@link #release}). */
     void dispose() {
+        this.viewRenderer.releaseReduced();
         release(this.renderer);
     }
 

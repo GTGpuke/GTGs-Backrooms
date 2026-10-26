@@ -19,6 +19,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewLightmaps;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.wand.PortalWandScreen;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalLight;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.FrozenViews;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.PortalSightReporter;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteSyncReceiver;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
@@ -62,6 +63,9 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
             EntityHandover.onClientTick();
             ClientPortalLight.onClientTick(client);
             PortalSightReporter.onClientTick(client);
+            // Aussi hors du rendu des portails : apres un changement de dimension vers un monde sans portail, les images figees
+            // de l'ancien seraient gardees, et le monde avec elles.
+            FrozenViews.sweep();
         });
     }
 
@@ -80,5 +84,6 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
         ClientPortalIndex.clear();
         ViewLightmaps.clear();
         ShaderPackPortalRenderer.release();
+        FrozenViews.clear();
     }
 }

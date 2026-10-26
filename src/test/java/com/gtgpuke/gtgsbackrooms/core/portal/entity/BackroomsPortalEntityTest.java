@@ -151,6 +151,11 @@ class BackroomsPortalEntityTest {
         portal.setHiddenFromPlayer(true);
         assertEquals(42L, portal.seenAt(), "Dernier regard du joueur.");
         assertTrue(portal.hiddenFromPlayer(), "Cachee au joueur qui ne la regarde plus.");
+
+        assertEquals(0, portal.detailTier(), "Vue en pleine qualite tant que le client n'a rien juge.");
+        assertTrue(-portal.detailChangedFrame() > 1_000_000, "Aucun changement de palier recent : une vue lointaine s'allege aussitot.");
+        portal.setDetailTier(2, 7);
+        assertTrue(portal.detailTier() == 2 && portal.detailChangedFrame() == 7, "Vue figee a l'image 7.");
     }
 
     @Test

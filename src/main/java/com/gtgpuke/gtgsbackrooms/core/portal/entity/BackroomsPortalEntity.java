@@ -113,6 +113,10 @@ public class BackroomsPortalEntity extends Entity {
     private long seenAt = Long.MIN_VALUE / 2;
     /** Cote client : sortie fugace que le joueur ne regarde plus ; pour lui, elle n'existe plus. */
     private boolean hiddenFromPlayer;
+    /** Cote client : rang du palier de detail de la vue de ce portail a la derniere image ou elle s'est dessinee (0 : pleine). */
+    private int detailTier;
+    /** Cote client : image du dernier changement de palier de sa vue ; bien avant la premiere, pour qu'elle s'allege aussitot. */
+    private int detailChangedFrame = Integer.MIN_VALUE / 2;
 
     /**
      * Portail vide, tel que le cree le registre d'entities au chargement ou a la reception ; le reste arrive par le NBT
@@ -265,6 +269,22 @@ public class BackroomsPortalEntity extends Entity {
     /** Cote client : cache ou montre cette sortie fugace au joueur. */
     public void setHiddenFromPlayer(boolean hidden) {
         this.hiddenFromPlayer = hidden;
+    }
+
+    /** Cote client : rang du palier de detail de la vue de ce portail a la derniere image (0 : pleine qualite). */
+    public int detailTier() {
+        return this.detailTier;
+    }
+
+    /** Cote client : image du dernier changement de palier de la vue de ce portail. */
+    public int detailChangedFrame() {
+        return this.detailChangedFrame;
+    }
+
+    /** Cote client : la vue de ce portail change de palier a cette image. */
+    public void setDetailTier(int tier, int frame) {
+        this.detailTier = tier;
+        this.detailChangedFrame = frame;
     }
 
     /** Image d'un point de ce cote dans le monde d'arrivee. */

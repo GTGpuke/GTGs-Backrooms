@@ -7,8 +7,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
 
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
@@ -55,6 +58,13 @@ public final class DestinationLoader {
     /** Cote quitte par un joueur qui change de dimension, tenu autant qu'une fenetre dont on s'eloigne. */
     private static final ChunkTicketType<ChunkPos> DEPARTURE_TICKET_TYPE =
             ChunkTicketType.create("gtgsbackrooms_portal_departure", Comparator.comparingLong(ChunkPos::toLong), RELEASE_GRACE_TICKS);
+    /** Chunk d'une fenetre synchronisee, tenu tant qu'un joueur le veut et {@value #WINDOW_GRACE_TICKS} ticks apres. */
+    private static final ChunkTicketType<ChunkPos> WINDOW_TICKET_TYPE =
+            ChunkTicketType.create("gtgsbackrooms_portal_window", Comparator.comparingLong(ChunkPos::toLong));
+    /** Ticks pendant lesquels un chunk de fenetre reste charge apres que plus aucun joueur ne le veut : un pas de cote ne decharge rien. */
+    private static final int WINDOW_GRACE_TICKS = 100;
+    /** Chunks de fenetre tenus, par dimension : dernier tick ou un joueur les voulait. */
+    private static final Map<RegistryKey<World>, Long2LongOpenHashMap> WINDOW_CHUNKS = new HashMap<>();
     /** Fenetre tenue par chaque portail precharge. */
     private static final Map<UUID, DestinationWindow> ACTIVE = new HashMap<>();
     /** Nombre de portails par fenetre : le ticket est pose au premier et retire au dernier. */
@@ -99,6 +109,44 @@ public final class DestinationLoader {
     public static void holdDeparture(ServerWorld origin, Vec3d position) {
         ChunkPos chunk = new ChunkPos(ChunkSectionPos.getSectionCoord(position.x), ChunkSectionPos.getSectionCoord(position.z));
         origin.getChunkManager().addTicket(DEPARTURE_TICKET_TYPE, chunk, ticketRadius(origin.getServer(), true), chunk);
+    }
+
+    /**
+     * Garde charge un chunk qu'une fenetre synchronisee veut, de son ticket propre (un chunk entier) : une fenetre en cone
+     * deborde du ticket de l'arrivee. A appeler a chaque passage de synchronisation tant qu'il est voulu ; le ticket est pose
+     * au premier appel et retire {@value #WINDOW_GRACE_TICKS} ticks apres le dernier.
+     *
+     * @param world monde du chunk
+     * @param chunk cle {@link ChunkPos#toLong(int, int)} du chunk
+     */
+    public static void holdWindowChunk(ServerWorld world, long chunk) {
+        Long2LongOpenHashMap held = WINDOW_CHUNKS.computeIfAbsent(world.getRegistryKey(), key -> heldChunks());
+        if (held.put(chunk, world.getServer().getTicks()) < 0L) {
+            ChunkPos pos = new ChunkPos(chunk);
+            world.getChunkManager().addTicket(WINDOW_TICKET_TYPE, pos, 0, pos);
+        }
+    }
+
+    private static Long2LongOpenHashMap heldChunks() {
+        Long2LongOpenHashMap held = new Long2LongOpenHashMap();
+        held.defaultReturnValue(-1L);
+        return held;
+    }
+
+    /** Retire le ticket des chunks de fenetre que plus aucun joueur ne veut depuis {@value #WINDOW_GRACE_TICKS} ticks. */
+    private static void releaseWindowChunks(MinecraftServer server) {
+        for (Map.Entry<RegistryKey<World>, Long2LongOpenHashMap> entry : WINDOW_CHUNKS.entrySet()) {
+            ServerWorld world = server.getWorld(entry.getKey());
+            ObjectIterator<Long2LongMap.Entry> iterator = entry.getValue().long2LongEntrySet().fastIterator();
+            while (iterator.hasNext()) {
+                Long2LongMap.Entry held = iterator.next();
+                if (server.getTicks() - held.getLongValue() > WINDOW_GRACE_TICKS) {
+                    ChunkPos pos = new ChunkPos(held.getLongKey());
+                    world.getChunkManager().removeTicket(WINDOW_TICKET_TYPE, pos, 0, pos);
+                    iterator.remove();
+                }
+            }
+        }
     }
 
     /** Rayon, en chunks, de la fenetre chargee autour de chaque arrivee. */
@@ -157,6 +205,7 @@ public final class DestinationLoader {
                 release(server, RELEASE_SCRATCH.get(i));
             }
             resizeTickets(server, portals);
+            releaseWindowChunks(server);
         }
     }
 
@@ -253,6 +302,7 @@ public final class DestinationLoader {
 
     /** Arret du serveur : ses mondes disparaissent avec leurs tickets, on oublie tout. */
     private static void releaseAll() {
+        WINDOW_CHUNKS.clear();
         UNWATCHED_SINCE.clear();
         ACTIVE.clear();
         LEASES.clear();

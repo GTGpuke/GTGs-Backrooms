@@ -158,6 +158,36 @@ public enum PortalFacing {
     }
 
     /**
+     * Une coordonnee de l'image d'un point par {@link #transformPoint}, sans allocation : pour un calcul repete qui n'en lit
+     * qu'une partie (la camera de la vue d'un joueur, toutes les cinq ticks).
+     *
+     * @param axis axe de la coordonnee rendue : 0 pour x, 1 pour y, 2 pour z
+     */
+    public static double transformCoordinate(
+            PortalFacing source,
+            Vec3d sourceCenter,
+            PortalFacing destination,
+            Vec3d destinationCenter,
+            double x,
+            double y,
+            double z,
+            int axis) {
+        double dx = x - sourceCenter.x;
+        double dy = y - sourceCenter.y;
+        double dz = z - sourceCenter.z;
+        double w = dot(source.axisW, dx, dy, dz);
+        double h = dot(source.axisH, dx, dy, dz);
+        double n = dot(source.normal, dx, dy, dz);
+        if (axis == 0) {
+            return destinationCenter.x + rotated(destination.axisW.x, destination.axisH.x, destination.normal.x, w, h, n);
+        }
+        if (axis == 1) {
+            return destinationCenter.y + rotated(destination.axisW.y, destination.axisH.y, destination.normal.y, w, h, n);
+        }
+        return destinationCenter.z + rotated(destination.axisW.z, destination.axisH.z, destination.normal.z, w, h, n);
+    }
+
+    /**
      * Fait passer un regard (yaw, pitch en degres) de la source a la destination.
      *
      * @param source orientation du portail traverse

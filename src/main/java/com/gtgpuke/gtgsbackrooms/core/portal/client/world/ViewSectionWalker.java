@@ -12,6 +12,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.HeightLimitView;
 import net.minecraft.world.chunk.ChunkManager;
 
@@ -20,8 +21,9 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.BuiltChunkStorageAccessor;
 
 /**
  * Choisit, de maniere synchrone, les sections a dessiner dans une vue de portail : parcours en largeur depuis la
- * section de la camera, limite aux sections qui touchent le frustum et le volume visible a travers le cadre, et dont
- * les chunks voisins sont charges (comme vanilla, une section sans voisin ne se construit pas).
+ * section de la camera, ou depuis celles du cadre d'arrivee quand la camera est en deca du cadre, limite aux sections qui
+ * touchent le frustum et le volume visible a travers le cadre, et dont les chunks voisins sont charges (comme vanilla, une
+ * section sans voisin ne se construit pas).
  *
  * <p>Le parcours asynchrone de vanilla ({@code ChunkRenderingDataPreparer}) ne convient pas aux vues : il tient un
  * seul graphe par renderer, le recalcule en arriere-plan quand la camera change de section, et filtre entre-temps
@@ -73,7 +75,9 @@ final class ViewSectionWalker {
         BuiltChunkStorageAccessor accessor = (BuiltChunkStorageAccessor) storage;
         int tail = 0;
         ChunkBuilder.BuiltChunk start = accessor.backrooms$getRenderedChunk(cameraPos);
-        if (start != null && contains(start, cameraPos)) {
+        if (cone.startsAtFrame()) {
+            tail = enqueueFrameSections(accessor, frustum, cone, chunkManager, tail);
+        } else if (start != null && contains(start, cameraPos)) {
             this.visited.set(start.index);
             this.queue[tail++] = start.index;
         } else {
@@ -123,6 +127,39 @@ final class ViewSectionWalker {
                 this.visited.set(chunk.index);
                 if (contains(chunk, this.scratch) && accept(chunk, frustum, cone, chunkManager)) {
                     this.queue[count++] = chunk.index;
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Camera en deca du cadre : le parcours part des sections qui touchent le cadre d'arrivee, ou commence le volume visible.
+     * Parti de la camera, il n'atteignait le cadre qu'a travers des sections hors du volume, toutes refusees : a vingt blocs
+     * du cadre, la vue ne montrait plus que le fond de son ciel.
+     */
+    private int enqueueFrameSections(BuiltChunkStorageAccessor accessor, Frustum frustum, ViewCone cone, ChunkManager chunkManager, int tail) {
+        // Un bloc de marge : un cadre pose sur la limite de deux sections touche les deux.
+        int minX = ChunkSectionPos.getSectionCoord(MathHelper.floor(cone.frameMin(0)) - 1);
+        int minY = ChunkSectionPos.getSectionCoord(MathHelper.floor(cone.frameMin(1)) - 1);
+        int minZ = ChunkSectionPos.getSectionCoord(MathHelper.floor(cone.frameMin(2)) - 1);
+        int maxX = ChunkSectionPos.getSectionCoord(MathHelper.floor(cone.frameMax(0)) + 1);
+        int maxY = ChunkSectionPos.getSectionCoord(MathHelper.floor(cone.frameMax(1)) + 1);
+        int maxZ = ChunkSectionPos.getSectionCoord(MathHelper.floor(cone.frameMax(2)) + 1);
+        int count = tail;
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    this.scratch.set(ChunkSectionPos.getOffsetPos(x, HALF_SECTION), ChunkSectionPos.getOffsetPos(y, HALF_SECTION),
+                            ChunkSectionPos.getOffsetPos(z, HALF_SECTION));
+                    ChunkBuilder.BuiltChunk chunk = accessor.backrooms$getRenderedChunk(this.scratch);
+                    if (chunk == null || this.visited.get(chunk.index)) {
+                        continue;
+                    }
+                    this.visited.set(chunk.index);
+                    if (contains(chunk, this.scratch) && accept(chunk, frustum, cone, chunkManager)) {
+                        this.queue[count++] = chunk.index;
+                    }
                 }
             }
         }

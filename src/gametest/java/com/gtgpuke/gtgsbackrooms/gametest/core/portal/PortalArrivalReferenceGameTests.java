@@ -13,7 +13,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.math.random.Random;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.ChunkStatus;
 
@@ -26,6 +25,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalPlacement;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalSettings;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalTargets;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
+import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestArrivals;
 
 /**
  * Arrivees de reference (garde-fou G3 de {@code docs/revue/BILAN-CORRECTIONS.md}) : sur le terrain naturel du serveur de
@@ -93,21 +93,21 @@ public final class PortalArrivalReferenceGameTests implements FabricGameTest {
         PortalSettings scattered = new PortalSettings(1, 2, true, true, false, false, PortalExit.STRAIGHT, SCATTER, false, false, PortalPlacement.LOOK,
                 Optional.empty(), Optional.of(MARK));
         String[] actual = {
-            describe("nether_1x2_south", PortalTargets.arrive(nether, NETHER_START.getX(), NETHER_START.getY(), NETHER_START.getZ(), PortalFacing.SOUTH,
+            describe("nether_1x2_south", GameTestArrivals.arrive(nether, NETHER_START.getX(), NETHER_START.getY(), NETHER_START.getZ(), PortalFacing.SOUTH,
                     PortalSettings.DEFAULT)),
-            describe("nether_2x3_east", PortalTargets.arrive(nether, NETHER_START.getX(), NETHER_START.getY(), NETHER_START.getZ(), PortalFacing.EAST, tall)),
-            describe("nether_1x2_up", PortalTargets.arrive(nether, NETHER_START.getX(), NETHER_START.getY(), NETHER_START.getZ(), PortalFacing.UP,
+            describe("nether_2x3_east", GameTestArrivals.arrive(nether, NETHER_START.getX(), NETHER_START.getY(), NETHER_START.getZ(), PortalFacing.EAST, tall)),
+            describe("nether_1x2_up", GameTestArrivals.arrive(nether, NETHER_START.getX(), NETHER_START.getY(), NETHER_START.getZ(), PortalFacing.UP,
                     PortalSettings.DEFAULT)),
-            describe("surface_1x2_north", PortalTargets.arrive(overworld, SURFACE_START.getX(), SURFACE_START.getY(), SURFACE_START.getZ(),
+            describe("surface_1x2_north", GameTestArrivals.arrive(overworld, SURFACE_START.getX(), SURFACE_START.getY(), SURFACE_START.getZ(),
                     PortalFacing.NORTH, PortalSettings.DEFAULT)),
-            describe("end_void_1x2_south", PortalTargets.arrive(end, END_START.getX(), END_START.getY(), END_START.getZ(), PortalFacing.SOUTH,
+            describe("end_void_1x2_south", GameTestArrivals.arrive(end, END_START.getX(), END_START.getY(), END_START.getZ(), PortalFacing.SOUTH,
                     PortalSettings.DEFAULT)),
-            describe("resolve_overworld_to_nether", PortalTargets.resolve(server, World.OVERWORLD, SURFACE_START, PortalFacing.WEST,
-                    PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.empty()), Random.create(1L))),
-            describe("resolve_mark_exact", PortalTargets.resolve(server, World.OVERWORLD, SURFACE_START, PortalFacing.SOUTH,
-                    PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(MARK)), Random.create(1L))),
-            describe("resolve_mark_scatter_seed7", PortalTargets.resolve(server, World.OVERWORLD, SURFACE_START, PortalFacing.SOUTH, scattered,
-                    Random.create(7L))),
+            describe("resolve_overworld_to_nether", GameTestArrivals.resolve(server, World.OVERWORLD, SURFACE_START, PortalFacing.WEST,
+                    PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.empty()), 1L)),
+            describe("resolve_mark_exact", GameTestArrivals.resolve(server, World.OVERWORLD, SURFACE_START, PortalFacing.SOUTH,
+                    PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(MARK)), 1L)),
+            describe("resolve_mark_scatter_seed7", GameTestArrivals.resolve(server, World.OVERWORLD, SURFACE_START, PortalFacing.SOUTH, scattered,
+                    7L)),
         };
         for (String line : actual) {
             ModConstants.LOGGER.info("[G3] {}", line);

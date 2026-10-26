@@ -32,6 +32,8 @@ def passthroughProperties = [
         portalRenderDistanceBlocks        : 'gtgsbackrooms.portal.renderDistanceBlocks',
         portalTeleportCooldownTicks       : 'gtgsbackrooms.portal.teleportCooldownTicks',
         portalDebugRendering              : 'gtgsbackrooms.portal.debugRendering',
+        portalOcclusion                   : 'gtgsbackrooms.portal.occlusion',
+        portalLod                         : 'gtgsbackrooms.portal.lod',
 ]
 def activeSystemProperties = passthroughProperties.findAll { project.hasProperty(it.key) }
         .collectEntries { [(it.value): project.property(it.key)] }

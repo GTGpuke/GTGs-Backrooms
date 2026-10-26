@@ -230,6 +230,7 @@ public final class RemoteWorldRegistry {
             }
         }
         if (remote.renderer() == vanillaRenderer) {
+            remote.viewRenderer().releaseReduced();
             vanillaRenderer.setWorld(null);
         } else {
             remote.dispose();
@@ -286,6 +287,8 @@ public final class RemoteWorldRegistry {
         // du nouveau, s'il en a deja eu une, resert telle quelle.
         mainWorld = promoted.world();
         promotedWorld = promoted;
+        // Devenu le monde principal, il ne se voit plus par un portail sous cet objet : ses tampons de vue allegee sont rendus.
+        promoted.viewRenderer().releaseReduced();
     }
 
     /**
@@ -382,6 +385,8 @@ public final class RemoteWorldRegistry {
             ClientPortalIndex.forget(remote.world());
             if (remote.renderer() != vanillaRenderer) {
                 remote.dispose();
+            } else {
+                remote.viewRenderer().releaseReduced();
             }
         }
         WORLDS.clear();

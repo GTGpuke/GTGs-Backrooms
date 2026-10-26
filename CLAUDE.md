@@ -33,13 +33,13 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - `core/` : `ModConstants`, `ModConfig` (options lues en `-D`) et `registry/` : registres (`Registry.register` dans des
   champs `static final`), un par type (blocs, items, block entities, entities, composants, sons, onglet créatif,
   payloads). Le bloc portail n'a pas d'item : la baguette le pose.
-- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), garde d'une arrivée au sol, arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/PORTALS.md` avant d'y toucher.
+- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), garde d'une arrivée au sol, arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/PORTALS.md` avant d'y toucher.
 - `core/perf/` : moniteur de performance opt-in.
 - `backrooms/level0/generation/` : `coord` → `noise` → `sector` → `layout` → `write`, orchestrés par `LevelZeroChunkGenerator`.
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
 - `compat/iris/` : compatibilité avec le mod de shaders Iris, seul mod nommé dans le code (exception accordée) : son API publique dit si un pack est actif, et les vues de portail se dessinent alors après l'image (`ShaderPackPortalRenderer`). Dépendance `modCompileOnly` depuis le maven Modrinth, jamais embarquée ni requise.
-- `mixin/` : commun (relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, monde de création du joueur suivi aux traversées, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
+- `mixin/` : commun (relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, monde de création du joueur suivi aux traversées, générations des sections de terrain (preuve d'occlusion des vues), météo et particules coupées dans une vue allégée, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
 - `src/gametest/` : tests en jeu, mod séparé `gtgs_backrooms_gametest` chargé par `runGameTest` seulement (jamais dans le JAR, `verifyJarContents` le vérifie).
 
 ## Règles de code
@@ -67,7 +67,8 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
   famille que `ShaderClipInjector`), passes limitées par le niveau de stencil. Sa direction reste ouverte tant que la
   preuve de concept V1 n'a pas tranché la septième inconnue (`docs/GUIDE.md`, section 3.2 : l'injection n'atteint ni les
   shaders du mod de terrain ni ceux d'un pack). Pas de framebuffer de vue séparé hors du chemin sous pack de shaders
-  (`ShaderPackPortalRenderer`).
+  (`ShaderPackPortalRenderer`) et de l'image figée d'une vue lointaine (`FrozenViews`, écart accordé le 26 octobre 2026,
+  `docs/GUIDE.md` section 2.4).
 - L'audio étend `FrameSoundPlayer`, `PortalSound` et le relais serveur existants.
 - Sessions d'implémentation : aucun code source d'un autre mod dans le contexte ; les notes de conception
   `docs/design/*.md` sont la seule source autorisée. Lire l'API d'un mod tiers n'est permis que pour écrire un module
@@ -213,6 +214,12 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   de ce renderer) gardent le monde de la dernière entrée vanilla. Un monde distant libéré se vide donc avant d'être jeté
   (`RemoteWorld.clear`, avant de détacher son renderer, que les déchargements préviennent). Pour trouver ce qui retient
   un objet : vidage du tas du client de banc (`jmap -dump:live`), puis plus court chemin depuis les racines du GC.
+- Sections de terrain vanilla : `WorldRenderer.isRenderingReady` dit qu'une section a été construite une fois, pas
+  qu'elle contient le dernier changement de ses blocs ; une reconstruction lancée avant un changement peut finir après
+  lui, et une section vide reçoit ses données depuis un thread de travail. Ce qui se décide sur ce qui est affiché passe
+  par `SectionGenerations` (génération demandée à `BuiltChunk.scheduleRebuild(Z)`, construite notée par la tâche qui a
+  copié les blocs). La face commune à deux blocs pleins ne se dessine pas : un bloc plein n'en cache ce qui est derrière
+  lui que si la case devant lui est libre (`FrameOcclusion`).
 - Géométrie posée dans le plan d'une face de bloc (zone d'un cadre plaqué sur un mur ou posé sur un sol plein) : un
   `glPolygonOffset` de quelques unités suffit de loin, pas de près, où l'imprécision des positions du terrain (en
   flottants, relatives à leur section) vaut des centaines d'unités de profondeur ; à quelques centimètres de la caméra,
@@ -352,6 +359,14 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   sur le chunk d'à côté (colonnes de basalte des deltas, arbres) donne un terrain différent d'un monde neuf à l'autre,
   à graine égale. Un test qui fige une arrivée prépare son terrain chunk par chunk au statut `FEATURES` dans un ordre
   fixe (`PortalArrivalReferenceGameTests.prepare`).
+- Framebuffers : `Framebuffer.delete()`, comme sa création et `resize`, laisse lié le framebuffer par défaut (0) ; au milieu
+  d'une image, relier celui du jeu (`client.getFramebuffer().beginWrite(false)`), sinon le reste de l'image se dessine à
+  côté de l'écran (journal de débogage des portails : « Framebuffer lie 0 »). Une vue capturée sur un rectangle de l'écran
+  (`FrozenViews`) garde la projection du joueur et décale la fenêtre de rendu (`glViewport` accepte une origine
+  négative) : une projection décentrée donnée au `Frustum` retomberait dans le piège de `coverBoxAroundSetPosition`.
+- Parcours des sections d'une vue : sa caméra est en deçà du plan d'arrivée, à la distance du joueur au cadre, et le
+  volume visible (`ViewCone`) est fermé par ce plan ; un parcours parti de la caméra n'atteint pas le cadre (fond noir de
+  loin). `ViewSectionWalker` part alors des sections du cadre (`ViewCone.startsAtFrame`).
 - L'extension Java de VSCode compile avec JDT dans `build/classes/java/main` (même dossier que Gradle) ; avec un modèle de projet périmé, elle y écrit des classes `Unresolved compilation problems` qui font planter le client au chargement. L'autobuild est coupé dans `.vscode/settings.json` ; ne jamais le réactiver sans un import Gradle sain (JDK 21).
 
 ## Avant de push

@@ -57,6 +57,20 @@ public final class ModConfig {
     public static final int PORTAL_REMOTE_WORLD_RELEASE_SECONDS =
             intProperty("gtgsbackrooms.portal.remoteWorldReleaseSeconds", 60);
 
+    /**
+     * Saute le dessin des vues dont le cadre est prouve cache derriere des blocs pleins et opaques deja affiches
+     * ({@code FrameOcclusion}) ; leur terrain reste entretenu. Se coupe pour comparer avant et apres au banc.
+     */
+    public static final boolean ENABLE_PORTAL_OCCLUSION =
+            booleanProperty("gtgsbackrooms.portal.occlusion", true);
+
+    /**
+     * Allege la vue d'un cadre lointain et petit a l'ecran ({@code ViewDetail}) : ni meteo ni particules, entites figees.
+     * De pres, ou un cadre qui couvre un dixieme de l'ecran, la vue reste en pleine qualite. Se coupe pour comparer.
+     */
+    public static final boolean ENABLE_PORTAL_LOD =
+            booleanProperty("gtgsbackrooms.portal.lod", true);
+
     /** Active les logs detailles du rendu de portail. */
     public static final boolean DEBUG_PORTAL_RENDERING =
             booleanProperty("gtgsbackrooms.portal.debugRendering", false);

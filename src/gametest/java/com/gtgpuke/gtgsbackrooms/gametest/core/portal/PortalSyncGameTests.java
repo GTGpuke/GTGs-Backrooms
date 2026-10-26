@@ -95,6 +95,8 @@ public final class PortalSyncGameTests implements FabricGameTest {
     private static final int SYNC_PATIENCE_TICKS = 2000;
     /** Ticks sans portail a portee avant que le serveur ne fasse liberer un monde distant, par les reglages par defaut. */
     private static final int RELEASE_DELAY_TICKS = ModConfig.PORTAL_REMOTE_WORLD_RELEASE_SECONDS * SharedConstants.TICKS_PER_SECOND;
+    /** Plus que le delai de grace des tickets de fenetre (cent ticks) et que l'intervalle du chargeur qui les relache. */
+    private static final int HELD_WINDOW_TICKS = 150;
     /** Arrivee du portail invisible du test de fenetre, a 480 blocs a l'ouest : ses chunks sont loin de tous les autres. */
     private static final Vec3d HIDDEN_EXIT = NETHER_EXIT.add(-480.0, 0.0, 0.0);
     /** Arrivee du second portail du test a deux dimensions, dans le vide de l'End : rien a y generer. */
@@ -257,8 +259,9 @@ public final class PortalSyncGameTests implements FabricGameTest {
                             twin.discard();
                             // Le joueur se rapproche du portail lointain, sans etre a portee imminente : le foyer change. La
                             // fenetre du premier portail, qui ne tient pas autour du nouveau foyer, est dechargee ; celle du
-                            // troisieme y tient, et garde l'objet distant.
-                            moveTo(player, context.getAbsolute(new Vec3d(13.5, 1.0, 7.0)), 0.0f);
+                            // troisieme y tient, et garde l'objet distant. Le joueur reste devant le troisieme portail : vue
+                            // de dos, sa vue ne se verrait pas, et il n'aurait aucune fenetre.
+                            moveTo(player, context.getAbsolute(new Vec3d(20.5, 1.0, 5.0)), 0.0f);
                         } else if (elapsed == 70) {
                             context.assertTrue(nether.getEntity(thrown[0].getUuid()) != null, "La pepite est passee dans le Nether par le portail.");
                             context.assertTrue(GameTestPlayers.sent(player, RemoteEntityPacketPayload.class).stream()
@@ -453,10 +456,7 @@ public final class PortalSyncGameTests implements FabricGameTest {
      * {@code (rayon - 1) * sqrt(2)}.
      */
     private static void seesWholeWindow(ServerPlayerEntity witness) {
-        int reach = (int) Math.floor((DestinationLoader.syncRadius(true) - 1) * Math.sqrt(2.0)) + 1;
-        SyncedClientOptions options = witness.getClientOptions();
-        witness.setClientOptions(new SyncedClientOptions(options.language(), reach, options.chatVisibility(), options.chatColorsEnabled(),
-                options.playerModelParts(), options.mainArm(), options.filtersText(), options.allowsServerListing()));
+        withViewDistance(witness, (int) Math.floor((DestinationLoader.syncRadius(true) - 1) * Math.sqrt(2.0)) + 1);
     }
 
     /**
@@ -1288,11 +1288,10 @@ public final class PortalSyncGameTests implements FabricGameTest {
         LEFTOVERS.add(portal);
         Vec3d plane = portal.getPos();
         // Regarde de loin : le ticket de l'arrivee a le rayon de la fenetre synchronisee, son anneau exterieur est charge
-        // sans etre actif, et vanilla n'y previent aucun ecouteur d'un changement de bloc.
+        // sans etre actif, et vanilla n'y previent aucun ecouteur d'un changement de bloc. Le bord pris est dans l'axe du
+        // cadre (l'arrivee montre le sud) : de loin, la fenetre suit cet axe.
         ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, new Vec3d(plane.x, plane.y - 1.0, plane.z - 12.0), 0.0f, 0.0f);
-        int edgeChunkX = ChunkSectionPos.getSectionCoord(NETHER_EXIT.x) + DestinationLoader.syncRadius(false);
-        BlockPos block = new BlockPos(ChunkSectionPos.getBlockCoord(edgeChunkX) + 8, BlockPos.ofFloored(NETHER_EXIT).getY() - 2,
-                BlockPos.ofFloored(NETHER_EXIT).getZ());
+        BlockPos block = windowEdgeBlock();
         ChunkPos chunk = new ChunkPos(block);
         List<RemoteChunkPayload> chunks = new ArrayList<>();
         List<RemoteBlockUpdatePayload> blocks = new ArrayList<>();
@@ -1329,9 +1328,131 @@ public final class PortalSyncGameTests implements FabricGameTest {
     @AfterBatch(batchId = "portal_sync_window_edge")
     public void afterWindowEdge(ServerWorld world) {
         releaseLeftovers();
-        int edgeChunkX = ChunkSectionPos.getSectionCoord(NETHER_EXIT.x) + DestinationLoader.syncRadius(false);
-        world.getServer().getWorld(World.NETHER).setBlockState(new BlockPos(ChunkSectionPos.getBlockCoord(edgeChunkX) + 8,
-                BlockPos.ofFloored(NETHER_EXIT).getY() - 2, BlockPos.ofFloored(NETHER_EXIT).getZ()), Blocks.AIR.getDefaultState());
+        world.getServer().getWorld(World.NETHER).setBlockState(windowEdgeBlock(), Blocks.AIR.getDefaultState());
+    }
+
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS + 400 + HELD_WINDOW_TICKS, batchId = "portal_sync_cone")
+    public void aFarViewerGetsTheWindowAlongTheFrameAxis(TestContext context) {
+        ServerWorld nether = prepareNether(context);
+        BackroomsPortalEntity portal = netherPortal(context);
+        LEFTOVERS.add(portal);
+        Vec3d plane = portal.getPos();
+        // Douze blocs au nord, de face, avec la portee d'un vrai client : la fenetre suit l'axe du cadre, l'arrivee montre le sud.
+        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, new Vec3d(plane.x, plane.y - 1.0, plane.z - 12.0), 0.0f, 0.0f);
+        withViewDistance(player, 8);
+        int exitX = ChunkSectionPos.getSectionCoord(NETHER_EXIT.x);
+        int exitZ = ChunkSectionPos.getSectionCoord(NETHER_EXIT.z);
+        // Au-dela du carre de la fenetre et du ticket de l'arrivee, dans la zone generee d'avance.
+        ChunkPos deep = new ChunkPos(exitX, exitZ + DestinationLoader.syncRadius(false) + 2);
+        ChunkPos side = new ChunkPos(exitX + DestinationLoader.syncRadius(false), exitZ);
+        List<RemoteChunkPayload> chunks = new ArrayList<>();
+        List<RemoteChunkUnloadPayload> unloads = new ArrayList<>();
+        int[] heldFor = {0};
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    if (!chunkSent(chunks, World.NETHER.getValue(), deep)) {
+                        throw new GameTestException("Le chunk dans l'axe du cadre, au-dela du carre, n'est pas encore synchronise.");
+                    }
+                })
+                .createAndAddReported(() -> context.assertTrue(!chunkSent(chunks, World.NETHER.getValue(), side),
+                        "De loin, rien sur le cote de l'arrivee, hors du coin de vue."))
+                .createAndAdd(() -> {
+                    // Le joueur reste devant le cadre plus longtemps que le delai de grace des tickets de fenetre.
+                    if (++heldFor[0] <= HELD_WINDOW_TICKS) {
+                        throw new GameTestException("Le joueur regarde encore le cadre, le temps du delai de grace.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    context.assertTrue(nether.getChunkManager().getWorldChunk(deep.x, deep.z) != null,
+                            "Toujours voulu, le chunk du cone reste tenu entier par son ticket, delai de grace passe.");
+                    // Derriere le portail, de loin : sa vue ne se voit pas d'ici, sa fenetre est dechargee apres le delai de grace.
+                    moveTo(player, new Vec3d(plane.x, plane.y - 1.0, plane.z + 12.0), 180.0f);
+                })
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    unloads.addAll(GameTestPlayers.sent(player, RemoteChunkUnloadPayload.class));
+                    if (unloads.stream().noneMatch(unload -> unload.chunkPos().equals(deep))) {
+                        throw new GameTestException("Derriere le portail, la fenetre n'est pas encore dechargee.");
+                    }
+                })
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    if (nether.getChunkManager().getWorldChunk(deep.x, deep.z) != null) {
+                        throw new GameTestException("Plus voulu, le chunk du cone n'est pas encore relache apres le delai de grace.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    try {
+                        // Tout ce qui est parti depuis le passage derriere le portail, delai de grace compris.
+                        chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                        context.assertTrue(!chunkSent(chunks, World.NETHER.getValue(), side), "Derriere le portail, aucune fenetre carree a la place.");
+                    } finally {
+                        GameTestPlayers.disconnect(player);
+                        portal.discard();
+                    }
+                })
+                .completeIfSuccessful();
+    }
+
+    /** Apres le lot du cone, reussi ou non : joueur deconnecte, portail retire. */
+    @AfterBatch(batchId = "portal_sync_cone")
+    public void afterCone(ServerWorld world) {
+        releaseLeftovers();
+    }
+
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS, batchId = "portal_sync_cone_lying")
+    public void aLyingArrivalKeepsTheSquareWindowFromAfar(TestContext context) {
+        prepareNether(context);
+        // Arrivee couchee au sol : ce qu'elle montre est au-dessus d'elle, pas dans un axe horizontal.
+        BackroomsPortalEntity portal = BackroomsPortalEntity.builder(context.getWorld())
+                .position(Vec3d.ofCenter(context.getAbsolutePos(PORTAL)))
+                .facingSource(PortalFacing.NORTH)
+                .facingDestination(PortalFacing.UP)
+                .destinationDim(World.NETHER)
+                .destinationPos(NETHER_EXIT)
+                .size(1.0f, 2.0f)
+                .build();
+        context.getWorld().spawnEntity(portal);
+        LEFTOVERS.add(portal);
+        Vec3d plane = portal.getPos();
+        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, new Vec3d(plane.x, plane.y - 1.0, plane.z - 12.0), 0.0f, 0.0f);
+        withViewDistance(player, 8);
+        ChunkPos side = new ChunkPos(ChunkSectionPos.getSectionCoord(NETHER_EXIT.x) + DestinationLoader.syncRadius(false),
+                ChunkSectionPos.getSectionCoord(NETHER_EXIT.z));
+        List<RemoteChunkPayload> chunks = new ArrayList<>();
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    if (!chunkSent(chunks, World.NETHER.getValue(), side)) {
+                        throw new GameTestException("Le bord de la fenetre carree d'une arrivee couchee n'est pas encore synchronise.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    GameTestPlayers.disconnect(player);
+                    portal.discard();
+                })
+                .completeIfSuccessful();
+    }
+
+    /** Apres le lot de l'arrivee couchee, reussi ou non : joueur deconnecte, portail retire. */
+    @AfterBatch(batchId = "portal_sync_cone_lying")
+    public void afterConeLying(ServerWorld world) {
+        releaseLeftovers();
+    }
+
+    /** Donne au joueur simule la distance de vue d'un vrai client, en chunks. */
+    private static void withViewDistance(ServerPlayerEntity player, int chunks) {
+        SyncedClientOptions options = player.getClientOptions();
+        player.setClientOptions(new SyncedClientOptions(options.language(), chunks, options.chatVisibility(), options.chatColorsEnabled(),
+                options.playerModelParts(), options.mainArm(), options.filtersText(), options.allowsServerListing()));
+    }
+
+    /** Bloc du chunk au bord de la fenetre d'arrivee, dans l'axe du cadre, sous l'arrivee. */
+    private static BlockPos windowEdgeBlock() {
+        int edgeChunkZ = ChunkSectionPos.getSectionCoord(NETHER_EXIT.z) + DestinationLoader.syncRadius(false);
+        return new BlockPos(BlockPos.ofFloored(NETHER_EXIT).getX(), BlockPos.ofFloored(NETHER_EXIT).getY() - 2,
+                ChunkSectionPos.getBlockCoord(edgeChunkZ) + 8);
     }
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS + 200, batchId = "portal_sync_unload")

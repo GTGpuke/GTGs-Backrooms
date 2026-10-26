@@ -24,6 +24,7 @@ public final class PortalRenderState {
     private static boolean stencilAvailable = true;
     private static boolean remoteRenderingDisabled;
     private static boolean blockOutlineAllowed;
+    private static boolean reducedView;
 
     private PortalRenderState() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -65,10 +66,21 @@ public final class PortalRenderState {
         blockOutlineAllowed = allowed;
     }
 
-    /** Fin du rendu des portails de l'image : garde levee, camera de vue oubliee. */
+    /** Fin du rendu des portails de l'image : garde levee, camera et palier de vue oublies. */
     public static void endFrame() {
         rendering = false;
         viewCameraPos = null;
+        reducedView = false;
+    }
+
+    /** {@code true} pendant le dessin d'une vue allegee (palier de detail, {@link ViewDetail}) : ni meteo ni particules. */
+    public static boolean reducedView() {
+        return reducedView;
+    }
+
+    /** Pose ou leve le palier allege de la vue en cours de dessin. */
+    public static void setReducedView(boolean reduced) {
+        reducedView = reduced;
     }
 
     /** Camera reutilisee pour les vues distantes (position et rotation reecrites a chaque portail). */

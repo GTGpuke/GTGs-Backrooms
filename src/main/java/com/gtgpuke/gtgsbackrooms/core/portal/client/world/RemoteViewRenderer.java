@@ -59,6 +59,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalClipping;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalStencilRenderer;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalViewTransform;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.view.SectionGenerations;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewCone;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewRenderStart;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
@@ -129,16 +130,30 @@ public final class RemoteViewRenderer {
     private static final String PERF_TERRAIN = "client.portal.terrain";
     private static final String PERF_ENTITIES = "client.portal.entities";
     private static final String PERF_START = "client.portal.render_start";
+    /** Section du moniteur de performance : l'entretien d'une vue cachee derriere des blocs, a la place de son dessin. */
+    private static final String PERF_HIDDEN = "client.portal.hidden_view";
+    /** Images sans dessin allege d'un portail apres lesquelles ses entities figees sont rendues. */
+    private static final int FROZEN_UNUSED_FRAMES = 600;
+    /** Elargissement du cadre, en blocs, pour le volume de la prise des entities figees : la camera bouge entre deux prises. */
+    private static final double FROZEN_CONE_MARGIN = 1.0;
 
     private final RemoteWorld owner;
     private final ClientWorld world;
     private final WorldRenderer renderer;
+    /** Volume que montre le cadre d'une vue allegee, elargi d'un bloc : celui de la prise de ses entities figees. */
+    private final ViewCone frozenCone = new ViewCone();
     /** Frustum du rendu, reutilise d'une image a l'autre : vanilla ne le reinitialise que par constructeur. */
     private final Frustum frustum = new Frustum(IDENTITY, IDENTITY);
     private final ViewCone cone = new ViewCone();
     /** Pyramide de la camera de la vue au cadre d'arrivee, pour savoir s'il y a quelque chose a couper entre les deux. */
     private final ViewCone clipVolume = new ViewCone();
     private final ViewSectionWalker sectionWalker = new ViewSectionWalker();
+    /** Entities figees des vues allegees de ce renderer, une par portail ; parcourues par index. */
+    private final List<FrozenEntityLayers> frozen = new ArrayList<>();
+    /** Terrain simplifie des vues allegees de ce renderer. */
+    private final CoarseTerrain coarse;
+    /** Palier de la vue en cours de dessin : {@code true} si elle est allegee (ni meteo ni particules, entities figees). */
+    private boolean reduced;
     /** Brouillard du ciel, passe au rendu du ciel : cree une fois, il lit la camera et l'instant poses avant chaque dessin. */
     private final Runnable skyFog = this::applySkyFog;
     /** Camera et fraction de tick du ciel en cours de dessin, lues par {@link #skyFog}. */
@@ -156,6 +171,7 @@ public final class RemoteViewRenderer {
         this.owner = owner;
         this.world = owner.world();
         this.renderer = owner.renderer();
+        this.coarse = new CoarseTerrain(this.world);
     }
 
     /**
@@ -203,9 +219,18 @@ public final class RemoteViewRenderer {
             BackroomsPortalEntity portal,
             @Nullable Vec3d frameCameraPos,
             LightmapTextureManager lightmap,
-            float tickDelta) {
+            float tickDelta,
+            boolean reducedDetail) {
+        this.reduced = reducedDetail;
+        PortalRenderState.setReducedView(reducedDetail);
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_VIEW)) {
             renderMeasured(client, camera, cameraPos, positionMatrix, projection, portal, frameCameraPos, lightmap, tickDelta);
+        } finally {
+            this.reduced = false;
+            PortalRenderState.setReducedView(false);
+        }
+        if (!reducedDetail) {
+            dropFrozen(portal);
         }
     }
 
@@ -270,9 +295,14 @@ public final class RemoteViewRenderer {
             Matrix4f positionMatrix,
             Matrix4f projection,
             @Nullable BackroomsPortalEntity portal,
-            LightmapTextureManager lightmap) {
+            LightmapTextureManager lightmap,
+            boolean reducedDetail) {
+        // Sous un pack, la vue allegee perd meteo et particules ; ses entities restent animees (le pack les groupe lui-meme).
+        PortalRenderState.setReducedView(reducedDetail);
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_VIEW)) {
             return renderWholeMeasured(client, tickCounter, camera, cameraPos, positionMatrix, projection, portal, lightmap);
+        } finally {
+            PortalRenderState.setReducedView(false);
         }
     }
 
@@ -380,6 +410,39 @@ public final class RemoteViewRenderer {
     }
 
     /**
+     * Entretien d'une vue dont le cadre est cache derriere des blocs, a la place de son dessin : tout ce que le dessin fait
+     * pour les images suivantes et pour la traversee (monde marque comme regarde, pour ses particules ; lumiere ; grille,
+     * graphe de culling et sections a reconstruire), rien de ce qu'il dessine. Une vue qui sort de derriere son mur se
+     * dessine des sa premiere image comme si elle n'avait jamais cesse. Le monde et le renderer du client sont deja ceux de
+     * la vue.
+     *
+     * @param camera camera de la vue, position et rotation deja ecrites
+     * @param cameraPos position de la camera de la vue
+     * @param positionMatrix matrice de vue de cette camera
+     * @param projection projection du joueur
+     * @param portal portail dont c'est la vue : son arrivee ancre la grille
+     */
+    @SuppressWarnings("try")
+    public void keepWarm(MinecraftClient client, Camera camera, Vec3d cameraPos, Matrix4f positionMatrix, Matrix4f projection,
+            BackroomsPortalEntity portal) {
+        try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_HIDDEN)) {
+            startRender(PortalRenderState.frameIndex());
+            this.owner.markViewed(cameraPos);
+            this.world.getChunkManager().getLightingProvider().doLightUpdates();
+            ((FrustumAccessor) this.frustum).backrooms$init(positionMatrix, projection);
+            this.frustum.setPosition(cameraPos.x, cameraPos.y, cameraPos.z);
+            this.frustum.coverBoxAroundSetPosition(FRUSTUM_COVER_BOX);
+            WorldRendererAccessor accessor = (WorldRendererAccessor) this.renderer;
+            if (foreignTerrain(accessor)) {
+                setupForeignTerrain(accessor, camera);
+            } else {
+                placeTerrainOnce(client, accessor, camera, cameraPos, portal.destinationPos());
+                accessor.backrooms$updateChunks(camera);
+            }
+        }
+    }
+
+    /**
      * Dessine la vue. Le frustum de culling suit {@code projection}, celle du joueur ; les dessins suivent
      * {@code drawProjection}, la meme sauf quand un autre mod dessine le terrain ({@code foreign}) : alors une projection
      * a plan proche oblique coupe au plan d'arrivee ce que ses shaders ne couperaient pas, et tout ce qui se dessine dans
@@ -408,7 +471,7 @@ public final class RemoteViewRenderer {
             if (foreign) {
                 setupForeignTerrain(accessor, camera);
             } else {
-                setupTerrain(client, accessor, camera, cameraPos, portal.destinationPos());
+                setupTerrain(client, accessor, camera, cameraPos, portal.destinationPos(), projection);
                 accessor.backrooms$updateChunks(camera);
             }
         }
@@ -432,6 +495,9 @@ public final class RemoteViewRenderer {
                 }
             }
             accessor.backrooms$renderLayer(layer, cameraPos.x, cameraPos.y, cameraPos.z, positionMatrix, drawProjection);
+            if (layer == RenderLayer.getSolid() && !foreign) {
+                this.coarse.draw(cameraPos, positionMatrix, drawProjection);
+            }
         }
         if (drawProjection == projection) {
             renderAfterTranslucent(client, accessor, camera, cameraPos, positionMatrix, drawProjection, lightmap, tickDelta);
@@ -458,11 +524,16 @@ public final class RemoteViewRenderer {
             Matrix4f drawProjection,
             LightmapTextureManager lightmap,
             float tickDelta) {
-        renderParticles(client, camera, positionMatrix, lightmap, tickDelta);
+        // Vue allegee : ni particules ni meteo ; les nuages restent.
+        if (!this.reduced) {
+            renderParticles(client, camera, positionMatrix, lightmap, tickDelta);
+        }
         if (client.options.getCloudRenderModeValue() != CloudRenderMode.OFF) {
             renderClouds(client, cameraPos, positionMatrix, drawProjection, tickDelta);
         }
-        renderWeather(accessor, cameraPos, positionMatrix, lightmap, tickDelta);
+        if (!this.reduced) {
+            renderWeather(accessor, cameraPos, positionMatrix, lightmap, tickDelta);
+        }
     }
 
     /**
@@ -518,17 +589,29 @@ public final class RemoteViewRenderer {
      * graphe de culling ({@link #placeTerrain}) ; les vues suivantes du meme renderer n'y touchent plus : la grille
      * reste ou elle est. Dans tous les cas, les sections dessinees viennent du parcours synchrone propre a la vue.
      */
-    private void setupTerrain(MinecraftClient client, WorldRendererAccessor accessor, Camera camera, Vec3d cameraPos, Vec3d anchor) {
-        BuiltChunkStorage chunks = accessor.backrooms$getChunks();
+    private void setupTerrain(MinecraftClient client, WorldRendererAccessor accessor, Camera camera, Vec3d cameraPos, Vec3d anchor,
+            Matrix4f projection) {
+        placeTerrainOnce(client, accessor, camera, cameraPos, anchor);
+        this.sectionWalker.discover(accessor.backrooms$getChunks(), this.world.getChunkManager(), camera.getBlockPos(), this.frustum, this.cone,
+                accessor.backrooms$getBuiltChunks());
+        // Vue allegee : les sections aux blocs petits a l'ecran passent au terrain simplifie ; une vue pleine reste le rendu
+        // sans LOD, sections comprises.
+        if (this.reduced) {
+            this.coarse.select(accessor.backrooms$getBuiltChunks(), cameraPos, projection.m11(), client.getWindow().getFramebufferHeight());
+        } else {
+            this.coarse.clearSelection();
+        }
+    }
+
+    /** Grille et graphe de culling places par la premiere vue de ce renderer dans l'image ; les suivantes donnent leur camera. */
+    private void placeTerrainOnce(MinecraftClient client, WorldRendererAccessor accessor, Camera camera, Vec3d cameraPos, Vec3d anchor) {
         int frame = PortalRenderState.frameIndex();
         if (this.terrainFrame != frame) {
             this.terrainFrame = frame;
-            placeTerrain(client, accessor, chunks, camera, cameraPos, anchor);
+            placeTerrain(client, accessor, accessor.backrooms$getChunks(), camera, cameraPos, anchor);
         } else {
             this.renderer.getChunkBuilder().setCameraPosition(cameraPos);
         }
-        this.sectionWalker.discover(chunks, this.world.getChunkManager(), camera.getBlockPos(), this.frustum, this.cone,
-                accessor.backrooms$getBuiltChunks());
     }
 
     /**
@@ -571,7 +654,7 @@ public final class RemoteViewRenderer {
      * {@code true} si un autre mod dessine le terrain de ce renderer : la grille vanilla est absente, ou sans portee (il
      * la cree avec une distance de vue nulle pour qu'elle ne coute rien, la distance du renderer restant celle des options).
      */
-    static boolean foreignTerrain(WorldRendererAccessor accessor) {
+    public static boolean foreignTerrain(WorldRendererAccessor accessor) {
         BuiltChunkStorage chunks = accessor.backrooms$getChunks();
         return chunks == null || chunks.getViewDistance() <= 0;
     }
@@ -659,27 +742,10 @@ public final class RemoteViewRenderer {
         WorldRendererAccessor accessor = (WorldRendererAccessor) this.renderer;
         VertexConsumerProvider.Immediate immediate = ENTITY_BUFFERS;
         try {
-            for (Entity entity : this.world.getEntities()) {
-                if (!entityDispatcher.shouldRender(entity, this.frustum, cameraPos.x, cameraPos.y, cameraPos.z)
-                        || !this.cone.intersects(entity.getVisibilityBoundingBox())) {
-                    continue;
-                }
-                if (entity.age == 0) {
-                    entity.lastRenderX = entity.getX();
-                    entity.lastRenderY = entity.getY();
-                    entity.lastRenderZ = entity.getZ();
-                }
-                // Vue qui couvre l'ecran : ce qui est coupe par un portail de ce monde s'y dessine en deux moities, plus bas.
-                if (frameCameraPos == null && StraddlingEntityRenderer.drawnInParts(entity, cameraPos.x, cameraPos.y, cameraPos.z, tickDelta)) {
-                    continue;
-                }
-                // Vue imbriquee : ce qui sort de son arrivee n'a nulle part ou dessiner la partie encore derriere, coupee au
-                // plan, son modele s'ouvrirait ; il se dessine entier, dans le cadre.
-                if (PortalClipping.depth() >= NESTED_DEPTH && StraddlingEntityRenderer.straddlesArrival(portal, entity, tickDelta)) {
-                    STRADDLING.add(entity);
-                    continue;
-                }
-                accessor.backrooms$renderEntity(entity, cameraPos.x, cameraPos.y, cameraPos.z, tickDelta, MATRICES, immediate);
+            if (this.reduced) {
+                renderFrozen(accessor, blockEntityDispatcher, portal, cameraPos, positionMatrix, projection, tickDelta);
+            } else {
+                renderLiveEntities(entityDispatcher, accessor, portal, cameraPos, frameCameraPos, tickDelta, immediate);
             }
             if (frameCameraPos != null) {
                 // Ce qui entre dans le cadre de ce cote : la partie deja passee, ici, au-dela du plan d'arrivee.
@@ -689,7 +755,9 @@ public final class RemoteViewRenderer {
                 StraddlingEntityRenderer.renderWorldParts(client, this.world, cameraPos, positionMatrix, tickDelta);
             }
             immediate.drawCurrentLayer();
-            renderBlockEntities(accessor, blockEntityDispatcher, cameraPos, tickDelta, immediate);
+            if (!this.reduced) {
+                renderBlockEntities(accessor, blockEntityDispatcher, cameraPos, tickDelta, immediate);
+            }
             renderBlockDamage(client, accessor, cameraPos);
             renderTargetOutline(client, cameraPos, immediate);
             immediate.draw();
@@ -706,6 +774,39 @@ public final class RemoteViewRenderer {
             while (!MATRICES.isEmpty()) {
                 MATRICES.pop();
             }
+        }
+    }
+
+    /** Entities du monde de la vue, une par une, dans le frustum et le volume visible a travers le cadre. */
+    private void renderLiveEntities(
+            EntityRenderDispatcher entityDispatcher,
+            WorldRendererAccessor accessor,
+            BackroomsPortalEntity portal,
+            Vec3d cameraPos,
+            @Nullable Vec3d frameCameraPos,
+            float tickDelta,
+            VertexConsumerProvider.Immediate immediate) {
+        for (Entity entity : this.world.getEntities()) {
+            if (!entityDispatcher.shouldRender(entity, this.frustum, cameraPos.x, cameraPos.y, cameraPos.z)
+                    || !this.cone.intersects(entity.getVisibilityBoundingBox())) {
+                continue;
+            }
+            if (entity.age == 0) {
+                entity.lastRenderX = entity.getX();
+                entity.lastRenderY = entity.getY();
+                entity.lastRenderZ = entity.getZ();
+            }
+            // Vue qui couvre l'ecran : ce qui est coupe par un portail de ce monde s'y dessine en deux moities, plus bas.
+            if (frameCameraPos == null && StraddlingEntityRenderer.drawnInParts(entity, cameraPos.x, cameraPos.y, cameraPos.z, tickDelta)) {
+                continue;
+            }
+            // Vue imbriquee : ce qui sort de son arrivee n'a nulle part ou dessiner la partie encore derriere, coupee au
+            // plan, son modele s'ouvrirait ; il se dessine entier, dans le cadre.
+            if (PortalClipping.depth() >= NESTED_DEPTH && StraddlingEntityRenderer.straddlesArrival(portal, entity, tickDelta)) {
+                STRADDLING.add(entity);
+                continue;
+            }
+            accessor.backrooms$renderEntity(entity, cameraPos.x, cameraPos.y, cameraPos.z, tickDelta, MATRICES, immediate);
         }
     }
 
@@ -743,12 +844,111 @@ public final class RemoteViewRenderer {
         }
     }
 
+    /**
+     * Vue allegee : entities et block entities de la derniere prise ({@link FrozenEntityLayers}), reprise quand elle a
+     * vieilli ou que la camera s'est deplacee. La prise garde les entities du volume que montre le cadre, elargi d'un bloc,
+     * sans frustum : la camera tourne entre deux prises, et la decoupe au plan d'arrivee comme le stencil limitent le
+     * dessin au cadre. Les block entities sont celles du dessin vivant.
+     */
+    private void renderFrozen(
+            WorldRendererAccessor accessor,
+            BlockEntityRenderDispatcher blockEntityDispatcher,
+            BackroomsPortalEntity portal,
+            Vec3d cameraPos,
+            Matrix4f positionMatrix,
+            Matrix4f projection,
+            float tickDelta) {
+        FrozenEntityLayers layers = frozenFor(portal);
+        long time = this.world.getTime();
+        if (layers.stale(time, cameraPos)) {
+            PortalFacing arrival = portal.facingDestination();
+            this.frozenCone.set(cameraPos, portal.destinationPos(), arrival.axisW, arrival.axisH, arrival.normal,
+                    portal.width() / 2.0 + FROZEN_CONE_MARGIN, portal.height() / 2.0 + FROZEN_CONE_MARGIN);
+            layers.begin(cameraPos);
+            for (Entity entity : this.world.getEntities()) {
+                if (!entity.shouldRender(cameraPos.x, cameraPos.y, cameraPos.z) || !this.frozenCone.intersects(entity.getVisibilityBoundingBox())) {
+                    continue;
+                }
+                if (entity.age == 0) {
+                    entity.lastRenderX = entity.getX();
+                    entity.lastRenderY = entity.getY();
+                    entity.lastRenderZ = entity.getZ();
+                }
+                accessor.backrooms$renderEntity(entity, cameraPos.x, cameraPos.y, cameraPos.z, tickDelta, MATRICES, layers);
+            }
+            renderBlockEntities(accessor, blockEntityDispatcher, cameraPos, tickDelta, layers);
+            layers.end(time);
+        }
+        layers.draw(cameraPos, positionMatrix, projection);
+    }
+
+    /**
+     * Entities figees de la vue de ce portail, creees au premier dessin allege ; au passage, celles d'un portail retire ou
+     * qui ne s'est plus dessine allege depuis {@value #FROZEN_UNUSED_FRAMES} images sont rendues.
+     */
+    private FrozenEntityLayers frozenFor(BackroomsPortalEntity portal) {
+        int frame = PortalRenderState.frameIndex();
+        FrozenEntityLayers found = null;
+        for (int i = this.frozen.size() - 1; i >= 0; i--) {
+            FrozenEntityLayers layers = this.frozen.get(i);
+            if (layers.portal == portal) {
+                found = layers;
+            } else if (layers.portal.isRemoved() || frame - layers.usedFrame > FROZEN_UNUSED_FRAMES) {
+                layers.close();
+                this.frozen.remove(i);
+            }
+        }
+        if (found == null) {
+            found = new FrozenEntityLayers(portal);
+            this.frozen.add(found);
+        }
+        found.usedFrame = frame;
+        return found;
+    }
+
+    /** La vue de ce portail repasse en pleine qualite : ses entities figees sont rendues. */
+    private void dropFrozen(BackroomsPortalEntity portal) {
+        for (int i = 0; i < this.frozen.size(); i++) {
+            if (this.frozen.get(i).portal == portal) {
+                this.frozen.remove(i).close();
+                return;
+            }
+        }
+    }
+
+    /**
+     * {@code true} si chaque section que la derniere vue a dessinee au rendu vanilla est a jour ({@link SectionGenerations}) :
+     * une image figee prise de cette vue est complete. Toujours vrai quand un autre mod dessine le terrain : rien ne dit
+     * alors ce qui est affiche.
+     */
+    public boolean sectionsCurrent() {
+        ObjectArrayList<ChunkBuilder.BuiltChunk> sections = ((WorldRendererAccessor) this.renderer).backrooms$getBuiltChunks();
+        for (int i = 0; i < sections.size(); i++) {
+            if (!((SectionGenerations) sections.get(i)).backrooms$current()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Rend les tampons du GPU des vues allegees (entities figees, terrain simplifie) : le monde de ce renderer est jete, ou
+     * devient le monde principal.
+     */
+    void releaseReduced() {
+        for (int i = 0; i < this.frozen.size(); i++) {
+            this.frozen.get(i).close();
+        }
+        this.frozen.clear();
+        this.coarse.close();
+    }
+
     private void renderBlockEntities(
             WorldRendererAccessor accessor,
             BlockEntityRenderDispatcher dispatcher,
             Vec3d cameraPos,
             float tickDelta,
-            VertexConsumerProvider.Immediate immediate) {
+            VertexConsumerProvider immediate) {
         ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks = accessor.backrooms$getBuiltChunks();
         for (int i = 0; i < builtChunks.size(); i++) {
             List<BlockEntity> blockEntities = builtChunks.get(i).getData().getBlockEntities();

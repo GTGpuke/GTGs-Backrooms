@@ -28,6 +28,9 @@ public final class ViewCone {
     private final double[] cornerX = new double[CORNERS];
     private final double[] cornerY = new double[CORNERS];
     private final double[] cornerZ = new double[CORNERS];
+    /** Boite des quatre coins du cadre, par axe (x, y, z) : la ou la pyramide franchit le plan du cadre. */
+    private final double[] frameMin = new double[3];
+    private final double[] frameMax = new double[3];
     private int planeCount;
     /** Camera du cote coupe du plan du cadre, a l'oppose du contenu : il y a un volume entre elle et le cadre. */
     private boolean apexBeforeFrame;
@@ -48,16 +51,23 @@ public final class ViewCone {
         setPlane(0, normal.x, normal.y, normal.z, center.x, center.y, center.z);
         double apexDistance = normal.x * (apex.x - center.x) + normal.y * (apex.y - center.y) + normal.z * (apex.z - center.z);
         this.apexBeforeFrame = apexDistance < 0.0;
-        if (Math.abs(apexDistance) < MIN_APEX_DISTANCE) {
-            this.planeCount = 1;
-            return;
-        }
         for (int corner = 0; corner < CORNERS; corner++) {
             double sw = (corner == 1 || corner == 2) ? halfWidth : -halfWidth;
             double sh = corner >= 2 ? halfHeight : -halfHeight;
             this.cornerX[corner] = center.x + axisW.x * sw + axisH.x * sh;
             this.cornerY[corner] = center.y + axisW.y * sw + axisH.y * sh;
             this.cornerZ[corner] = center.z + axisW.z * sw + axisH.z * sh;
+        }
+        // Les coins opposes 0 et 2 bornent le cadre sur chaque axe.
+        this.frameMin[0] = Math.min(this.cornerX[0], this.cornerX[2]);
+        this.frameMax[0] = Math.max(this.cornerX[0], this.cornerX[2]);
+        this.frameMin[1] = Math.min(this.cornerY[0], this.cornerY[2]);
+        this.frameMax[1] = Math.max(this.cornerY[0], this.cornerY[2]);
+        this.frameMin[2] = Math.min(this.cornerZ[0], this.cornerZ[2]);
+        this.frameMax[2] = Math.max(this.cornerZ[0], this.cornerZ[2]);
+        if (Math.abs(apexDistance) < MIN_APEX_DISTANCE) {
+            this.planeCount = 1;
+            return;
         }
         for (int corner = 0; corner < CORNERS; corner++) {
             int next = (corner + 1) % CORNERS;
@@ -85,6 +95,24 @@ public final class ViewCone {
     /** Aucune limite : tout ce que voit la camera, quand elle est elle-meme passee de l'autre cote du cadre. */
     public void unbounded() {
         this.planeCount = 0;
+    }
+
+    /**
+     * {@code true} si la camera est en deca du cadre, a distance de son plan : le volume commence au cadre, loin d'elle, et
+     * rien de ce qui les separe n'en fait partie. Un parcours des sections du volume part alors du cadre.
+     */
+    public boolean startsAtFrame() {
+        return this.planeCount == PLANES && this.apexBeforeFrame;
+    }
+
+    /** Plus petite coordonnee du cadre sur un axe (0 x, 1 y, 2 z). */
+    public double frameMin(int axis) {
+        return this.frameMin[axis];
+    }
+
+    /** Plus grande coordonnee du cadre sur un axe (0 x, 1 y, 2 z). */
+    public double frameMax(int axis) {
+        return this.frameMax[axis];
     }
 
     private void setPlane(int index, double nx, double ny, double nz, double px, double py, double pz) {

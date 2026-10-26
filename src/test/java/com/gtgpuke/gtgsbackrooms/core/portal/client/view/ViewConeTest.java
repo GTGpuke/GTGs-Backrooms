@@ -1,5 +1,6 @@
 package com.gtgpuke.gtgsbackrooms.core.portal.client.view;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -152,6 +153,31 @@ class ViewConeTest {
         ViewCone unbounded = cone(APEX);
         unbounded.unbounded();
         assertFalse(unbounded.intersectsBeforeFrame(box[0], box[1], box[2], box[3], box[4], box[5]), "Volume sans limite.");
+    }
+
+    @Test
+    @DisplayName("Camera en deca du cadre, a distance : le volume commence au cadre, dont la boite est connue")
+    void theVolumeStartsAtTheFrameWhenTheCameraIsBeforeIt() {
+        ViewCone cone = cone(new Vec3d(0.0, 65.0, -30.0));
+        assertTrue(cone.startsAtFrame(), "Camera a trente blocs en deca du cadre.");
+        assertEquals(-0.5, cone.frameMin(0), 1.0e-9, "Largeur du cadre, selon X.");
+        assertEquals(0.5, cone.frameMax(0), 1.0e-9, "Largeur du cadre, selon X.");
+        assertEquals(64.0, cone.frameMin(1), 1.0e-9, "Hauteur du cadre, selon Y.");
+        assertEquals(66.0, cone.frameMax(1), 1.0e-9, "Hauteur du cadre, selon Y.");
+        assertEquals(0.0, cone.frameMin(2), 1.0e-9, "Plan du cadre.");
+        assertEquals(0.0, cone.frameMax(2), 1.0e-9, "Plan du cadre.");
+        ViewCone below = new ViewCone();
+        below.set(new Vec3d(0.0, 60.0, 0.0), CENTER, AXIS_W, new Vec3d(0.0, 0.0, -1.0), AXIS_H, 0.5, 1.0);
+        assertEquals(-1.0, below.frameMin(2), 1.0e-9, "Cadre couche, hauteur selon -Z : bornes remises dans l'ordre.");
+        assertEquals(1.0, below.frameMax(2), 1.0e-9, "Cadre couche, hauteur selon -Z : bornes remises dans l'ordre.");
+        assertTrue(below.startsAtFrame(), "Camera sous un cadre couche, contenu au-dessus.");
+        assertFalse(cone(new Vec3d(0.0, 65.0, 5.0)).startsAtFrame(), "Camera du cote du contenu.");
+        ViewCone inPlane = cone(new Vec3d(0.0, 65.0, -1.0e-4));
+        assertFalse(inPlane.startsAtFrame(), "Camera dans le plan du cadre.");
+        assertEquals(66.0, inPlane.frameMax(1), 1.0e-9, "La boite du cadre est connue meme sans pyramide.");
+        ViewCone unbounded = cone(APEX);
+        unbounded.unbounded();
+        assertFalse(unbounded.startsAtFrame(), "Volume sans limite.");
     }
 
     @Test

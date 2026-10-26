@@ -41,6 +41,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalWandSettingsPayload;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModBlocks;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModDataComponents;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModItems;
+import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestArrivals;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestServerWorlds;
 
@@ -87,29 +88,29 @@ public final class PortalDestinationGameTests implements FabricGameTest {
         BlockPos below = column(nether, NETHER_X, POCKET_Y, false);
         BlockPos lava = column(nether, NETHER_X + COLUMN_STEP, POCKET_Y, true);
         BlockPos above = column(nether, NETHER_X + 2 * COLUMN_STEP, HIGH_POCKET_Y, false);
-        PortalTargets.Target down = PortalTargets.arrive(nether, below.getX(), START_Y, below.getZ(), PortalFacing.SOUTH, PortalSettings.DEFAULT);
+        PortalTargets.Target down = GameTestArrivals.arrive(nether, below.getX(), START_Y, below.getZ(), PortalFacing.SOUTH, PortalSettings.DEFAULT);
         context.assertTrue(down != null && down.dimension().equals(World.NETHER) && near(down.position(), centerOn(below, PortalFacing.SOUTH)),
                 "Sous le point de depart, le premier sol ou l'on tient debout : " + position(down) + ".");
         PortalSettings tall = new PortalSettings(1, 3, true);
-        PortalTargets.Target taller = PortalTargets.arrive(nether, below.getX(), START_Y, below.getZ(), PortalFacing.SOUTH, tall);
+        PortalTargets.Target taller = GameTestArrivals.arrive(nether, below.getX(), START_Y, below.getZ(), PortalFacing.SOUTH, tall);
         context.assertTrue(!near(taller.position(), PortalArea.center(Vec3d.ofBottomCenter(below), PortalFacing.SOUTH, tall)),
                 "Un cadre de trois blocs de haut ne tient pas dans une poche de deux : il arrive ailleurs : " + taller.position() + ".");
-        PortalTargets.Target notLava = PortalTargets.arrive(nether, lava.getX(), START_Y, lava.getZ(), PortalFacing.SOUTH, PortalSettings.DEFAULT);
+        PortalTargets.Target notLava = GameTestArrivals.arrive(nether, lava.getX(), START_Y, lava.getZ(), PortalFacing.SOUTH, PortalSettings.DEFAULT);
         context.assertTrue(notLava == null || !near(notLava.position(), centerOn(lava, PortalFacing.SOUTH)),
                 "Une poche de lave ne compte pas : on arrive ailleurs : " + position(notLava) + ".");
         // Un cadre couche au sol ne couvre que sa couche : la lave a hauteur de tete, au-dessus de lui, l'ecarte aussi.
         BlockPos head = column(nether, NETHER_X + 4 * COLUMN_STEP, POCKET_Y, false);
         nether.setBlockState(head.up(), Blocks.LAVA.getDefaultState());
         PortalSettings flat = new PortalSettings(1, 1, true);
-        PortalTargets.Target lyingUnderLava = PortalTargets.arrive(nether, head.getX(), START_Y, head.getZ(), PortalFacing.UP, flat);
+        PortalTargets.Target lyingUnderLava = GameTestArrivals.arrive(nether, head.getX(), START_Y, head.getZ(), PortalFacing.UP, flat);
         context.assertTrue(!near(lyingUnderLava.position(), PortalArea.center(Vec3d.ofBottomCenter(head), PortalFacing.UP, flat)),
                 "De la lave a hauteur de tete au-dessus d'un cadre au sol : il arrive ailleurs : " + lyingUnderLava.position() + ".");
-        PortalTargets.Target up = PortalTargets.arrive(nether, above.getX(), START_Y, above.getZ(), PortalFacing.SOUTH, PortalSettings.DEFAULT);
+        PortalTargets.Target up = GameTestArrivals.arrive(nether, above.getX(), START_Y, above.getZ(), PortalFacing.SOUTH, PortalSettings.DEFAULT);
         context.assertTrue(up != null && near(up.position(), centerOn(above, PortalFacing.SOUTH)),
                 "Rien sous le depart : le premier sol au-dessus : " + position(up) + ".");
         // On tient debout dans la poche au-dessus du depart, mais le haut d'un cadre de trois blocs y serait dans la lave.
         nether.setBlockState(above.up(2), Blocks.LAVA.getDefaultState());
-        PortalTargets.Target tallUnderLava = PortalTargets.arrive(nether, above.getX(), START_Y, above.getZ(), PortalFacing.SOUTH, tall);
+        PortalTargets.Target tallUnderLava = GameTestArrivals.arrive(nether, above.getX(), START_Y, above.getZ(), PortalFacing.SOUTH, tall);
         context.assertTrue(!near(tallUnderLava.position(), PortalArea.center(Vec3d.ofBottomCenter(above), PortalFacing.SOUTH, tall)),
                 "Le haut d'un cadre dans la lave au-dessus du depart : il arrive ailleurs : " + tallUnderLava.position() + ".");
         context.complete();
@@ -122,7 +123,7 @@ public final class PortalDestinationGameTests implements FabricGameTest {
         for (int x : new int[] {END_VOID, END_WATER, END_SKY, END_STONE}) {
             emptyAround(end, x, END_VOID);
         }
-        PortalTargets.Target platform = PortalTargets.arrive(end, END_VOID, START_Y, END_VOID, PortalFacing.SOUTH, PortalSettings.DEFAULT);
+        PortalTargets.Target platform = GameTestArrivals.arrive(end, END_VOID, START_Y, END_VOID, PortalFacing.SOUTH, PortalSettings.DEFAULT);
         BlockPos feet = new BlockPos(END_VOID, START_Y, END_VOID);
         context.assertTrue(near(platform.position(), centerOn(feet, PortalFacing.SOUTH)), "Dans le vide, au point de depart : " + platform.position() + ".");
         context.assertTrue(end.getBlockState(feet.down()).isOf(Blocks.OBSIDIAN) && end.getBlockState(feet.down().east()).isOf(Blocks.OBSIDIAN),
@@ -139,7 +140,7 @@ public final class PortalDestinationGameTests implements FabricGameTest {
         context.assertTrue(near(dry.position(), centerOn(new BlockPos(END_WATER, START_Y + 1, END_VOID), PortalFacing.SOUTH))
                 && end.getBlockState(new BlockPos(END_WATER, START_Y, END_VOID)).isOf(Blocks.OBSIDIAN),
                 "Au-dessus de l'eau, la plateforme a sa place : " + dry.position() + ".");
-        PortalTargets.Target high = PortalTargets.arrive(end, END_SKY, Integer.MAX_VALUE, END_VOID, PortalFacing.SOUTH, PortalSettings.DEFAULT);
+        PortalTargets.Target high = GameTestArrivals.arrive(end, END_SKY, Integer.MAX_VALUE, END_VOID, PortalFacing.SOUTH, PortalSettings.DEFAULT);
         context.assertTrue(near(high.position(), centerOn(new BlockPos(END_SKY, END_PLATFORM_TOP, END_VOID), PortalFacing.SOUTH)),
                 "Une hauteur hors du monde est ramenee dans sa hauteur logique : " + high.position() + ".");
         context.complete();
@@ -156,58 +157,58 @@ public final class PortalDestinationGameTests implements FabricGameTest {
         BlockPos column = column(netherWorld, NETHER_X + 3 * COLUMN_STEP, POCKET_Y, false);
         BlockPos scaled = new BlockPos(column.getX() * NETHER_SCALE, START_Y, column.getZ() * NETHER_SCALE);
         PortalSettings toNether = PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.empty());
-        PortalTargets.Target nether = PortalTargets.resolve(server, World.OVERWORLD, scaled, PortalFacing.SOUTH, toNether, Random.create(1L));
+        PortalTargets.Target nether = GameTestArrivals.resolve(server, World.OVERWORLD, scaled, PortalFacing.SOUTH, toNether, 1L);
         context.assertTrue(nether != null && nether.dimension().equals(World.NETHER) && near(nether.position(), centerOn(column, PortalFacing.SOUTH)),
                 "Vers le Nether, les X/Z au huitieme, comme vanilla : " + position(nether) + ".");
-        context.assertTrue(PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
-                PortalSettings.DEFAULT.withExit(Optional.of(GameTestServerWorlds.nowhere()), Optional.empty()), Random.create(1L)) == null,
+        context.assertTrue(GameTestArrivals.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                PortalSettings.DEFAULT.withExit(Optional.of(GameTestServerWorlds.nowhere()), Optional.empty()), 1L) == null,
                 "Vers une dimension absente, rien.");
 
         // Sortie fixee sur le sol de l'arene, regard vers l'est.
         BlockPos markPos = context.getAbsolutePos(new BlockPos(10, 0, 10));
         PortalMark mark = new PortalMark(World.OVERWORLD, markPos, Direction.EAST);
-        PortalTargets.Target exact = PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
-                PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(mark)), Random.create(1L));
+        PortalTargets.Target exact = GameTestArrivals.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(mark)), 1L);
         context.assertTrue(exact != null && exact.dimension().equals(World.OVERWORLD) && exact.facing() == PortalFacing.EAST
                 && near(exact.position(), centerOn(markPos, PortalFacing.EAST)),
                 "La sortie fixee l'emporte : sur son bloc, dans la direction du regard : " + position(exact) + ".");
-        PortalTargets.Target westward = PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
-                settings(PortalExit.WEST, 0, Optional.of(mark)), Random.create(1L));
+        PortalTargets.Target westward = GameTestArrivals.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                settings(PortalExit.WEST, 0, Optional.of(mark)), 1L);
         context.assertTrue(westward != null && westward.facing() == PortalFacing.WEST, "Un sens de sortie impose l'emporte sur le regard.");
         int scatter = 5;
         Random draw = Random.create(7L);
         int dx = draw.nextBetween(-scatter, scatter);
         int dz = draw.nextBetween(-scatter, scatter);
-        PortalTargets.Target around = PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
-                settings(PortalExit.STRAIGHT, scatter, Optional.of(mark)), Random.create(7L));
+        PortalTargets.Target around = GameTestArrivals.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+                settings(PortalExit.STRAIGHT, scatter, Optional.of(mark)), 7L);
         context.assertTrue(around != null && Math.abs(around.position().x - (markPos.getX() + dx + 0.5)) < EPSILON
                 && Math.abs(around.position().z - (markPos.getZ() + dz + 0.5)) < EPSILON,
                 "Tiree au sort autour de la sortie fixee : " + position(around) + ".");
-        context.assertTrue(PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT.withExit(Optional.empty(),
-                Optional.of(new PortalMark(GameTestServerWorlds.nowhere(), markPos, Direction.EAST))), Random.create(1L)) == null,
+        context.assertTrue(GameTestArrivals.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT.withExit(Optional.empty(),
+                Optional.of(new PortalMark(GameTestServerWorlds.nowhere(), markPos, Direction.EAST))), 1L) == null,
                 "Une sortie fixee dans une dimension absente : rien.");
         // Chunk par chunk : une sortie fixee exacte n'attend rien (son chunk est charge par la resolution), une sortie tiree au
         // sort loin de tout s'arrete au premier chunk absent, une dimension absente ne donne rien, le Level 0 (calcul pur) non plus.
-        context.assertTrue(!PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+        context.assertTrue(!PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
                 PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(mark)), Random.create(1L)).waits(),
                 "Une sortie fixee exacte n'attend aucun chunk.");
         PortalMark farMark = new PortalMark(World.NETHER, new BlockPos(-60_000, 64, -60_000), Direction.EAST);
-        PortalTargets.Search far = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+        PortalTargets.Search far = PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
                 settings(PortalExit.STRAIGHT, scatter, Optional.of(farMark)), Random.create(7L));
         context.assertTrue(far.waits() && far.target() == null && Math.abs(far.missingChunk().x - (-60_000 >> 4)) <= 2,
                 "Tiree au sort loin de tout, la recherche s'arrete au premier chunk absent, pres de la marque : " + far.missingChunk() + ".");
-        PortalTargets.Search nowhere = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+        PortalTargets.Search nowhere = PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
                 settings(PortalExit.STRAIGHT, scatter, Optional.of(new PortalMark(GameTestServerWorlds.nowhere(), markPos, Direction.EAST))), Random.create(1L));
         context.assertTrue(!nowhere.waits() && nowhere.target() == null, "Une marque dans une dimension absente : rien, sans attendre.");
-        context.assertTrue(!PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT, Random.create(1L)).waits(),
+        context.assertTrue(!PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH, PortalSettings.DEFAULT, Random.create(1L)).waits(),
                 "Vers le Level 0 (calcul pur), aucun chunk a attendre.");
         // Une sortie fixee exacte dans un chunk jamais genere attend ce chunk ; a ciel ouvert, la colonne de depart attend le sien.
         PortalMark farExact = new PortalMark(World.NETHER, new BlockPos(-52_000, 64, 20_000), Direction.EAST);
-        PortalTargets.Search exactFar = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
+        PortalTargets.Search exactFar = PortalTargets.resolve(server, World.OVERWORLD, anchor, PortalFacing.SOUTH,
                 PortalSettings.DEFAULT.withExit(Optional.of(World.NETHER), Optional.of(farExact)), Random.create(1L));
         context.assertTrue(exactFar.waits() && exactFar.missingChunk().equals(new ChunkPos(farExact.pos())),
                 "Une sortie fixee exacte loin de tout attend son chunk : " + exactFar.missingChunk() + ".");
-        PortalTargets.Search surface = PortalTargets.resolveLoadedOnly(server, World.NETHER, new BlockPos(-7_000, 64, 5_000), PortalFacing.SOUTH,
+        PortalTargets.Search surface = PortalTargets.resolve(server, World.NETHER, new BlockPos(-7_000, 64, 5_000), PortalFacing.SOUTH,
                 PortalSettings.DEFAULT.withExit(Optional.of(World.OVERWORLD), Optional.empty()), Random.create(1L));
         context.assertTrue(surface.waits() && surface.missingChunk().equals(new ChunkPos(-56_000 >> 4, 40_000 >> 4)),
                 "A ciel ouvert, loin de tout, la colonne de depart (les X/Z fois huit) attend son chunk : " + surface.missingChunk() + ".");
@@ -216,13 +217,13 @@ public final class PortalDestinationGameTests implements FabricGameTest {
         netherWorld.getChunk(corner.x, corner.z);
         PortalSettings wide = new PortalSettings(8, 3, true).withExit(Optional.of(World.NETHER), Optional.empty());
         BlockPos cornerAnchor = new BlockPos(corner.getStartX() * 8, 64, corner.getStartZ() * 8);
-        PortalTargets.Search beside = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, cornerAnchor, PortalFacing.NORTH, wide, Random.create(1L));
+        PortalTargets.Search beside = PortalTargets.resolve(server, World.OVERWORLD, cornerAnchor, PortalFacing.NORTH, wide, Random.create(1L));
         // Tourne vers le nord, le cadre s'etend vers l'ouest : le chunk a l'ouest, pas celui que la colonne suivante de l'anneau
         // (au nord-ouest) demanderait si l'empreinte du cadre n'etait pas verifiee.
         context.assertTrue(beside.waits() && beside.missingChunk().equals(new ChunkPos(corner.x - 1, corner.z)),
                 "La colonne de depart est chargee, son cadre de huit deborde sur le chunk voisin a l'ouest, absent : " + beside.missingChunk() + ".");
         netherWorld.getChunk(beside.missingChunk().x, beside.missingChunk().z);
-        PortalTargets.Search further = PortalTargets.resolveLoadedOnly(server, World.OVERWORLD, cornerAnchor, PortalFacing.NORTH, wide, Random.create(1L));
+        PortalTargets.Search further = PortalTargets.resolve(server, World.OVERWORLD, cornerAnchor, PortalFacing.NORTH, wide, Random.create(1L));
         context.assertTrue(!further.waits() || !further.missingChunk().equals(corner) && !further.missingChunk().equals(beside.missingChunk()),
                 "Les deux chunks la, la recherche avance : " + further + ".");
         context.complete();

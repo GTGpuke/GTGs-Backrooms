@@ -427,9 +427,9 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
 
     /**
      * Resout la destination chunk par chunk : la recherche lit les chunks charges et s'arrete au premier absent, que le bloc
-     * demande par un ticket avant de rappeler au tick suivant. Le resultat est celui de la recherche synchrone, inchange :
-     * seul le moment change, quelques ticks par chunk a generer vers une zone jamais visitee (vanilla le genere sur ses
-     * threads de travail), au lieu d'un gel du serveur. Entre-temps, le cadre n'est pas encore un portail. Chaque essai
+     * demande par un ticket avant de rappeler au tick suivant, avec le meme tirage. L'arrivee ne depend pas de l'ordre
+     * d'arrivee des chunks : seul le moment change, quelques ticks par chunk a generer vers une zone jamais visitee (vanilla
+     * le genere sur ses threads de travail), au lieu d'un gel du serveur. Entre-temps, le cadre n'est pas encore un portail. Chaque essai
      * alloue sa recherche (tirage, resultat, chunk demande) : un essai par tick le temps de cette attente seulement, apres
      * la pose ou le chargement du bloc.
      */
@@ -438,12 +438,13 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
             this.searchSeed = world.getRandom().nextLong();
             this.searchSeeded = true;
         }
-        PortalTargets.Search search = PortalTargets.resolveLoadedOnly(world.getServer(), world.getRegistryKey(), this.pos, entryFacing(), this.settings,
+        PortalTargets.Search search = PortalTargets.resolve(world.getServer(), world.getRegistryKey(), this.pos, entryFacing(), this.settings,
                 Random.create(this.searchSeed));
         if (search.waits()) {
             // Une recherche qui attend un chunk a trouve son monde : sans lui, elle ne rend rien et n'attend pas.
             ChunkPos missing = search.missingChunk();
-            searchWorld(world).getChunkManager().addTicket(SEARCH_TICKET, missing, 0, missing);
+            world.getServer().getWorld(PortalTargets.searchDimension(world.getRegistryKey(), this.settings)).getChunkManager()
+                    .addTicket(SEARCH_TICKET, missing, 0, missing);
             this.searchLoading = true;
             return;
         }
@@ -455,13 +456,6 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
             return;
         }
         configureTarget(target.dimension(), target.position(), target.facing());
-    }
-
-    /** Dimension ou la recherche d'arrivee lit ses chunks : celle de la sortie fixee, sinon la destination (ou le Level 0). */
-    private ServerWorld searchWorld(ServerWorld world) {
-        RegistryKey<World> dimension = this.settings.mark().map(PortalMark::dimension)
-                .orElseGet(() -> this.settings.destination().orElse(PortalTargets.automatic(world.getRegistryKey())));
-        return world.getServer().getWorld(dimension);
     }
 
     /** {@code true} tant que le bloc attend qu'un chunk de sa recherche d'arrivee se charge. */

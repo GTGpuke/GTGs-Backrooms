@@ -8,6 +8,44 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 ## [Unreleased]
 
 ### Added
+- **Paliers de détail des vues lointaines (LOD)** (décisions de l'auteur des 25 et 26 octobre 2026) : le palier d'une vue
+  se décide sur la taille à l'écran d'un bloc juste derrière le cadre (`ViewDetail.blockPixels` : hauteur de l'image,
+  projection, distance ; la résolution et le zoom comptent d'eux-mêmes). Pleine qualité, exactement le rendu d'avant,
+  tant qu'un bloc y fait au moins 24 pixels : on traverse donc toujours un cadre en pleine qualité. En dessous, la vue
+  s'allège : ni pluie ni neige, ni particules, entités figées, terrain simplifié section par section ; sous 6 pixels,
+  elle n'est plus qu'une image figée. La remontée est immédiate ; la descente attend que la taille soit passée de 20 %
+  sous le seuil et vingt images depuis le dernier changement. Un portail imbriqué suit les mêmes règles depuis la caméra
+  de sa vue (sans image figée). Les deux chemins de rendu s'allègent (météo et particules coupées à leur entrée,
+  `MixinWorldRenderer`, `MixinParticleManager`) ; sous un pack de shaders, les entités restent animées (le pack groupe
+  lui-même leur rendu), et ni terrain simplifié ni image figée. Entités figées (`FrozenEntityLayers`) : leur géométrie,
+  écrite une fois par le rendu vanilla, se garde dans des tampons du GPU et se redessine telle quelle ; elle se reprend
+  toutes les cinq secondes, ou dès que la caméra s'est déplacée d'un bloc, et ne garde que ce que le cadre montre,
+  élargi d'un bloc. Mesuré sur le PC de référence, scène `make_lodlab.py` (vingt vaches, cinq feux de camp, neige, cadre
+  à 30 blocs), même JAR LOD actif puis coupé : rendu des portails de 0,285 à 0,118 ms par image en rendu vanilla, de
+  0,879 à 0,607 ms sous un pack ; entités figées 0,009 ms par image contre 0,027 pour les vivantes en vanilla. Vaches
+  immobiles, coffre et porte-armure : vue allégée identique pixel à pixel à la vue pleine. Option
+  `gtgsbackrooms.portal.lod` (vrai par défaut).
+- **Terrain simplifié des vues allégées** (LOD des blocs, décision de l'auteur du 26 octobre 2026) : dans une vue
+  allégée, une section dont le bloc le plus proche fait moins de 12 pixels (seulement plus loin, là où il se voit
+  moins : décision de l'auteur au vu des captures) se dessine en faces fusionnées
+  (`CoarseSectionMesher`, `CoarseTerrain`) : géométrie exacte au bloc près (un couloir garde sa hauteur, un mur fin son
+  épaisseur), faces coplanaires d'un même bloc réunies en carrés de deux blocs de côté, de quatre sous 8 pixels, texture
+  étirée sur le carré, éclairage lissé par coin sans occlusion ambiante. Seules les sections d'air et de cubes pleins et
+  opaques se simplifient ; les autres gardent leur maillage vanilla, et une section ne quitte ce maillage qu'une fois le
+  sien prêt et à jour. Chemin vanilla seulement (ni mod de rendu du terrain, ni pack). Mesuré sur le PC de référence :
+  aucun gain mesurable (une vue coûte environ 0,065 ms par image avec ou sans, cadre de 12 × 6 compris) ; le terrain
+  d'une vue n'y est pas ce qui coûte.
+- **Image figée des vues lointaines** (décisions de l'auteur du 26 octobre 2026, écart accordé à la règle « pas de
+  framebuffer de vue séparé ») : sous 6 pixels par bloc, la vue se dessine une fois dans une texture (`FrozenViews` :
+  le rendu de la vue lui-même, avec la projection du joueur, la fenêtre de rendu décalée sur le rectangle d'écran du
+  cadre, au double de sa résolution), collée ensuite sur le cadre à chaque image (`FrozenImage` : chaque point du cadre
+  prend dans la texture la place qu'il avait à la capture). L'image se reprend toutes les cinq secondes, quand la caméra
+  s'est déplacée d'un vingtième de sa distance au cadre, ou quand elle était incomplète ; une capture au plus par image,
+  cadre entièrement à l'écran. Un portail qui s'éloigne prend la sienne d'avance (allégé, à moins de huit blocs de la
+  distance de rendu des vues), et la garde au-delà, jusqu'à 128 blocs, sans la reprendre : il n'y était plus dessiné du
+  tout. Mesuré sur le PC de référence (cadre de 4 × 4) : dessin de l'image 0,010 ms par image contre 0,076 ms pour la
+  vue allégée à 58 blocs ; une reprise 0,1 à 0,3 ms ; la première capture d'un portail 1,3 ms de plus (création du
+  framebuffer).
 - **Arrivées de référence** (`PortalArrivalReferenceGameTests`, garde-fou G3 du bilan de `docs/revue/`) : huit cas fixes
   sur le terrain naturel du serveur de test, dont l'arrivée calculée par la 0.10.0 est figée dans le test. Tout
   remaniement de la recherche d'arrivée (résolution asynchrone, point d'accès des destinations) qui en change une fait
@@ -18,6 +56,30 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   deux (relevé du 25 octobre 2026).
 
 ### Changed
+- **Fenêtre en cône pour un portail regardé de loin** (décision de l'auteur du 26 octobre 2026) : à plus de 8 blocs
+  d'un cadre d'arrivée debout, le serveur n'envoie plus le carré de 7 × 7 chunks autour de l'arrivée mais autant de
+  chunks dans l'axe de ce que le cadre montre (`RemoteChunkWindow.collectCone`) : le carré de 3 × 3 de l'arrivée, puis
+  chaque chunk du coin de vue qui part de la caméra de la vue et s'appuie sur les bords du cadre, avec ses quatre
+  voisins, du plus proche au plus lointain, dans la carte du client et sa distance de vue. Les chunks du cône hors du
+  ticket de l'arrivée sont tenus par un ticket propre, relâché cinq secondes après que plus personne ne les veut
+  (`DestinationLoader.holdWindowChunk`). Vue de dos ou par la tranche, une face ne se voit pas : plus de fenêtre pour
+  elle de loin (avant, les deux faces d'un cadre envoyaient chacune la leur). Le carré reste de près (traversée
+  imminente) et pour une arrivée couchée. Mesuré sur le banc (allée de piliers dans l'End, cadre de 4 × 4 à 30 blocs) :
+  48 à 49 chunks chez le client comme avant (80 sans la règle des faces de dos), sol et piliers visibles jusqu'au
+  brouillard au lieu de s'arrêter vers 48 blocs ; la vue dessine plus de terrain, 0,081 ms par image au lieu de 0,063.
+- **Vue d'un portail caché derrière des blocs, plus dessinée** (C69 du bilan de `docs/revue/`, preuve sur le
+  processeur seule, décision de l'auteur du 25 octobre 2026) : un portail dans le champ mais derrière un mur se
+  dessinait entièrement, processeur et GPU, sans qu'un pixel n'en reste. Chaque image, une preuve (`FrameOcclusion`)
+  cherche entre la caméra et le cadre une tranche d'un bloc d'épaisseur dont chaque case que traverse le cône vers le
+  cadre est un bloc plein et opaque déjà affiché, devant une case libre ; trouvée, la vue n'est pas dessinée, seulement
+  entretenue (monde marqué regardé pour ses particules, lumière, grille, sections à reconstruire), et revient dès
+  l'image où le cadre se découvre. Elle vaut aussi pour les portails imbriqués d'une vue. Un bloc tout juste posé ne
+  compte qu'une fois sa section reconstruite avec lui (`SectionGenerations`, `MixinBuiltChunk`, `MixinRebuildTask` :
+  `isRenderingReady` vanilla dit seulement qu'une section a été construite une fois). Mesuré sur le PC de référence en
+  rendu vanilla, même JAR preuve active puis coupée : un portail derrière un mur, de 0,127 à 0,018 ms de rendu des
+  portails par image ; quatre, de 0,698 à 0,087 ms (520 à 766 FPS) ; captures des dix poses de la scène identiques
+  aux nuages, au chat et à la main près. Inerte quand un mod de rendu du terrain ou un pack de shaders dessine le
+  terrain : rien ne dit alors ce qui est affiché. Option `gtgsbackrooms.portal.occlusion` (vrai par défaut).
 - **Traversée décidée aux yeux pour les joueurs, et bords du cadre qui bloquent** (décisions de l'auteur du 25 octobre
   2026) : un joueur franchissait un cadre debout aux pieds, et passait donc un cadre d'un bloc de haut la tête à travers
   le haut du cadre ; le point qui décide de sa traversée est désormais ses yeux quel que soit le cadre (prédiction
@@ -58,8 +120,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 - **Pose d'un portail vers une zone jamais générée, sans gel du serveur** (C56 du bilan de `docs/revue/`) : la recherche
   d'arrivée lisait jusqu'à seize colonnes autour du point de départ, et générait sur le thread serveur chaque chunk
   manquant (0,3 s par chunk du Nether sur le PC de référence, 0,7 à 2,9 s sur un portable, pour tous les joueurs). Le
-  bloc demande désormais ces chunks un à un par un ticket (`PortalTargets.resolveLoadedOnly`, `SEARCH_TICKET`), ceux que
-  la recherche synchrone lirait et pas d'autres (la colonne, et les cellules de son cadre quand elles débordent sur le
+  bloc demande désormais ces chunks un à un par un ticket (`PortalTargets.resolve`, `SEARCH_TICKET`), ceux que la
+  recherche lit et pas d'autres (la colonne, et les cellules de son cadre quand elles débordent sur le
   chunk d'à côté), et rappelle à chaque tick jusqu'à ce que le chunk soit entier : la même arrivée qu'avant
   (`PortalArrivalReferenceGameTests` le vérifie), quelques ticks plus tard, le temps que vanilla génère le chunk sur ses
   threads de travail. Entre la pose et la résolution, le cadre n'est pas encore un portail : un joueur qui le passe
@@ -73,7 +135,21 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   variance près. Ce qui reste dans ce pire tick comprend le chargement vanilla des chunks du joueur téléporté en zone
   neuve et la fin des chunks (conversion, lumière) sur le thread serveur.
 
+### Removed
+- **Recherche d'arrivée synchrone** (décision de l'auteur du 25 octobre 2026) : l'ancienne `PortalTargets.resolve`, qui
+  générait sur le thread serveur les chunks qu'elle lisait, et `PortalTargets.arrive`, son parcours des colonnes, ne
+  servaient plus qu'aux tests. Il ne reste que la recherche chunk par chunk, renommée `PortalTargets.resolve` ; le bloc
+  lit la dimension où la demander dans `PortalTargets.searchDimension`. Les tests en jeu la mènent jusqu'au bout en
+  générant chaque chunk demandé (`GameTestArrivals`) : les huit arrivées de référence sont inchangées.
+
 ### Fixed
+- **Fond noir des vues de loin** (signalé par l'auteur le 26 octobre 2026) : à une vingtaine de blocs d'un cadre, sa vue
+  ne montrait presque plus que le fond de son ciel (noir dans le Level 0), chunks pourtant reçus. Le parcours des
+  sections d'une vue (`ViewSectionWalker`) partait de la section de sa caméra, qui est en deçà du plan d'arrivée, à la
+  distance du joueur au cadre, et n'acceptait que les sections du volume visible, fermé par ce plan : il n'atteignait le
+  cadre qu'à travers des sections refusées, et s'arrêtait (une section dessinée à 30 blocs contre 45 à 4). Caméra en
+  deçà du cadre, il part désormais des sections du cadre d'arrivée (`ViewCone.startsAtFrame`). Vérifié sur le banc :
+  poses proches identiques à avant, couloir du Level 0 de nouveau visible à 30 blocs.
 - **Mur visible au moment de passer un cadre plaqué contre lui** (signalé par l'auteur le 25 octobre 2026) : contre un
   cadre au bord du bloc posé sur un mur (ou au sol sur un sol plein), la face du bloc est dans le plan du portail, et la
   zone du cadre ne l'emportait sur elle au test de profondeur que par un décalage de polygone de quelques unités. De

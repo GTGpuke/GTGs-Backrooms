@@ -31,7 +31,10 @@
     "client.ParticleManagerAccessor",
     "client.LimbAnimatorAccessor",
     "client.BackgroundRendererAccessor",
-    "client.AbstractClientPlayerEntityAccessor"
+    "client.AbstractClientPlayerEntityAccessor",
+    "client.MixinBuiltChunk",
+    "client.MixinRebuildTask",
+    "client.MixinParticleManager"
   ],
   "mixins": [
     "MixinServerChunkManager",

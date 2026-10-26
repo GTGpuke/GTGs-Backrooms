@@ -43,6 +43,7 @@ import com.gtgpuke.gtgsbackrooms.core.registry.ModBlocks;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModDataComponents;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModItems;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModSounds;
+import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestArrivals;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
 
 /**
@@ -227,15 +228,15 @@ public final class PortalWandGameTests implements FabricGameTest {
             player.setSneaking(false);
 
             // A la surface, l'arrivee suit le meme plan : un cadre debout recule d'un demi-bloc, un cadre au sol est a ras du sol.
-            PortalTargets.Target middle = PortalTargets.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
-                    PortalSettings.DEFAULT, world.getRandom());
-            PortalTargets.Target edge = PortalTargets.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
-                    FLUSH, world.getRandom());
+            PortalTargets.Target middle = GameTestArrivals.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
+                    PortalSettings.DEFAULT, 0L);
+            PortalTargets.Target edge = GameTestArrivals.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
+                    FLUSH, 0L);
             context.assertTrue(middle != null && edge != null && edge.dimension().equals(World.OVERWORLD) && edge.facing() == PortalFacing.NORTH
                     && Math.abs(edge.position().z - (middle.position().z + 0.5)) < EPSILON && Math.abs(edge.position().y - middle.position().y) < EPSILON,
                     "Arrivee debout au bord du bloc : un demi-bloc derriere le milieu, du cote oppose a sa face avant.");
-            PortalTargets.Target ground = PortalTargets.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
-                    new PortalSettings(1, 2, true, true, false, false, PortalExit.FLOOR, 0, true), world.getRandom());
+            PortalTargets.Target ground = GameTestArrivals.resolve(world.getServer(), BackroomsConstants.LEVEL_ZERO_WORLD, anchor, PortalFacing.SOUTH,
+                    new PortalSettings(1, 2, true, true, false, false, PortalExit.FLOOR, 0, true), 0L);
             context.assertTrue(ground != null && ground.facing() == PortalFacing.UP && Math.abs(ground.position().y - (middle.position().y - 1.0)) < EPSILON,
                     "Arrivee au sol au bord du bloc : le plan est le sol lui-meme.");
         } finally {

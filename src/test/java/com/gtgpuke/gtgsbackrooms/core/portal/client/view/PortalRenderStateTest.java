@@ -44,12 +44,16 @@ class PortalRenderStateTest {
         Vec3d view = new Vec3d(1.0, 2.0, 3.0);
         PortalRenderState.setViewCameraPos(view);
         PortalRenderState.setBlockOutlineAllowed(true);
+        assertFalse(PortalRenderState.reducedView(), "Vue en pleine qualite tant que rien n'est pose.");
+        PortalRenderState.setReducedView(true);
+        assertTrue(PortalRenderState.reducedView(), "Vue allegee en cours de dessin.");
         assertSame(view, PortalRenderState.viewCameraPos(), "Camera de la vue pour le ciel.");
         assertTrue(PortalRenderState.blockOutlineAllowed(), "Contour du bloc vise autorise.");
         PortalRenderState.endFrame();
         assertTrue(PortalRenderState.canRenderPortals(), "La garde est levee en fin d'image.");
         assertFalse(PortalRenderState.isRendering(), "Plus en rendu de portail.");
         assertNull(PortalRenderState.viewCameraPos(), "Plus de camera de vue.");
+        assertFalse(PortalRenderState.reducedView(), "Plus de vue allegee apres l'image.");
         assertTrue(PortalRenderState.blockOutlineAllowed(), "Le contour reste decide par le rendu principal.");
     }
 
