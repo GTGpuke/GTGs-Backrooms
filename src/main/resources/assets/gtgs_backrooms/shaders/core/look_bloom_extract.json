@@ -1,0 +1,10 @@
+{
+    "vertex": "gtgs_backrooms:look_post",
+    "fragment": "gtgs_backrooms:look_bloom_extract",
+    "samplers": [
+        { "name": "Sampler0" }
+    ],
+    "uniforms": [
+        { "name": "gtgs_BloomThreshold", "type": "float", "count": 1, "values": [ 0.7 ] }
+    ]
+}

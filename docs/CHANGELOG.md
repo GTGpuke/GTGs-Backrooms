@@ -8,6 +8,199 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 ## [Unreleased]
 
 ### Added
+- **Tests du client** (demande de l'auteur du 29 octobre 2026 : tout le code couvert, en tests unitaires, d'intégration
+  et de non-régression) : un vrai client, fenêtre cachée, joue des tests écrits pas à pas dans le mod de test
+  (`src/gametest/.../client`, jamais dans le JAR) : `./gradlew runClientTest verifyClientTests`, lancés par `build`
+  et par la CI (Xvfb, rendu logiciel de Mesa). Toute erreur OpenGL pendant un test le fait échouer (sortie de débogage
+  du pilote, synchrone, avec la pile d'appels). Treize premiers tests, plus la fin de partie : Level 0 (look,
+  brouillard exact, néons, son), règles des deux moteurs (seuil du bloom du profil, stencil gardé quand les vues sont
+  coupées, samplers du dessin plein écran, volume sous une échelle, son rejoué sur une nouvelle source), vue et
+  traversées sans couture mesurée d'une image à l'autre, monde distant libéré par le serveur puis jeté par un
+  changement de monde vanilla (oublié des index des néons et du son, renderer fermé sans erreur OpenGL ; délai de
+  libération à 5 s pour ces tests), paliers de détail de loin, objet et joueur qui
+  traversent (troisième personne comprise), clics à travers le cadre, écran de la baguette, vue imbriquée vers l'End
+  et commande d'état, cri qui perturbe les néons, son entendu à travers le cadre et son occlusion ; puis le client
+  quitte le monde et la fin de partie est vérifiée (serveur intégré arrêté, plus rien de la partie tenu).
+  `./gradlew jacocoAllReport` mesure
+  tout le code, exclusions comprises : 86,5 % des instructions et 77,8 % des branches avec ces tests (le verrou à
+  100 % ne portait que sur la moitié du code, `docs/TESTING.md`). Un tampon nul supprimé compte aussi comme une erreur
+  OpenGL (vanilla le vide d'abord sous Linux, ce qui y est une erreur).
+- **Sous un pack de shaders, les Backrooms se voient avec le rendu du mod** (décision de l'auteur du 29 octobre 2026,
+  cas A de `docs/GUIDE.md`, section 7) : avec Iris et un pack actif, tant que le joueur est dans une dimension à look,
+  le gestionnaire de pipelines d'Iris rend son pipeline vanilla pour tout ce qui se dessine, vues de portail comprises
+  (`compat/iris`, mixins à part dans `gtgs_backrooms.compat.mixins.json`, appliqués par `CompatMixinPlugin` seulement
+  dans la plage vérifiée `IrisVersion`, de 1.8.8 à 1.8.14-beta.1). À chaque bascule, les réglages globaux du pipeline
+  quitté sont gardés et ceux de l'autre reposés, les shaders de sections du mod de terrain rechargés et le terrain
+  reconstruit ; le pipeline du pack reste en cache, sans recompilation au retour. Mesuré au banc : image de 96 à 117 ms
+  en entrant dans le Level 0, de 52 ms en revenant, terrain intact ; le Level 0 sous le pack a l'image du Level 0 sans
+  pack (écart moyen 1,7 à 2,2/255). Option `gtgsbackrooms.look.replaceShaderPack` (vrai par défaut) ; Iris hors de la
+  plage : message traduit à la connexion (`compat.gtgs_backrooms.iris.unsupported`) et le pack rend aussi les
+  Backrooms, le look posé sur son image. Limites : depuis le Level 0, l'Overworld vu par un portail est vanilla ; depuis
+  l'Overworld, le Level 0 vu par un portail est rendu par le pack, le look posé dessus (`docs/RENDERING.md`).
+- **Les deux moteurs au complet** (demande de l'auteur du 28 octobre 2026 : toutes les fonctionnalités de
+  `docs/backrooms/MOTEUR_SHADERS.md` et `docs/backrooms/MOTEUR_AUDIO.md` ; `docs/RENDERING.md`, `docs/AUDIO.md`).
+  - **Jumeau GLSL du calendrier des néons** (`shaders/include/neon_schedule.glsl`) : `NeonSchedule` passe à un hachage
+    entier de 32 bits (graine de la dimension, tick de l'horloge commune), le shader fait le même calcul en `uint`, et
+    la face de chaque tube du terrain suit son état et les cris proches dans le shader (reconnue au rectangle de la
+    texture du néon dans l'atlas, `NeonFaces` ; bloc retrouvé depuis la caméra en bloc entier et reste). 573 vecteurs
+    communs écrits par un programme indépendant (`src/test/resources/neon_schedule_vectors.json`) : `NeonScheduleTest`
+    pour Java, `NeonShaderCheck` sur le processeur graphique pour GLSL (option `gtgsbackrooms.look.verifyNeonShader`,
+    un écart coupe le jumeau). Jetons de patch `${uv}`, `${normal}`, `${terrain}` ; cinq sorties de plus aux vertex
+    shaders du monde ; perturbations dans le bloc des néons.
+  - **Acoustique générée du Level 0** (`"acoustics": "generated"`) : à la connexion, le serveur envoie la graine du
+    layout de chaque Level 0 (`LevelZeroLayoutPayload`, `LevelZeroLayoutSync` ; jamais la graine du monde), le client
+    lit la forme de la salle autour d'une source dans le layout (`LevelZeroRoomShape` : aire et murs des colonnes
+    ouvertes, libre parcours moyen 4V/S, ouverture) et les rayons reprennent la main là où la copie du monde contredit
+    la génération (`GeneratedAcoustics`). Comparaison des deux (option `gtgsbackrooms.audio.compareGenerated`) : même
+    réglage pour 70 % de 40 sons, même ouverture pour tous.
+  - **Moteur audio** : deux envois auxiliaires demandés à la création du contexte OpenAL ; trois modes (EFX, volume
+    seul sans l'extension ou avec l'option `gtgsbackrooms.audio.efx` coupée, coupé) ; cession à un autre moteur
+    acoustique reconnu à ses objets EFX ; milieu sous l'eau (`"underwater"`) ; direction perçue
+    (`"perceived_direction"`, à zéro dans le profil du Level 0 en attendant l'écoute) ; vérification du thread du son
+    en développement ; rayons de débogage dessinés dans le monde (option `gtgsbackrooms.audio.debugRays`,
+    `AcousticDebugRenderer`) ; la liaison son-image ne dépend plus d'EFX.
+  - **Liaison son-image** : courbes des réactions (`"easing"`, `Easing`) ; tremblement de caméra du cri (`camera_shake`,
+    `CameraShake`, option `gtgsbackrooms.audio.cameraShake` coupée par défaut, jamais dans une dimension vanilla) ;
+    enveloppes calculées en arrière-plan et gardées sur disque sous l'empreinte du son
+    (`.cache/gtgs_backrooms/envelopes`) ; plafond de clignotement sur la charge de l'écran entier, chaque vue pesée par
+    sa surface (`FlashLimiter.screenLoad`).
+  - **Portails** : un son passe deux cadres, par un portail vu à travers un autre (`PortalSound.bestExit`, le plus court
+    des chemins) ; évènement public `ClientPortalCrossing.WORLD_SWITCHED` à chaque bascule de monde du client.
+  - **Test décisif** (section 12.1 de `MOTEUR_SHADERS.md`) passé au banc : depuis l'Overworld, un cri du Level 0 joué
+    derrière un second cadre vu à travers le premier est entendu au premier (trajet de 12 blocs par les deux cadres,
+    réverb du Level 0) et fait baisser le tube de la vue pendant le cri.
+  - **Vérifications de la spécification** : empreintes des 90 sources que le pilote reçoit (`PatchedShadersGoldenTest`,
+    `patched_shaders_1_21_1.json`) ; contrôle de développement de l'état GL autour de chaque passe
+    (`gtgsbackrooms.look.checkGlState`, `GlStateCheck`) ; invariant du stencil vérifié au banc sur une vue imbriquée
+    d'un autre look, des cadres alignés, la troisième personne et un corps à cheval sur un plan ; preuve « strictement
+    vanilla » étendue aux nuages et à la main, trois modes graphiques (au plus 2/255, sauf un pixel de l'épée tenue,
+    présent aussi moteurs et portails coupés ; voir `docs/RENDERING.md`).
+- **Recommandations du plan** (`docs/backrooms/backrooms-mod-plan.md`, 28 octobre 2026) : options de confort
+  `gtgsbackrooms.look.reduceNoise` (ni grain, ni vacillement de la lumière, ni aberration chromatique) et
+  `gtgsbackrooms.audio.reduceBass` (graves des sons des Backrooms réduits, filtre passe-bande) ; « Réduire les flashs »
+  coupe aussi le vacillement des tubes, bourdonnement compris ; réverbs pré-chauffées sur le thread du son une fois le
+  chargement fini ; commande du client `/backrooms_state` (état de l'image au journal) ; cohabitation avec un pack de
+  shaders (`gtgsbackrooms.portal.shaderCohabitation`, `auto` ou `off` : sous un pack, cadres sombres).
+- **Correction : sous un pack de shaders, les vues de portail disparaissaient** depuis le look par vue (28 octobre au
+  matin) : le post de la vue coupait en sortie le test de stencil, et l'image du joueur remise autour du cadre
+  recouvrait l'écran entier (vues, cadres alignés et vues imbriquées perdus ; la mesure qui disait le look appliqué
+  mesurait en fait le ciel derrière le cadre). Le post rend maintenant l'état GL que tenait son appelant (stencil de la
+  vue, test et écriture de la profondeur) ; hors pack, il laisse le test de profondeur coupé, comme vanilla entre deux
+  dessins, y compris après avoir créé les framebuffers du bloom (`Framebuffer.resize` l'active).
+- **Moteur de shaders maison, premier jalon** (décision de l'auteur du 27 octobre 2026 : `docs/backrooms/MOTEUR_SHADERS.md`
+  fait foi, phases 0 à 4 ; `docs/RENDERING.md`). Chaque dimension à profil (`assets/gtgs_backrooms/look_profiles/*.json`,
+  aujourd'hui le Level 0) reçoit son look : teinte, désaturation, grain et vacillement appliqués à la couleur finale de
+  chaque fragment par les shaders vanilla **patchés au chargement** (`core/render/patch/` : la `main` de chaque fragment
+  shader est enveloppée, sa sortie passe par `gtgs_applyLook` de `shaders/include/look.glsl` ; patchs déclarés dans
+  `shader_patches/*.json`), courbe de lightmap (plancher, plafond, chaleur) et brouillard du profil. Le rendu d'un pixel
+  dépend de la dimension qu'il montre : le Level 0 vu par un portail depuis l'Overworld a son look dans le cadre
+  seulement, l'Overworld vu depuis le Level 0 reste vanilla, l'interface aussi. Le look de chaque vue est empilé avec sa
+  lightmap et son brouillard (`LookState`), envoyé aux shaders seulement quand il change ; le stencil porte le look de
+  chaque pixel à côté du niveau d'imbrication (`StencilLookMask`), les tests de niveau ne comparant plus que leurs bits.
+  Inventaire versionné des 110 shaders de base de 1.21.1, recalculé sur le jar à chaque build ; une source hors
+  signature n'est jamais patchée. Le Level 0 a ses effets de dimension (`LevelZeroEffects` : ni ciel ni nuages). Options
+  `gtgsbackrooms.look.enabled` (vrai par défaut) et `gtgsbackrooms.look.debugStencil`. Mesuré au banc (voir
+  `docs/RENDERING.md`).
+- **Post-traitement masqué** (phase 5 de la spécification) : en fin de rendu du monde, main comprise, l'image est copiée
+  dans un framebuffer déclaré en données (`assets/gtgs_backrooms/framebuffers/screen_copy.json`), puis un triangle plein
+  écran par look vu dans l'image applique la vignette et l'aberration chromatique de son profil (`look_post`, programme
+  du mod chargé avec les shaders vanilla) sous le test de stencil de ses bits de look : les pixels vanilla et ceux des
+  autres looks sont rejetés. Une image figée de portail prend les bits de look de sa dimension. Sous un pack de
+  shaders, le look entier de la dimension du joueur (étage 1 et post) se pose sur l'image du pack, avant les vues ;
+  rien sans stencil. Remplacer le pack par le pipeline vanilla dans les Backrooms a été essayé
+  et retiré (terrain en éclats dès qu'une vue mêle les deux pipelines dans une image ; voir `docs/RENDERING.md`).
+- **Moteur audio maison, acoustique de base** (phase 5 de `docs/backrooms/MOTEUR_AUDIO.md`, décision de l'auteur du
+  27 octobre 2026 au soir : l'acoustique avec des sons par défaut ; `docs/AUDIO.md`). Chaque dimension à profil audio
+  (`assets/gtgs_backrooms/audio_profiles/*.json`, aujourd'hui le Level 0) donne à ses sons une réverbération (slot et
+  effet EFX d'OpenAL, un par dimension), une occlusion par les blocs entre le son et la caméra (un rayon droit, filtre
+  passe-bas par source, revu toutes les dix ticks) et une absorption de l'air ; le traitement dépend de la dimension où
+  le son est émis (un son rejoué au cadre d'un portail garde celle de sa vraie source), jamais de celle du joueur, et
+  les sons vanilla ne sont pas touchés. Les quatre néons les plus proches bourdonnent (`gtgs_backrooms:block.neon.hum`,
+  son par défaut : l'ambiance du phare vanilla). Sans EFX : occlusion par le volume seul ; après une erreur OpenAL :
+  acoustique coupée, sons vanilla.
+  Option `gtgsbackrooms.audio.enabled` (vrai par défaut). Logique pure (`core/audio/profile/`, `core/audio/acoustic/`)
+  couverte à 100 %, colle OpenAL dans `core/audio/client/`.
+- **Acoustique à travers les portails** (phase 7 de `docs/backrooms/MOTEUR_AUDIO.md`, 28 octobre 2026). Un son entré
+  par un cadre est occlus en deux segments : de sa vraie source au point d'entrée dans le cadre, dans son monde (le
+  point est dans son ancre, `SoundAnchors`, remis à jour quand le son change de cadre après une traversée), puis du
+  cadre à la caméra dans le monde du joueur. La réverb de la salle de l'auditeur s'ajoute à celle de la dimension du son
+  par le second envoi auxiliaire quand le son entre par un cadre (le cadre est une seconde source dans cette salle),
+  reposée à la traversée du joueur. Les néons de l'autre côté de chaque portail visible bourdonnent au cadre (jusqu'à
+  quatre, à moins de douze blocs de l'arrivée, vus par le cadre, auditeur devant et à portée), avec l'acoustique de
+  leur dimension ; à la traversée, ils sont replacés avec les autres sons.
+- **Acoustique par rayons** (phase 6 de `docs/backrooms/MOTEUR_AUDIO.md`, 28 octobre 2026 ; `docs/AUDIO.md`). Un profil
+  audio dit comment son acoustique se calcule (`"acoustics"` : `none`, `raycast`, ou `generated`, voir plus haut). Le monde est copié par sections sur le thread de rendu
+  (`SolidityIndex`, deux sections par tick autour de la caméra et de l'arrivée des portails visibles, sections
+  changées recopiées, colonnes déchargées et sections lointaines oubliées ; chaque état de bloc distinct d'une section
+  classé une fois), et un thread de calcul (`AcousticWorker`, files bornées d'objets recyclés) lance autour de chaque
+  source des rayons répartis uniformément, réfléchis sur les blocs (`AcousticEvaluator`) : la taille de l'espace et son
+  ouverture choisissent l'un des huit réglages de réverb de la dimension (`ReverbPresets` : quatre tailles, fermé ou
+  ouvert, tirés de la réverb de base ; un slot EFX par réglage, créé à la première demande) ; un rayon qui passe le
+  cadre d'un portail ouvert continue de l'autre côté, transposé (`PortalPlanes`). L'occlusion cherche, en qualité
+  complète, un chemin qui contourne par les côtés de la source. Un son démarre sans attendre (réverb connue de sa
+  cellule de quatre blocs, `AcousticCache`, ou celle de base, rayon droit d'occlusion sur le monde vivant) et reçoit le
+  calcul au tick suivant, puis toutes les dix ticks. Un résultat calculé avec plus d'un quart de rayons hors de la copie
+  ne compte pas. Qualité `gtgsbackrooms.audio.quality` (`light`, `full`, `auto` : celle du moteur de shaders). Sections
+  du moniteur `client.audio.snapshot` (copie, par tick) et `client.audio.eval` (un calcul, sur le thread de calcul).
+- **Liaison son-image** (phases 1 à 4 de `docs/backrooms/MOTEUR_AUDIO.md`, 28 octobre 2026 ; `docs/AUDIO.md`). Une
+  horloge commune (`CueClock` : le temps du monde et la fraction de tick) remplace l'horloge de la machine pour les effets
+  animés. Chaque bourdonnement suit l'état de son tube (`NeonSchedule`, le même que son image : volume de la source,
+  claquements `click_off` et `click_on` du profil aux transitions, sons par défaut d'un levier vanilla). Les liens
+  son-image (`assets/gtgs_backrooms/sound_cues/*.json`, `Cue`, `CueRegistry`) font réagir l'image de la dimension
+  d'émission à un son : néons proches qui vacillent au rythme du son (`neon_disturbance`), pulsation de la vignette du
+  post (`screen_pulse`, pixels de cette dimension seulement), baisse de lumière (`lightmap_flicker`) ; le rythme vient de
+  l'enveloppe du son (`Envelope`, énergie par fenêtre de 20 ms, précalculée au chargement des ressources par le décodeur
+  Ogg de vanilla pour chaque variante du son, `CueResources`) lue à la position de lecture réelle de la source OpenAL
+  (`AL_SEC_OFFSET`, thread du son, chaque tick). Quatre perturbations à la fois (`Disturbances`). Le plafond de
+  clignotement (`FlashLimiter`) borne l'effet final de toutes ensemble à trois variations fortes par seconde ; option
+  `gtgsbackrooms.audio.reduceFlashes`. Premier lien livré : le cri (`gtgs_backrooms:scream`, son par défaut
+  `entity.howler.scream` : un cri vanilla), sous-titré. Section du moniteur `client.audio.cue`.
+- **Look dans les vues de portail sous un pack de shaders** (plan B de `docs/backrooms/MOTEUR_SHADERS.md`, 28 octobre
+  2026) : chaque vue qu'un pack vient de dessiner reçoit le look entier de sa dimension (étage 1 et post) sur les pixels
+  de son cadre, sous le stencil de la vue, avant que l'image du monde du joueur soit remise autour ; de même pour une
+  vue imbriquée et pour une vue qui couvre l'écran. Mesuré au banc (voir `docs/RENDERING.md`).
+- **Rendu : optimisation mesurée** (décision de l'auteur du 27 octobre 2026 au soir). Temps GPU des passes par requêtes
+  `GL_TIME_ELAPSED` lues deux à quatre images plus tard (`GpuTimer`, sections `client.look.world.gpu`, `.copy.gpu`,
+  `.bloom.gpu`, `.post.gpu` du moniteur, `ModPerformanceMonitor.record`) ; le post dessine son triangle plein écran
+  depuis un tampon persistant avec ses deux samplers posés sous leur nom constant (`FullscreenTriangle`) : plus aucune
+  allocation par image (le tessellator vanilla et `ShaderProgram.initializeUniforms` allouaient 2,4 Kio par image) ;
+  les néons derrière la caméra de plus que leur portée ne partent plus aux shaders ; le résumé du moniteur donne ses
+  huit sections les plus longues (cinq avant) pour que les mesures GPU et audio y tiennent. Mesuré à 854 × 480 sur le PC de
+  référence : étage 1 ≈ 0,02 ms GPU (rendu du monde 0,138 ms contre 0,117 sans le moteur), copie 0,006 ms, bloom
+  0,013 ms, post 0,006 ms. Le vacillement d'écran et la variation des tubes (part qui vacille, part morte) sont **mis
+  de côté** : profil du Level 0 à zéro, code gardé.
+- **Néons qui éclairent, qualité, bloom, repli de compilation** (phases 6 à 8 de la spécification, 27 octobre 2026 ;
+  `docs/RENDERING.md`). Le profil d'une dimension nomme son bloc de néon (`neons` : bloc, portée, couleur, force, part
+  qui vacille, part morte) ; les néons de chaque monde client sont relevés à l'arrivée de ses chunks (`NeonIndex`, par
+  les évènements de chunk de l'API Fabric, section par section, seules celles dont la palette contient le bloc étant
+  parcourues ; suivis à chaque changement de bloc, oubliés avec la colonne ou le monde ; carte pure `NeonMap`), et les
+  plus proches de la caméra de chaque vue (`NeonSelection`) partent aux shaders patchés dans un bloc d'uniformes
+  (`gtgs_NeonBlock`, un tampon par niveau de vue, rien d'alloué par image ; les vertex shaders patchés sortent la
+  position en espace caméra, `${position}` dans un patch vaut `Position + ChunkOffset` pour le terrain). Chaque fragment
+  ajoute la lumière des néons proches (quadratique avec la distance) et la face d'un tube suit son état. L'état de chaque
+  néon se calcule partout pareil d'après sa position et le temps du monde (`NeonSchedule` : mélange d'entiers de type
+  splitmix, une part vacille par coupures de quatre ticks, une part est morte, jamais noir), prêt pour le bourdonnement
+  de l'audio. Qualité `gtgsbackrooms.look.quality` (`light` : huit néons, pas de bloom ; `full` : trente-deux, bloom ;
+  `auto` : `full` sauf carte intégrée). Bloom en qualité complète : pixels au-dessus du seuil du profil à demi-résolution,
+  flou séparable à quart de résolution, ajouté par le post sur les seuls pixels du look (`look_bloom_extract`,
+  `look_blur`, framebuffers `bloom_half`, `bloom_quarter_a`, `bloom_quarter_b` déclarés en données ; `post.bloom_threshold`,
+  `post.bloom_strength` dans le profil). Chaque source patchée est compilée à blanc avant d'être donnée au jeu
+  (`ShaderCompileCheck`) : refusée par le pilote, elle est journalisée une fois et le shader reste vanilla ; le bilan
+  (« N étage(s) patché(s) compilé(s), M refusé(s) ») est journalisé à chaque rechargement. Avec un mod qui dessine le
+  terrain par ses propres shaders, l'étage 1 passe dans le post sous le stencil de chaque look (terrain et entités
+  reçoivent le même look, sans lumière des néons) au lieu de ne toucher que les entités.
+- **Correction : sans portail visible, le post masqué ne s'appliquait qu'à la main.** Seule la passe des portails
+  effaçait le stencil avec le look du monde du joueur ; sans portail dans l'image, les pixels du monde gardaient un
+  look nul et le post (vignette, bloom, étage 1 sous un mod de terrain) ne les touchait pas (vu au stencil de débogage
+  dans le Level 0). Le stencil reçoit maintenant le niveau 0 et le look du monde du joueur au début de chaque image
+  (`LookFrame.beginWorld`), hors pack de shaders.
+- **Correction : les shaders vanilla n'étaient jamais patchés en production.** Au rechargement, vanilla charge ses
+  programmes par une fabrique à cache (`GameRenderer.CachedResourceFactory`) posée sur le gestionnaire de ressources,
+  et `LookResources` n'y voyait pas de gestionnaire : profils et patchs n'arrivaient qu'après, par l'écouteur de
+  rechargement, une fois tous les étages chargés. Seuls la courbe de lightmap, le brouillard et le post du profil
+  agissaient (le « look discret » mesuré au banc le 27 octobre au matin était cela) ; l'étage 1 (teinte, désaturation,
+  grain, vacillement, néons) tourne maintenant, 72 étages patchés compilés par le pilote, aucun refusé (voir
+  `docs/RENDERING.md`, Tests).
 - **Paliers de détail des vues lointaines (LOD)** (décisions de l'auteur des 25 et 26 octobre 2026) : le palier d'une vue
   se décide sur la taille à l'écran d'un bloc juste derrière le cadre (`ViewDetail.blockPixels` : hauteur de l'image,
   projection, distance ; la résolution et le zoom comptent d'eux-mêmes). Pleine qualité, exactement le rendu d'avant,
@@ -56,6 +249,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   deux (relevé du 25 octobre 2026).
 
 ### Changed
+- **Un portail vu à travers un autre montre un troisième monde** : le serveur synchronise aussi la fenêtre de l'arrivée
+  d'un portail visible situé dans la fenêtre d'un monde distant que voit le joueur, s'il mène ailleurs que dans son
+  monde (`PortalViewTracker.seenThroughAnother`) ; une telle vue imbriquée restait sombre et muette. Test en jeu
+  `aPortalSeenThroughAnotherOpensItsOwnWorld` (Overworld → Nether → End), vérifié au banc.
+- **Un pack de shaders se reconnaît sans l'API d'un autre mod** (demandes de l'auteur des 28 et 29 octobre 2026 : aucun
+  autre mod nommé hors de son module de compatibilité, aucune dépendance de mod à l'exécution hors Fabric Loader et
+  Fabric API) : `ShaderPackState` relève, au milieu du rendu du monde du joueur, juste avant les portails, que les
+  programmes que vanilla donne aux entités et aux translucides ne sont plus ceux du jeu de base. Vérifié au banc, pack
+  actif, coupé puis rallumé en cours de partie : mêmes images qu'avec l'ancienne détection par l'API publique d'Iris
+  (`IrisApiBridge`, retiré). Le module `compat/iris` ne sert plus qu'au rendu des Backrooms sous un pack (ci-dessus) ;
+  Iris et Sodium restent en `modCompileOnly`, jamais embarqués ni requis. Ailleurs que dans ce module, ses messages et
+  la documentation qui le décrit, aucun autre mod n'est nommé. L'option `gtgsbackrooms.portal.shaderCohabitation`
+  reste.
 - **Fenêtre en cône pour un portail regardé de loin** (décision de l'auteur du 26 octobre 2026) : à plus de 8 blocs
   d'un cadre d'arrivée debout, le serveur n'envoie plus le carré de 7 × 7 chunks autour de l'arrivée mais autant de
   chunks dans l'axe de ce que le cadre montre (`RemoteChunkWindow.collectCone`) : le carré de 3 × 3 de l'arrivée, puis
@@ -143,6 +349,57 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   générant chaque chunk demandé (`GameTestArrivals`) : les huit arrivées de référence sont inchangées.
 
 ### Fixed
+- **Revue complète avant commit (29 octobre 2026), défauts corrigés** :
+  - **Stencil perdu** par un framebuffer recréé (redimensionnement, plein écran) tant que les vues étaient coupées pour
+    l'image (pack de shaders avec `shaderCohabitation=off`, ou après une erreur de rendu) : le stencil s'attache tant
+    que le pilote le tient (`MixinFramebuffer`).
+  - **Mondes clients retenus** jusqu'à la déconnexion après un changement de dimension vanilla (mort, portail du
+    Nether) : l'index des néons et la copie du monde pour le son les oublient désormais, par un point d'accès des
+    portails (`RemoteWorldRegistry.WORLD_FORGOTTEN`) ; vérifié par les tests du client.
+  - **Son** : la perturbation des néons d'un son entendu au cadre restait à sa vraie source au premier tick, puis
+    partait aux coordonnées du cadre lues dans l'autre monde ; un mur entre le cadre et la caméra n'étouffait le son
+    qu'au premier tick quand le monde de l'auditeur n'est pas copié ; après une traversée, l'occlusion, la direction
+    perçue et le claquement des tubes partaient de l'ancien point du son ; une même instance rejouée (son répété)
+    n'était plus traitée ; une part de volume nulle perdait le volume d'origine ; le cache des cellules et les fenêtres
+    du thread de calcul ne se vidaient jamais ; le dessin des rayons de débogage réservait 64 Kio option coupée.
+  - **Rendu** : un fragment patché dont le vertex n'a pas reçu son patch (refusé par le pilote, ou shader remplacé
+    par un pack de ressources) aurait empêché l'édition de liens du programme : il reste vanilla
+    (`PatchedVertexStages`) ; moteur de shaders coupé, plus aucun travail par image ; seuil du bloom lu sur le bon
+    masque ; un incident au milieu du post rend toujours l'état GL ; plus d'allocation par image pour les samplers du
+    post ni pour l'effacement épargné sous un pack (`@ModifyArg` à la place d'un enrobage).
+  - **Compatibilité** : plage d'Iris bornée à la dernière version vérifiée (1.8.14-beta.1, testée par `IrisVersionTest`) :
+    une version plus récente non vérifiée, dont un membre visé aurait changé, aurait empêché le jeu de démarrer.
+  - **Serveur** : plus d'allocation par recalcul des fenêtres d'un joueur ; la liste des portails imbriqués ne retient
+    plus la partie solo précédente.
+  - **Tests renforcés** : vue prête sur le bit du Level 0 (l'ancienne condition ne pouvait pas échouer), teinte jaune
+    stricte, baguette vérifiée champ par champ, jumeau GLSL vérifié sur le processeur graphique à chaque lancement,
+    fenêtre lointaine sans ticket, borne du cache des layouts, détours de l'évaluateur ; un client qui ne se ferme pas
+    après ses tests fait échouer le build.
+- **Brouillard des Backrooms à la couleur de leur profil** (trouvé par les tests du client) : vanilla mêle la couleur du
+  brouillard au ciel selon la distance de rendu, et le ciel du Level 0 est noir (heure fixée à minuit) ; le brouillard
+  tombait à 0,81 fois la couleur du profil à huit chunks, et presque au noir dans une vue dont la caméra est loin
+  derrière l'arrivée, si bien qu'un cadre regardé de 60 blocs était sombre et son image figée, à 90 blocs, noire.
+  La couleur du profil est posée en fin de calcul (`LookFog.color`, `MixinBackgroundRenderer`), fond de l'image compris,
+  hors de l'eau, de la lave, de la neige poudreuse, de la cécité et de l'obscurité (comme ses distances). Changement
+  visible voulu : le Level 0 prend la couleur de brouillard que son profil déclare, quelle que soit la distance de
+  rendu du joueur.
+- **Erreurs OpenGL sous Linux à chaque rechargement d'une vue de portail** (trouvé par les tests du client sous Mesa) :
+  sous Linux, vanilla vide chaque tampon de sommets avant de le supprimer ; les tampons différés d'un renderer de vue
+  qui n'avaient jamais servi (identifiant nul) en faisaient une erreur chacun, 275 952 pour un rechargement, chacune
+  écrite au journal par le jeu. Un tel tampon se ferme désormais sans appel au pilote (`MixinVertexBuffer`).
+- **Base technique des deux moteurs sécurisée** (demande de l'auteur du 27 octobre 2026 au soir, revue du cycle de vie
+  de la colle OpenGL et OpenAL) : la table des sons traités par l'acoustique avait des clés faibles, et un son fini que
+  le ramasse-miettes avait repris avant la revue des dix ticks disparaissait sans rendre son filtre passe-bas (réserve
+  de 48 filtres vidée à la longue : plus d'occlusion) ; clés fortes, la revue retirant ce que la table du moteur n'a
+  plus. Un rechargement du moteur de son (F3+T, changement de périphérique) ferme le contexte OpenAL et arrête toutes
+  les sources : les sons traités et les bourdonnements sont oubliés avec lui (`MixinSoundEngine`), et un tube dont le son
+  a été lâché par le moteur (relance, arrêt par vanilla) repart à la revue suivante au lieu de rester muet tant qu'il est
+  proche ; volume général ou d'ambiance à zéro, aucun bourdonnement n'est demandé (le moteur refusait chaque demande, dix
+  ticks sur dix). Une erreur OpenAL du filtre d'occlusion est lue par le mod (coupe-circuit) au lieu d'être laissée à
+  vanilla, qui l'aurait journalisée comme sienne au prochain son. Une exception pendant le post masqué coupe le post pour
+  la session (coupe-circuit de la spécification, section 10), l'état GL rendu et l'étage 1 gardé, au lieu de faire
+  planter le rendu. Une requête de temps GPU ouverte pendant une autre n'est plus demandée au pilote (une seule
+  `GL_TIME_ELAPSED` à la fois : la seconde valait une erreur GL et une mesure fausse).
 - **Fond noir des vues de loin** (signalé par l'auteur le 26 octobre 2026) : à une vingtaine de blocs d'un cadre, sa vue
   ne montrait presque plus que le fond de son ciel (noir dans le Level 0), chunks pourtant reçus. Le parcours des
   sections d'une vue (`ViewSectionWalker`) partait de la section de sa caméra, qui est en deçà du plan d'arrivée, à la
@@ -353,7 +610,7 @@ rendu. La porte des Backrooms et le badge de la Gang sont retirés.
 - **Guide du projet** : `docs/GUIDE.md` (règles d'or, état réel du dépôt, architecture cible du rendu et de l'audio,
   méthode clean room, feuille de route par versions, cohabitation avec les packs de shaders, compatibilité, licence)
   devient le document de référence, confronté au dépôt le 2026-10-20 (écarts consignés dans sa section 2.4). Il est
-  référencé depuis `CLAUDE.md`, `docs/INDEX.md`, `docs/ARCHITECTURE.md`, `docs/TESTING.md` et les prompts.
+  référencé depuis les règles du projet, `docs/INDEX.md`, `docs/ARCHITECTURE.md`, `docs/TESTING.md` et les consignes de vérification.
 - **Performance des portails** (passe complète, mesures dans `docs/PORTALS.md`) :
   - la lightmap d'un monde vu par un portail n'est plus recalculée deux fois par vue et par image (celle du monde vu,
     puis celle du joueur), mais une fois par tick client dans une texture propre à ce monde, comme vanilla la sienne
@@ -429,7 +686,7 @@ rendu. La porte des Backrooms et le badge de la Gang sont retirés.
   feature `cursed_tree`, entrées du mod dans les tags `minecraft:logs`), avec leur payload, leurs ressources, leurs
   tests et le paquet `feature/` : leurs blocs disparaissent des mondes existants et leurs items des inventaires.
 - **Anciennes specs** remplacées par `docs/GUIDE.md` : `docs/backrooms/1 - Arborescence`, `3 - Portails`,
-  `4 - Veil Shaders`, `to-check` et `docs/DEPENDENCIES.md`. Restent `docs/backrooms/backrooms-level0-pipeline-v6.md`,
+  `4 - Shaders` (spec du rendu sur une bibliothèque tierce), `to-check` et `docs/DEPENDENCIES.md`. Restent `docs/backrooms/backrooms-level0-pipeline-v6.md`,
   `backrooms-level0-roadmap.md` et `level0-manual-structures-template.json` (générateur du Level 0, verrouillé) et
   `docs/BACKROOMS_CONTENT_RULES.md` (direction artistique).
 - **Porte des Backrooms** (`backrooms_door`), en attendant de revenir sur la base du bloc portail : ses blocs
@@ -585,8 +842,7 @@ rendu. La porte des Backrooms et le badge de la Gang sont retirés.
   arrête à la première instruction vanilla (`ViewRenderStart`, `MixinWorldRenderStart`) : sans pack actif, les vues
   sont celles de vanilla. Avec un pack actif, les vues ressortaient noires : elles se dessinent maintenant après
   l'image du monde, chacune par un rendu complet de son renderer dans le pipeline du pack, sous le stencil de son
-  cadre, l'image du joueur remise autour (`ShaderPackPortalRenderer`, module `compat/iris` qui lit l'API publique
-  du mod de shaders Iris, seul mod nommé dans le code). Terrain, entités, ciel, nuages, météo et ombres de l'autre
+  cadre, l'image du joueur remise autour (`ShaderPackPortalRenderer`). Terrain, entités, ciel, nuages, météo et ombres de l'autre
   monde y sont éclairés par le pack, avec un niveau de portails imbriqués. Les entités à cheval sur un portail s'y
   dessinent en deux moitiés : les shaders du pack ignorant la distance de découpe, chaque moitié est rognée au plan sur
   le processeur (`ClippedVertexConsumers`). Un cadre derrière l'eau ou le verre n'est pas dessiné (`docs/PORTALS.md`,
@@ -897,7 +1153,7 @@ Détail et mesures dans [AUDIT.md](AUDIT.md).
 - **Portails** : logger commun, feature-flag appliqué au mixin de framebuffer et au rendu stencil
   (plus aucun coût par frame quand désactivé), texture d'entity inexistante remplacée.
 - **Config** : `-Dgtgsbackrooms.levelZero.noiseGeometry` est maintenant réellement appliqué (il était ignoré).
-- **Documentation** : README, CLAUDE.md, docs techniques et skills réécrits sur l'état réel du code.
+- **Documentation** : README, règles du projet, docs techniques et guides de contribution réécrits sur l'état réel du code.
 
 ### Fixed
 - **Frontières de chunk** : la fenêtre de traversabilité déborde de deux cellules autour du chunk.

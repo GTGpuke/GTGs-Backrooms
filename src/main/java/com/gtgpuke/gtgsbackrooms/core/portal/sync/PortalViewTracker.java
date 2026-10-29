@@ -14,6 +14,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.SharedConstants;
@@ -87,8 +88,13 @@ public final class PortalViewTracker {
     private static final Map<UUID, PlayerView> VIEWS = new HashMap<>();
     private static final List<PlayerView> VIEW_LIST = new ArrayList<>();
     private static final List<BackroomsPortalEntity> RELEVANT_SCRATCH = new ArrayList<>();
-    private static final Map<RegistryKey<World>, BackroomsPortalEntity> ANCHOR_SCRATCH = new HashMap<>();
+    /** Portails d'un monde distant vus a travers un portail du joueur, qui menent ailleurs (un niveau d'imbrication). */
+    private static final List<BackroomsPortalEntity> NESTED_SCRATCH = new ArrayList<>();
+    /** Foyer de chaque dimension pour le joueur en cours : adressage ouvert, aucun noeud alloue par recalcul. */
+    private static final Map<RegistryKey<World>, BackroomsPortalEntity> ANCHOR_SCRATCH = new Reference2ObjectOpenHashMap<>();
     private static final Map<RegistryKey<World>, LongSet> WANTED_SCRATCH = new HashMap<>();
+    /** Memes ensembles que {@link #WANTED_SCRATCH}, pour les vider a chaque recalcul sans iterateur. */
+    private static final List<LongSet> WANTED_LIST = new ArrayList<>();
     private static final List<RegistryKey<World>> DIMENSION_SCRATCH = new ArrayList<>();
     /**
      * Duree, en ticks serveur, pendant laquelle les chunks qu'un client tient apres une traversee valent : vanilla propose
@@ -162,6 +168,7 @@ public final class PortalViewTracker {
             CHANGED_WORLD.clear();
             RELEVANT_SCRATCH.clear();
             ANCHOR_SCRATCH.clear();
+            NESTED_SCRATCH.clear();
             watchedChunkCount = 0;
         });
         initialized = true;
@@ -426,6 +433,7 @@ public final class PortalViewTracker {
             VIEW_LIST.add(view);
         }
         computeWantedWindows(player);
+        addNestedWindows(player);
         long tick = server.getTicks();
         for (int i = 0; i < DIMENSION_SCRATCH.size(); i++) {
             view.lastWantedTick.put(DIMENSION_SCRATCH.get(i), tick);
@@ -466,8 +474,8 @@ public final class PortalViewTracker {
     private static void computeWantedWindows(ServerPlayerEntity player) {
         ANCHOR_SCRATCH.clear();
         DIMENSION_SCRATCH.clear();
-        for (LongSet wanted : WANTED_SCRATCH.values()) {
-            wanted.clear();
+        for (int i = 0; i < WANTED_LIST.size(); i++) {
+            WANTED_LIST.get(i).clear();
         }
         for (int i = 0; i < RELEVANT_SCRATCH.size(); i++) {
             BackroomsPortalEntity portal = RELEVANT_SCRATCH.get(i);
@@ -492,7 +500,7 @@ public final class PortalViewTracker {
                 continue;
             }
             // Ensemble ordonne : les chunks partent du centre vers l'exterieur, et l'appartenance se teste sans parcours.
-            LongSet wanted = WANTED_SCRATCH.computeIfAbsent(dimension, key -> new LongLinkedOpenHashSet());
+            LongSet wanted = wantedFor(dimension);
             boolean first = wanted.isEmpty();
             if (near) {
                 RemoteChunkWindow.collect(chunkX, chunkZ, radius, wanted);
@@ -503,6 +511,74 @@ public final class PortalViewTracker {
                 DIMENSION_SCRATCH.add(dimension);
             }
         }
+    }
+
+    /** Les chunks voulus d'une dimension pour le joueur en cours, ensemble ordonne garde d'un passage a l'autre. */
+    private static LongSet wantedFor(RegistryKey<World> dimension) {
+        LongSet wanted = WANTED_SCRATCH.get(dimension);
+        if (wanted == null) {
+            // Premiere fois qu'une dimension est voulue dans la partie : un ensemble de plus, garde ensuite.
+            wanted = new LongLinkedOpenHashSet();
+            WANTED_SCRATCH.put(dimension, wanted);
+            WANTED_LIST.add(wanted);
+        }
+        return wanted;
+    }
+
+    /**
+     * Un portail vu a travers un autre : dans la fenetre synchronisee d'un monde distant, le client le tient et le dessine
+     * en vue imbriquee. S'il mene vers un troisieme monde, ou ailleurs dans le meme, la fenetre carree de son arrivee
+     * rejoint les fenetres voulues : sans elle, sa vue n'aurait rien a montrer. Le foyer d'une dimension qu'aucun portail
+     * du joueur n'atteint est le premier de ces portails ; une arrivee qui ne tient pas autour du foyer de sa dimension est
+     * laissee, comme pour un portail du joueur.
+     */
+    private static void addNestedWindows(ServerPlayerEntity player) {
+        RegistryKey<World> own = player.getWorld().getRegistryKey();
+        List<BackroomsPortalEntity> portals = BackroomsPortalEntityRegistry.all();
+        NESTED_SCRATCH.clear();
+        for (int i = 0; i < portals.size(); i++) {
+            BackroomsPortalEntity portal = portals.get(i);
+            if (seenThroughAnother(portal, own, WANTED_SCRATCH.get(portal.getWorld().getRegistryKey()))) {
+                NESTED_SCRATCH.add(portal);
+            }
+        }
+        int radius = DestinationLoader.syncRadius(false);
+        for (int i = 0; i < NESTED_SCRATCH.size(); i++) {
+            BackroomsPortalEntity portal = NESTED_SCRATCH.get(i);
+            RegistryKey<World> dimension = portal.destinationDim();
+            BackroomsPortalEntity anchor = ANCHOR_SCRATCH.get(dimension);
+            if (anchor == null) {
+                anchor = portal;
+                ANCHOR_SCRATCH.put(dimension, portal);
+            }
+            Vec3d anchorPos = anchor.destinationPos();
+            Vec3d destinationPos = portal.destinationPos();
+            int chunkX = ChunkSectionPos.getSectionCoord(destinationPos.x);
+            int chunkZ = ChunkSectionPos.getSectionCoord(destinationPos.z);
+            if (!RemoteChunkWindow.fitsAround(ChunkSectionPos.getSectionCoord(anchorPos.x), ChunkSectionPos.getSectionCoord(anchorPos.z), chunkX, chunkZ,
+                    radius)) {
+                continue;
+            }
+            LongSet wanted = wantedFor(dimension);
+            boolean first = wanted.isEmpty();
+            RemoteChunkWindow.collect(chunkX, chunkZ, radius, wanted);
+            if (first) {
+                DIMENSION_SCRATCH.add(dimension);
+            }
+        }
+    }
+
+    /**
+     * {@code true} si ce portail est vu a travers un portail du joueur et mene ailleurs que dans le monde du joueur (que le
+     * client tient deja) : visible, dans la fenetre synchronisee de son propre monde.
+     *
+     * @param portal portail d'un monde quelconque
+     * @param playerWorld monde du joueur
+     * @param window chunks voulus du monde du portail pour ce joueur, ou {@code null} s'il n'en a aucun
+     */
+    static boolean seenThroughAnother(BackroomsPortalEntity portal, RegistryKey<World> playerWorld, @Nullable LongSet window) {
+        return window != null && portal.visible() && !portal.destinationDim().equals(playerWorld)
+                && window.contains(ChunkPos.toLong(ChunkSectionPos.getSectionCoord(portal.getX()), ChunkSectionPos.getSectionCoord(portal.getZ())));
     }
 
     /**

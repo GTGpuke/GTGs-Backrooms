@@ -1779,6 +1779,82 @@ public final class PortalSyncGameTests implements FabricGameTest {
                 .completeIfSuccessful();
     }
 
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS + 400, batchId = "portal_sync_nested")
+    public void aPortalSeenThroughAnotherOpensItsOwnWorld(TestContext context) {
+        ServerWorld nether = prepareNether(context);
+        ServerWorld end = context.getWorld().getServer().getWorld(World.END);
+        context.assertTrue(end != null, "Le serveur de test a un End.");
+        GameTestServerWorlds.pregenerateArrival(end, END_EXIT);
+        BackroomsPortalEntity toNether = netherPortal(context);
+        LEFTOVERS.add(toNether);
+        ServerPlayerEntity player = viewer(context, GameMode.CREATIVE);
+        // Les portails du Nether, poses une fois la fenetre de l'arrivee chargee : tous dans cette fenetre.
+        BackroomsPortalEntity[] nested = new BackroomsPortalEntity[4];
+        Vec3d farEnd = END_EXIT.add(4000.0, 0.0, 0.0);
+        ChunkPos endChunk = new ChunkPos(BlockPos.ofFloored(END_EXIT));
+        int farEndChunkX = ChunkSectionPos.getSectionCoord(farEnd.x);
+        int farEndChunkZ = ChunkSectionPos.getSectionCoord(farEnd.z);
+        int[] settle = new int[1];
+        List<RemoteChunkPayload> chunks = new ArrayList<>();
+        List<RemoteDimensionPayload> announced = new ArrayList<>();
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> {
+                    if (PortalViewTracker.watchedChunkCount() == 0) {
+                        throw new GameTestException("La fenetre du Nether n'est pas encore envoyee.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    // Vers l'End : foyer de l'End, que seul ce portail atteint ; puis vers l'End trop loin de ce foyer pour la
+                    // carte du client ; vers un autre point du Nether, autour du foyer du Nether ; vers le monde du joueur.
+                    nested[0] = GameTestServerWorlds.spawnNorthPortal(nether, NETHER_EXIT.add(2.0, 0.0, -3.0), World.END, END_EXIT);
+                    nested[1] = GameTestServerWorlds.spawnNorthPortal(nether, NETHER_EXIT.add(-2.0, 0.0, -3.0), World.END, farEnd);
+                    nested[2] = GameTestServerWorlds.spawnNorthPortal(nether, NETHER_EXIT.add(4.0, 0.0, -3.0), World.NETHER, NETHER_EXIT.add(16.0, 0.0, 0.0));
+                    nested[3] = GameTestServerWorlds.spawnNorthPortal(nether, NETHER_EXIT.add(-4.0, 0.0, -3.0), World.OVERWORLD,
+                            context.getAbsolute(new Vec3d(20.5, 2.0, 20.5)));
+                    LEFTOVERS.addAll(List.of(nested));
+                })
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    announced.addAll(GameTestPlayers.sent(player, RemoteDimensionPayload.class));
+                    if (!chunkSent(chunks, World.END.getValue(), endChunk)) {
+                        throw new GameTestException("L'arrivee du portail vu a travers l'autre n'est pas encore envoyee.");
+                    }
+                })
+                // Quelques recalculs de plus : une fenetre voulue a tort aurait deja son ticket, et ses chunks proches partiraient.
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    // Quatre recalculs : le serveur revoit les fenetres d'un joueur toutes les cinq ticks.
+                    if (++settle[0] < 20) {
+                        throw new GameTestException("Recalculs des fenetres en cours.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    try {
+                        context.assertFalse(end.isChunkLoaded(farEndChunkX, farEndChunkZ),
+                                "Une arrivee hors de la carte du client autour du foyer de l'End n'a aucun ticket : elle n'est pas voulue.");
+                        context.assertTrue(indexOf(announced, World.END.getValue()) >= 0,
+                                "L'End, que montre un portail vu a travers celui du Nether, est annonce au joueur : " + announced + ".");
+                        context.assertTrue(chunks.stream().noneMatch(chunk -> chunk.dimension().equals(World.END.getValue())
+                                && Math.abs(chunk.chunkX() - farEndChunkX) < 8), "Une arrivee hors de la carte du client autour du foyer de l'End n'est pas envoyee.");
+                        context.assertTrue(chunks.stream().noneMatch(chunk -> chunk.dimension().equals(World.OVERWORLD.getValue())),
+                                "Un portail qui ramene dans le monde du joueur n'ouvre rien : le client le tient deja.");
+                    } finally {
+                        for (BackroomsPortalEntity portal : nested) {
+                            portal.discard();
+                        }
+                        toNether.discard();
+                        GameTestPlayers.disconnect(player);
+                    }
+                })
+                .completeIfSuccessful();
+    }
+
+    /** Apres le lot du portail vu a travers un autre, reussi ou non : joueur deconnecte, portails retires. */
+    @AfterBatch(batchId = "portal_sync_nested")
+    public void afterNested(ServerWorld world) {
+        releaseLeftovers();
+    }
+
     /** Index annonce au joueur pour cette dimension, {@code -1} si elle ne l'a pas ete. */
     private static int indexOf(List<RemoteDimensionPayload> announced, Identifier dimension) {
         for (RemoteDimensionPayload payload : announced) {

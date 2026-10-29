@@ -7,8 +7,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import net.minecraft.client.render.WorldRenderer;
 
-import com.gtgpuke.gtgsbackrooms.compat.iris.IrisCompat;
-import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewRenderStart;
 
 /**
@@ -17,9 +15,6 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewRenderStart;
  * handlers que d'autres mods inserent en tete ont donc tous tourne (quelle que soit leur priorite) quand celui-ci rend
  * la main. Priorite au-dessus de celle par defaut : applique apres ces mods, le retour anticipe qu'il ajoute n'est pas
  * vu par leurs injections en fin de methode ({@code @At("RETURN")}), qui defont ce que la tete a pose.
- *
- * <p>Au meme point, pour le rendu du monde du joueur, le pack de shaders actif est releve pour l'image
- * ({@link IrisCompat#refresh}) : le mod de shaders vient d'y preparer son pipeline, son API repond faux avant.
  */
 @Mixin(value = WorldRenderer.class, priority = 1100)
 public abstract class MixinWorldRenderStart {
@@ -29,8 +24,6 @@ public abstract class MixinWorldRenderStart {
     private void backrooms$firstInstruction(CallbackInfo ci) {
         if (ViewRenderStart.isStarting()) {
             ci.cancel();
-        } else if (!PortalRenderState.isRendering()) {
-            IrisCompat.refresh();
         }
     }
 }

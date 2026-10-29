@@ -26,13 +26,13 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
-import com.gtgpuke.gtgsbackrooms.compat.iris.IrisCompat;
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.transition.EntityHandover;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalClipping;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderPackPortalRenderer;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderPackState;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
@@ -465,7 +465,7 @@ public final class StraddlingEntityRenderer {
             Vec3d cameraPos,
             Matrix4f positionMatrix,
             float tickDelta) {
-        if (IrisCompat.shaderPackInUse()) {
+        if (ShaderPackState.inUse()) {
             // Les shaders du pack ignorent la distance de decoupe : les sommets sont rognes au plan avant d'etre ecrits.
             CLIPPED.setPlane(planeNormal, planePoint, cameraPos);
             renderTransposed(accessor, entity, imageCamera, rotation, tickDelta, CLIPPED);

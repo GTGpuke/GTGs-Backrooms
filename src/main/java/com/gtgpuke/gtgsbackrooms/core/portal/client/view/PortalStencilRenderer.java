@@ -36,7 +36,6 @@ import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
 
-import com.gtgpuke.gtgsbackrooms.compat.iris.IrisCompat;
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
@@ -52,6 +51,10 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalCollision;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalRelevance;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookFrame;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookPost;
+import com.gtgpuke.gtgsbackrooms.core.render.post.StencilLookMask;
+import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 import com.gtgpuke.gtgsbackrooms.mixin.client.BackgroundRendererAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.BuiltChunkStorageAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.CameraAccessor;
@@ -64,8 +67,9 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
  * ses blocs opaques et ses entities, avant ce qui est translucide. L'eau ou le verre du monde du joueur devant un
  * cadre se dessinent ensuite par-dessus la vue, comme par-dessus n'importe quel decor.
  *
- * <p>La valeur du stencil est le niveau d'imbrication : 0 pour le monde du joueur, 1 dans
- * la vue d'un portail, 2 dans celle d'un portail vu a travers lui. Les portails se dessinent un par un, du plus proche
+ * <p>Les bits bas du stencil ({@code StencilLookMask.LEVEL_MASK}, {@code 0x03}) portent le niveau d'imbrication : 0
+ * pour le monde du joueur, 1 dans la vue d'un portail, 2 dans celle d'un portail vu a travers lui ; les bits
+ * {@code 0x1C} portent le look de la dimension montree ({@code StencilLookMask.LOOK_MASK}), pour le post masque. Les portails se dessinent un par un, du plus proche
  * au plus lointain. Pour chacun : sa zone de vue (voir {@link FrameAreaRenderer}) passe le stencil du niveau courant au
  * suivant la ou elle n'est cachee par rien, sa profondeur est poussee au plan lointain, le fond prend la couleur de
  * brouillard de la vue, puis la vue (ciel, blocs, entities, block entities, particules, nuages, pluie et neige) est dessinee depuis
@@ -79,7 +83,7 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
  * passe au niveau 1, la vue s'y dessine avec ses portails imbriques, et le reste du rendu du monde du joueur est refuse
  * par le stencil jusqu'a la fin de l'image.
  *
- * <p>Sous un pack de shaders ({@code IrisCompat}), rien de tout cela au milieu du rendu : les vues se dessinent apres
+ * <p>Sous un pack de shaders ({@link ShaderPackState}), rien de tout cela au milieu du rendu : les vues se dessinent apres
  * l'image du monde, chacune par le rendu complet de son renderer ({@link ShaderPackPortalRenderer}).
  */
 public final class PortalStencilRenderer {
@@ -178,7 +182,7 @@ public final class PortalStencilRenderer {
             Matrix4f projectionMatrix,
             LightmapTextureManager lightmap,
             float tickDelta) {
-        if (IrisCompat.shaderPackInUse()) {
+        if (ShaderPackState.inUse()) {
             // Les vues se dessinent apres l'image ; les moities d'entities a cheval, elles, ici, dans le pipeline du pack.
             MinecraftClient client = MinecraftClient.getInstance();
             if (ready(client)) {
@@ -204,7 +208,7 @@ public final class PortalStencilRenderer {
             LightmapTextureManager lightmap,
             Matrix4f positionMatrix,
             Matrix4f projectionMatrix) {
-        if (!IrisCompat.shaderPackInUse()) {
+        if (!ShaderPackState.inUse()) {
             return;
         }
         // La passe finale du pack laisse l'ecriture de la profondeur coupee. Une vue dessinee la rendait ; sans vue, rien :
@@ -212,6 +216,8 @@ public final class PortalStencilRenderer {
         // entiers du monde pour du ciel (noirs dans une dimension sans ciel).
         RenderSystem.depthMask(true);
         RenderSystem.colorMask(true, true, true, true);
+        // Dimension a look sous le pack : son look se pose sur l'image du pack, avant les vues, qui montrent d'autres dimensions.
+        LookPost.renderUnderShaderPack(MinecraftClient.getInstance());
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_RENDER)) {
             renderPortalsAfterWorld(tickCounter, camera, lightmap, positionMatrix, projectionMatrix);
         } finally {
@@ -429,10 +435,12 @@ public final class PortalStencilRenderer {
 
         saveMainFog();
         GL11.glEnable(GL11.GL_STENCIL_TEST);
-        GL11.glClearStencil(WORLD_LEVEL + 1);
+        // Tout l'ecran est la vue : niveau 1 et look de la dimension vue, tous les bits ecrits par l'effacement.
+        GL11.glStencilMask(FULL_MASK);
+        GL11.glClearStencil(StencilLookMask.value(WORLD_LEVEL + 1, lookOf(portal)));
         RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, false);
         GL11.glClearStencil(WORLD_LEVEL);
-        GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL + 1, FULL_MASK);
+        GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL + 1, StencilLookMask.LEVEL_MASK);
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
         coveringScreen = true;
         try {
@@ -442,7 +450,7 @@ public final class PortalStencilRenderer {
             }
         } finally {
             // Le reste du rendu du monde du joueur (translucide, particules, nuages, meteo) est derriere la vue : refuse partout.
-            GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL, FULL_MASK);
+            GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL, StencilLookMask.LEVEL_MASK);
             restoreMainState(client);
         }
     }
@@ -565,7 +573,11 @@ public final class PortalStencilRenderer {
             float tickDelta) {
         saveMainFog();
         GL11.glEnable(GL11.GL_STENCIL_TEST);
+        // Niveau 0 et look du monde du joueur partout : l'effacement n'ecrit que les bits du masque d'ecriture, tous ici.
+        GL11.glStencilMask(FULL_MASK);
+        GL11.glClearStencil(StencilLookMask.value(WORLD_LEVEL, LookProfiles.of(client.world.getRegistryKey()).id()));
         RenderSystem.clear(GL11.GL_STENCIL_BUFFER_BIT, false);
+        GL11.glClearStencil(WORLD_LEVEL);
         capturedThisFrame = false;
         try {
             Vec3d cameraPos = camera.getPos();
@@ -654,7 +666,7 @@ public final class PortalStencilRenderer {
             return false;
         }
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_FROZEN_DRAW)) {
-            FrozenViews.draw(portal, cameraPos, positionMatrix);
+            drawFrozen(portal, cameraPos, positionMatrix);
         }
         return true;
     }
@@ -709,10 +721,10 @@ public final class PortalStencilRenderer {
             boolean complete = false;
             try {
                 scissorScale = FrozenViews.beginCapture(portal, CAPTURE_RECT, screen.textureWidth, screen.textureHeight, positionMatrix,
-                        projectionMatrix, cameraPos, chunks, WORLD_LEVEL + 1);
+                        projectionMatrix, cameraPos, chunks, StencilLookMask.value(WORLD_LEVEL + 1, lookOf(portal)));
                 scissorOffsetX = CAPTURE_RECT[0];
                 scissorOffsetY = CAPTURE_RECT[1];
-                GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL + 1, FULL_MASK);
+                GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL + 1, StencilLookMask.LEVEL_MASK);
                 GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
                 if (renderView(client, view, camera, remoteCamera, remoteCameraPos, REMOTE_POSITION, projectionMatrix, lightmap, tickDelta,
                         portal, cameraPos, positionMatrix, true)) {
@@ -724,7 +736,7 @@ public final class PortalStencilRenderer {
                 scissorOffsetY = 0;
                 scissorScale = 1;
                 FrozenViews.endCapture(client, complete);
-                GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL, FULL_MASK);
+                GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL, StencilLookMask.LEVEL_MASK);
             }
         }
     }
@@ -744,7 +756,7 @@ public final class PortalStencilRenderer {
             BackroomsPortalEntity portal = FAR_FROZEN.get(i);
             if (frustum.isVisible(portal.detectionBox())) {
                 try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_FROZEN_DRAW)) {
-                    FrozenViews.draw(portal, cameraPos, positionMatrix);
+                    drawFrozen(portal, cameraPos, positionMatrix);
                 }
             }
         }
@@ -756,7 +768,7 @@ public final class PortalStencilRenderer {
      * meme zone ne compte qu'une fois par pixel, le stencil ne valant plus {@code level} apres la premiere face.
      */
     private static void markArea(BackroomsPortalEntity portal, Vec3d cameraPos, Matrix4f positionMatrix, int level) {
-        GL11.glStencilFunc(GL11.GL_EQUAL, level, FULL_MASK);
+        GL11.glStencilFunc(GL11.GL_EQUAL, level, StencilLookMask.LEVEL_MASK);
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_INCR);
         RenderSystem.enableDepthTest();
         RenderSystem.depthFunc(GL11.GL_LEQUAL);
@@ -764,12 +776,43 @@ public final class PortalStencilRenderer {
         RenderSystem.depthMask(false);
         try {
             FrameAreaRenderer.mark(portal, cameraPos, positionMatrix);
+            // Les pixels passes au niveau suivant prennent le look de la dimension vue, qu'ils gardent au retour de
+            // niveau : en fin de rendu, chaque pixel porte le look de la vue la plus profonde qui s'y voit.
+            GL11.glStencilFunc(GL11.GL_EQUAL, StencilLookMask.value(level + 1, lookOf(portal)), StencilLookMask.LEVEL_MASK);
+            GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+            GL11.glStencilMask(StencilLookMask.LOOK_MASK);
+            RenderSystem.disableDepthTest();
+            FrameAreaRenderer.draw(portal, cameraPos, positionMatrix);
         } finally {
+            GL11.glStencilMask(FULL_MASK);
+            RenderSystem.enableDepthTest();
             RenderSystem.colorMask(true, true, true, true);
             RenderSystem.depthMask(true);
             GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
         }
-        GL11.glStencilFunc(GL11.GL_EQUAL, level + 1, FULL_MASK);
+        GL11.glStencilFunc(GL11.GL_EQUAL, level + 1, StencilLookMask.LEVEL_MASK);
+    }
+
+    /** Identifiant du look de la dimension que ce portail montre, 0 sans profil. */
+    private static int lookOf(BackroomsPortalEntity portal) {
+        return LookProfiles.of(portal.destinationDim()).id();
+    }
+
+    /**
+     * L'image figee d'un portail collee sur son cadre, au niveau du monde du joueur : ses pixels prennent le look de la
+     * dimension qu'elle montre, pour le post-traitement, sans changer de niveau.
+     */
+    private static void drawFrozen(BackroomsPortalEntity portal, Vec3d cameraPos, Matrix4f positionMatrix) {
+        GL11.glStencilFunc(GL11.GL_ALWAYS, StencilLookMask.value(WORLD_LEVEL, lookOf(portal)), StencilLookMask.LEVEL_MASK);
+        GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+        GL11.glStencilMask(StencilLookMask.LOOK_MASK);
+        try {
+            FrozenViews.draw(portal, cameraPos, positionMatrix);
+        } finally {
+            GL11.glStencilMask(FULL_MASK);
+            GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+            GL11.glStencilFunc(GL11.GL_EQUAL, WORLD_LEVEL, StencilLookMask.LEVEL_MASK);
+        }
     }
 
     /**
@@ -777,7 +820,7 @@ public final class PortalStencilRenderer {
      * se dessine ensuite a ce niveau la voit comme une surface opaque, et un portail plus lointain y reste cache.
      */
     private static void restoreArea(BackroomsPortalEntity portal, Vec3d cameraPos, Matrix4f positionMatrix, int level) {
-        GL11.glStencilFunc(GL11.GL_EQUAL, level + 1, FULL_MASK);
+        GL11.glStencilFunc(GL11.GL_EQUAL, level + 1, StencilLookMask.LEVEL_MASK);
         FrameAreaRenderer.writeDepth(portal, cameraPos, positionMatrix, true);
         FrameAreaRenderer.writeDepth(portal, cameraPos, positionMatrix, false);
         // Sans test de profondeur, chaque pixel de la zone redescend une fois : il ne vaut plus level + 1 ensuite.
@@ -791,7 +834,7 @@ public final class PortalStencilRenderer {
             RenderSystem.colorMask(true, true, true, true);
             RenderSystem.enableDepthTest();
         }
-        GL11.glStencilFunc(GL11.GL_EQUAL, level, FULL_MASK);
+        GL11.glStencilFunc(GL11.GL_EQUAL, level, StencilLookMask.LEVEL_MASK);
     }
 
     private static void renderPortalContent(
@@ -880,6 +923,19 @@ public final class PortalStencilRenderer {
     private static void applyScissor(int[] rect) {
         RenderSystem.enableScissor((rect[0] - scissorOffsetX) * scissorScale, (rect[1] - scissorOffsetY) * scissorScale,
                 Math.max(0, rect[2] - rect[0]) * scissorScale, Math.max(0, rect[3] - rect[1]) * scissorScale);
+    }
+
+    /**
+     * Part de l'ecran que couvre la vue en cours : le rectangle du ciseau de son cadre, ou tout l'ecran pour une vue qui
+     * le couvre (ou dont le cadre touche la camera, sans rectangle). Lue par le plafond de clignotement.
+     */
+    private static float screenArea(MinecraftClient client, boolean throughFrame) {
+        if (!throughFrame || scissorDepth == 0) {
+            return 1.0f;
+        }
+        int[] rect = SCISSORS[scissorDepth - 1];
+        float screen = (float) client.getFramebuffer().textureWidth * client.getFramebuffer().textureHeight;
+        return MathHelper.clamp(Math.max(0, rect[2] - rect[0]) * (float) Math.max(0, rect[3] - rect[1]) / screen, 0.0f, 1.0f);
     }
 
     /**
@@ -1231,9 +1287,13 @@ public final class PortalStencilRenderer {
         WorldRenderer mainRenderer = client.worldRenderer;
         // Une vue secondaire montre le monde du joueur : sa lightmap est deja celle des shaders.
         boolean ownLightmap = view.world() != mainWorld;
+        boolean looked = false;
         try {
             client.world = view.world();
             clientAccessor.backrooms$setWorldRenderer(view.renderer());
+            // Le look et les neons de la dimension vue, pour chaque shader que la vue active ; ceux de la vue englobante reprennent apres.
+            LookFrame.pushView(view.world(), viewCameraPos, positionMatrix, tickDelta, screenArea(client, framePosition != null));
+            looked = true;
             if (ownLightmap) {
                 ViewLightmaps.bind(client, lightmap, view.world(), tickDelta);
             }
@@ -1259,6 +1319,9 @@ public final class PortalStencilRenderer {
             client.getBlockEntityRenderDispatcher().configure(mainWorld, camera, client.crosshairTarget);
             if (ownLightmap) {
                 ViewLightmaps.unbind(lightmap);
+            }
+            if (looked) {
+                LookFrame.popView();
             }
             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         }

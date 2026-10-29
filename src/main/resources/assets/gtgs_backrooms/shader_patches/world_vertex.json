@@ -1,0 +1,9 @@
+{
+  "stage": "vertex",
+  "targets": ["rendertype_*", "particle"],
+  "excludes": ["rendertype_text*", "rendertype_gui*", "rendertype_outline", "rendertype_clouds"],
+  "inject": [
+    { "point": "head", "code": "out vec3 gtgs_ViewPos; out vec3 gtgs_WorldRel; out vec2 gtgs_Uv; out vec3 gtgs_Normal; flat out float gtgs_Terrain;" },
+    { "point": "main_after", "code": "gtgs_ViewPos = (ModelViewMat * vec4(${position}, 1.0)).xyz; gtgs_WorldRel = ${position}; gtgs_Uv = ${uv}; gtgs_Normal = ${normal}; gtgs_Terrain = ${terrain};" }
+  ]
+}

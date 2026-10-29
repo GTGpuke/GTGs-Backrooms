@@ -46,6 +46,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.propagation.PortalPursuitGoal;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalViewTracker;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
+import com.gtgpuke.gtgsbackrooms.core.registry.ModSounds;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestServerWorlds;
 
@@ -143,6 +144,15 @@ public final class PortalPropagationGameTests implements FabricGameTest {
                         context.assertTrue(relayed(received, PlaySoundS2CPacket.class), "Le son du Nether arrive au joueur, enveloppe.");
                         context.assertTrue(relayed(received, WorldEventS2CPacket.class), "L'evenement de monde aussi.");
                         context.assertTrue(relayed(received, ParticleS2CPacket.class), "Et les particules.");
+                        // Un son lie a l'image (le cri) passe par le meme relais : le client le reconnait a son nom et sa dimension,
+                        // celle du son de la cloche juste avant (le Nether, sous l'index annonce au joueur).
+                        int netherIndex = received.stream().filter(payload -> payload.packet() instanceof PlaySoundS2CPacket).findFirst()
+                                .orElseThrow().dimension();
+                        nether.playSound(null, RELAY_EXIT.x, RELAY_EXIT.y, RELAY_EXIT.z, ModSounds.HOWLER_SCREAM, SoundCategory.HOSTILE, 1.0f, 1.0f);
+                        context.assertTrue(GameTestPlayers.sent(player, RemoteEntityPacketPayload.class).stream().anyMatch(payload ->
+                                        payload.packet() instanceof PlaySoundS2CPacket sound && sound.getSound().value() == ModSounds.HOWLER_SCREAM
+                                                && payload.dimension() == netherIndex),
+                                "Le cri lie du Nether arrive au joueur, enveloppe avec sa dimension.");
                     } finally {
                         GameTestPlayers.disconnect(player);
                         portal.discard();

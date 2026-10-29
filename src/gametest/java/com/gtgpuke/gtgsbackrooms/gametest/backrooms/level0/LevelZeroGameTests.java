@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
@@ -11,16 +12,21 @@ import com.mojang.serialization.JsonOps;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryOps;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.test.GameTest;
 import net.minecraft.test.GameTestException;
 import net.minecraft.test.TestContext;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.GameMode;
 import net.minecraft.world.HeightLimitView;
+import net.minecraft.world.World;
 import net.minecraft.world.chunk.ProtoChunk;
 import net.minecraft.world.chunk.UpgradeData;
 import net.minecraft.world.dimension.DimensionOptions;
@@ -31,10 +37,13 @@ import net.minecraft.world.gen.noise.NoiseConfig;
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
+import com.gtgpuke.gtgsbackrooms.backrooms.level0.LevelZeroLayoutPayload;
+import com.gtgpuke.gtgsbackrooms.backrooms.level0.LevelZeroLayoutSync;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.block.LevelZeroWallpaperBlock;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.LevelZeroChunkGenerator;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.coord.LevelZeroLayerStackLayout;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.coord.LevelZeroVerticalSlice;
+import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.noise.LevelZeroSeedResolver;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModBlocks;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
@@ -95,6 +104,34 @@ public final class LevelZeroGameTests implements FabricGameTest {
                     "Plafond au layer " + slice.layerIndex() + ".");
             context.assertTrue(chunk.getBlockState(new BlockPos(1, slice.bedrockMinY(), 1)).isOf(Blocks.BEDROCK),
                     "Bedrock inter-layer au layer " + slice.layerIndex() + ".");
+        }
+        context.complete();
+    }
+
+    @GameTest(templateName = GameTestPlayers.ARENA)
+    public void serverGivesTheLayoutSeedOfItsLevelZeroOnly(TestContext context) {
+        MinecraftServer server = context.getWorld().getServer();
+        DimensionOptions dimension = decodeDimension(server);
+        NoiseConfig noiseConfig = NoiseConfig.create(
+                ChunkGeneratorSettings.createMissingSettings(),
+                server.getRegistryManager().getWrapperOrThrow(RegistryKeys.NOISE_PARAMETERS),
+                server.getOverworld().getSeed());
+        // A la connexion, le serveur de test n'a aucun Level 0 (il ignore les dimensions de datapack) : rien ne part.
+        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.SPECTATOR, context.getAbsolute(new Vec3d(2.5, 2.0, 2.5)), 0.0f, 0.0f);
+        try {
+            context.assertTrue(GameTestPlayers.sent(player, LevelZeroLayoutPayload.class).isEmpty(), "Aucun Level 0 sur ce serveur : aucune graine.");
+            RegistryKey<World> levelZero = RegistryKey.of(RegistryKeys.WORLD, Identifier.of(ModConstants.MOD_ID, BackroomsConstants.LEVEL_ZERO_DIMENSION));
+            context.assertTrue(LevelZeroLayoutSync.send(player, levelZero, dimension.chunkGenerator(), noiseConfig),
+                    "Le generateur du Level 0 envoie sa graine.");
+            context.assertFalse(LevelZeroLayoutSync.send(player, World.OVERWORLD, server.getOverworld().getChunkManager().getChunkGenerator(),
+                    server.getOverworld().getChunkManager().getNoiseConfig()), "Un autre generateur n'envoie rien.");
+            List<LevelZeroLayoutPayload> sent = GameTestPlayers.sent(player, LevelZeroLayoutPayload.class);
+            context.assertTrue(sent.size() == 1, "Une seule graine partie : " + sent.size() + ".");
+            context.assertTrue(sent.get(0).dimension().equals(levelZero.getValue()), "Celle du Level 0.");
+            context.assertTrue(sent.get(0).layoutSeed() == LevelZeroSeedResolver.resolveLayoutSeed(noiseConfig),
+                    "La graine du layout, que le client refait sans la graine du monde.");
+        } finally {
+            GameTestPlayers.disconnect(player);
         }
         context.complete();
     }

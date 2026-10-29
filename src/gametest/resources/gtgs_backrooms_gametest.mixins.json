@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.gtgpuke.gtgsbackrooms.gametest.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ClientTestChunkLoadingAccessor",
+    "ClientTestServerChunkManagerAccessor",
+    "ClientTestShaderProgramAccessor",
+    "ClientTestTicketsAccessor",
+    "MixinClientTestFrames",
+    "MixinClientTestGlStateManager",
+    "MixinClientTestWindow"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

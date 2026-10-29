@@ -68,15 +68,31 @@ class PortalRenderStateTest {
 
     @Test
     @Order(3)
+    @DisplayName("Vues coupees par la cohabitation avec un pack : cadres sombres le temps de l'image, stencil garde")
+    void viewsSuppressedUnderAShaderPack() {
+        assertTrue(PortalRenderState.remoteRenderingAvailable(), "Disponible au depart.");
+        PortalRenderState.setViewsSuppressed(true);
+        assertFalse(PortalRenderState.remoteRenderingAvailable(), "Vues coupees.");
+        assertFalse(PortalRenderState.canRenderPortals(), "Aucun rendu de portail.");
+        assertTrue(PortalRenderState.stencilAvailable(), "Le stencil reste tenu.");
+        PortalRenderState.setViewsSuppressed(false);
+        assertTrue(PortalRenderState.remoteRenderingAvailable(), "Pack coupe ou option rendue : les vues reviennent.");
+    }
+
+    @Test
+    @Order(4)
     @DisplayName("Stencil refuse ou rendu en echec : le rendu distant est coupe pour la session, une seule fois")
     void failuresDisableRemoteRendering() {
         assertTrue(PortalRenderState.remoteRenderingAvailable(), "Disponible au depart.");
+        assertTrue(PortalRenderState.stencilAvailable(), "Stencil tenu au depart.");
         PortalRenderState.disableRemoteRendering("Test sans cause.", null);
         assertFalse(PortalRenderState.remoteRenderingAvailable(), "Coupe apres un echec.");
         assertFalse(PortalRenderState.canRenderPortals(), "Plus de rendu de portail.");
+        assertTrue(PortalRenderState.stencilAvailable(), "Le stencil, lui, reste tenu : le post-traitement masque continue.");
         PortalRenderState.disableRemoteRendering("Test avec cause.", new IllegalStateException("Cause de test."));
         PortalRenderState.markStencilUnavailable(0);
         PortalRenderState.markStencilUnavailable(0);
         assertFalse(PortalRenderState.remoteRenderingAvailable(), "Toujours coupe, sans effet de bord.");
+        assertFalse(PortalRenderState.stencilAvailable(), "Stencil refuse par le pilote.");
     }
 }

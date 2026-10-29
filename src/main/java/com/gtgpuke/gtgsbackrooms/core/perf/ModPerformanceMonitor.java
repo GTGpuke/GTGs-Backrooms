@@ -36,7 +36,8 @@ public final class ModPerformanceMonitor {
     /** Prefixe des sections mesurees sur le client : elles entrent dans le resume client, pas dans celui du serveur. */
     public static final String CLIENT_SECTION_PREFIX = "client.";
     private static final Scope NO_OP_SCOPE = new Scope(null, 0L);
-    private static final int TOP_SECTIONS = 5;
+    /** Sections du resume, les plus longues d'abord : huit, pour que les mesures GPU et audio y tiennent a cote des portails. */
+    private static final int TOP_SECTIONS = 8;
     private static final ConcurrentHashMap<String, SectionStats> SECTION_STATS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, NetworkStats> NETWORK_STATS = new ConcurrentHashMap<>();
     private static final LongAdder SERVER_TICK_COUNT = new LongAdder();
@@ -113,6 +114,19 @@ public final class ModPerformanceMonitor {
      */
     public static Scope scope(String sectionName) {
         return isEnabled() ? new Scope(sectionName, System.nanoTime()) : NO_OP_SCOPE;
+    }
+
+    /**
+     * Enregistre une duree mesuree ailleurs (temps GPU lu apres coup) dans une section, sans allocation comptee ;
+     * rien si le monitoring est inactif.
+     *
+     * @param sectionName nom stable de la section
+     * @param elapsedNanos duree mesuree, en nanosecondes
+     */
+    public static void record(String sectionName, long elapsedNanos) {
+        if (isEnabled()) {
+            SECTION_STATS.computeIfAbsent(sectionName, ignored -> new SectionStats()).record(elapsedNanos, 0L);
+        }
     }
 
     /** Le compteur d'allocation par thread de ce bean, ou {@code null} si la JVM ne le propose pas. */

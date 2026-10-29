@@ -1,0 +1,1688 @@
+{
+  "minecraft": "1.21.1",
+  "shaders": [
+    {
+      "name": "blit_screen.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "blit_screen.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "particle.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "particle.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_color.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_color.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_color_lightmap.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_color_lightmap.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_color_tex_lightmap.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_color_tex_lightmap.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_tex.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_tex.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_tex_color.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "position_tex_color.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_armor_cutout_no_cull.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_armor_cutout_no_cull.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_armor_entity_glint.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_armor_entity_glint.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_beacon_beam.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_beacon_beam.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_breeze_wind.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_breeze_wind.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_clouds.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_clouds.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_crumbling.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_crumbling.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_cutout.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_cutout.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_cutout_mipped.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_cutout_mipped.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_end_portal.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "matrix.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_end_portal.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "projection.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_energy_swirl.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_energy_swirl.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_alpha.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_alpha.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_cutout.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_cutout.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_cutout_no_cull.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_cutout_no_cull.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_cutout_no_cull_z_offset.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_cutout_no_cull_z_offset.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_decal.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_decal.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_glint.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_glint.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_glint_direct.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_glint_direct.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_no_outline.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_no_outline.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_shadow.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_shadow.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_smooth_cutout.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_smooth_cutout.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_solid.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_solid.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_translucent.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_translucent.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_translucent_cull.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_translucent_cull.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_translucent_emissive.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_entity_translucent_emissive.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_eyes.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_eyes.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_glint.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_glint.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_glint_translucent.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_glint_translucent.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui_ghost_recipe_overlay.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui_ghost_recipe_overlay.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui_overlay.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui_overlay.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui_text_highlight.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_gui_text_highlight.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_item_entity_translucent_cull.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_item_entity_translucent_cull.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_leash.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_leash.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_lightning.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_lightning.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_lines.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_lines.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_outline.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_outline.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_solid.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_solid.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_background.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_background.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_background_see_through.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_background_see_through.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_intensity.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_intensity.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_intensity_see_through.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_intensity_see_through.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_see_through.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_text_see_through.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_translucent.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_translucent.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_translucent_moving_block.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_translucent_moving_block.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_tripwire.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": true,
+      "directives": [],
+      "macros": [],
+      "imports": [
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_tripwire.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [
+        "define"
+      ],
+      "macros": [
+        "MINECRAFT_LIGHT_POWER",
+        "MINECRAFT_AMBIENT_LIGHT"
+      ],
+      "imports": [
+        "light.glsl",
+        "fog.glsl"
+      ],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_water_mask.fsh",
+      "stage": "fragment",
+      "version": 150,
+      "mains": 1,
+      "outputs": [
+        "fragColor"
+      ],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    },
+    {
+      "name": "rendertype_water_mask.vsh",
+      "stage": "vertex",
+      "version": 150,
+      "mains": 1,
+      "outputs": [],
+      "discard": false,
+      "directives": [],
+      "macros": [],
+      "imports": [],
+      "verdict": "patchable"
+    }
+  ]
+}

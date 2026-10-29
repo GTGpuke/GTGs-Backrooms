@@ -1,0 +1,9 @@
+{
+  "stage": "fragment",
+  "targets": ["rendertype_*", "particle"],
+  "excludes": ["rendertype_text*", "rendertype_gui*", "rendertype_outline", "rendertype_clouds"],
+  "imports": ["gtgs_backrooms:neon_schedule.glsl", "gtgs_backrooms:look.glsl"],
+  "inject": [
+    { "point": "output", "function": "gtgs_applyLook" }
+  ]
+}

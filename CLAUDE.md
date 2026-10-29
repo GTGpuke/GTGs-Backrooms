@@ -35,10 +35,21 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
   payloads). Le bloc portail n'a pas d'item : la baguette le pose.
 - `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), garde d'une arrivée au sol, arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/PORTALS.md` avant d'y toucher.
 - `core/perf/` : moniteur de performance opt-in.
+- `core/audio/` : moteur audio maison (`docs/AUDIO.md`, spec `docs/backrooms/MOTEUR_AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
+- `core/render/` : moteur de shaders maison (`docs/RENDERING.md`, spec `docs/backrooms/MOTEUR_SHADERS.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
 - `backrooms/level0/generation/` : `coord` → `noise` → `sector` → `layout` → `write`, orchestrés par `LevelZeroChunkGenerator`.
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
-- `compat/iris/` : compatibilité avec le mod de shaders Iris, seul mod nommé dans le code (exception accordée) : son API publique dit si un pack est actif, et les vues de portail se dessinent alors après l'image (`ShaderPackPortalRenderer`). Dépendance `modCompileOnly` depuis le maven Modrinth, jamais embarquée ni requise.
+- `compat/` : modules de compatibilité, seuls endroits du code qui nomment un autre mod et en lisent l'API (décisions
+  de l'auteur des 28 et 29 octobre 2026). `compat/iris/` : dans une dimension à look, le rendu du mod remplace le pack de
+  shaders actif (pipeline vanilla d'Iris tant que le joueur y est, réglages globaux de ses pipelines gardés et reposés,
+  terrain reconstruit à la bascule) ; ses mixins (`gtgs_backrooms.compat.mixins.json`) ne s'appliquent que si Iris est
+  là, dans la plage vérifiée (`CompatMixinPlugin`, `IrisVersion`). Iris et Sodium en `modCompileOnly` (maven Modrinth),
+  jamais embarqués ni requis.
+- Hors de `compat/`, aucun autre mod nommé (sauf ses messages, clés de langue `compat.*`, et la doc qui décrit son
+  module) et aucune dépendance de mod à l'exécution hors Fabric Loader et Fabric API ; un pack de shaders se reconnaît
+  au milieu du rendu du joueur (`ShaderPackState`), un mod qui dessine le terrain à sa grille vanilla vide
+  (`RemoteViewRenderer.foreignTerrain`). Le terme d'IA n'apparaît pas dans le mod.
 - `mixin/` : commun (relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, monde de création du joueur suivi aux traversées, générations des sections de terrain (preuve d'occlusion des vues), météo et particules coupées dans une vue allégée, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
 - `src/gametest/` : tests en jeu, mod séparé `gtgs_backrooms_gametest` chargé par `runGameTest` seulement (jamais dans le JAR, `verifyJarContents` le vérifie).
 
@@ -61,18 +72,21 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - Le système de portails (`core/portal/`) est la base : l'étendre par des points d'accès (méthodes publiques,
   évènements), pas par des couches d'abstraction, et ne pas en réécrire la logique. Toute refonte est proposée et validée
   avant.
-- Un profil par monde (`WorldProfile`, donnée, pas interface) : aucun test sur la dimension du joueur pour décider d'un
-  comportement de rendu ou d'audio.
-- Le rendu avancé s'insère dans le stencil existant (`PortalStencilRenderer`) : G-buffer par injection de shaders (même
-  famille que `ShaderClipInjector`), passes limitées par le niveau de stencil. Sa direction reste ouverte tant que la
-  preuve de concept V1 n'a pas tranché la septième inconnue (`docs/GUIDE.md`, section 3.2 : l'injection n'atteint ni les
-  shaders du mod de terrain ni ceux d'un pack). Pas de framebuffer de vue séparé hors du chemin sous pack de shaders
-  (`ShaderPackPortalRenderer`) et de l'image figée d'une vue lointaine (`FrozenViews`, écart accordé le 26 octobre 2026,
-  `docs/GUIDE.md` section 2.4).
+- Un profil par monde, donnée, pas interface (`LookProfile` pour le rendu, `AudioProfile` pour l'audio, deux fichiers
+  liés par la dimension) : aucun test sur la dimension du joueur pour décider d'un comportement de rendu ou d'audio ;
+  le rendu d'un pixel dépend de la dimension qu'il montre, le traitement d'un son de la dimension où il est émis.
+- Les deux moteurs suivent `docs/backrooms/MOTEUR_SHADERS.md` et `docs/backrooms/MOTEUR_AUDIO.md` (specs de l'auteur,
+  qui font foi sur `backrooms-mod-plan.md` ; décisions du 27 octobre 2026 dans `docs/GUIDE.md`, section 2.4). Le rendu
+  tient en deux étages dans le stencil existant (`PortalStencilRenderer`) : injection par fragment dans les shaders
+  vanilla (`core/render/patch/`, même famille que `ShaderClipInjector`) et post masqué par les bits de look du stencil ;
+  pas de G-buffer ni de rendu différé. Pas de framebuffer de vue séparé hors du chemin sous pack de shaders
+  (`ShaderPackPortalRenderer`) et de l'image figée d'une vue lointaine (`FrozenViews`, écart accordé le 26 octobre 2026).
+  Iris et Sodium restent supportés (décision de l'auteur) ; dans les Backrooms, le rendu du mod remplace le pack
+  (`compat/iris`, livré le 29 octobre 2026).
 - L'audio étend `FrameSoundPlayer`, `PortalSound` et le relais serveur existants.
 - Sessions d'implémentation : aucun code source d'un autre mod dans le contexte ; les notes de conception
-  `docs/design/*.md` sont la seule source autorisée. Lire l'API d'un mod tiers n'est permis que pour écrire un module
-  `compat/`.
+  `docs/design/*.md` sont la seule source autorisée. Lire l'API d'un mod tiers (ses signatures, jamais son code source)
+  n'est permis que pour écrire un module `compat/`.
 - Si tu te souviens d'une implémentation existante d'une fonctionnalité, n'en reprends que le principe ; réécris à partir
   de notre architecture (profils par monde, passes par niveau de stencil, routage par source).
 - Chaque fonctionnalité a une définition de « terminé » (`docs/GUIDE.md`, section 5) et n'est livrée qu'une fois vérifiée
@@ -163,14 +177,14 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   par `render` avant de dessiner (`ViewRenderStart`), arrêté à la première instruction vanilla par
   `MixinWorldRenderStart` (priorité 1100 : appliqué après ces mods, son `return` ajouté n'est pas vu par leurs
   injections `@At("RETURN")` ; un arrêt en `HEAD` ou une priorité plus basse les laisse défaire l'état posé).
-- Pack de shaders (Iris) : passes différées, puis passe finale écrite dans la texture de couleur de l'écran par un
+- Pack de shaders : passes différées, puis passe finale écrite dans la texture de couleur de l'écran par un
   framebuffer à lui, sans profondeur ni stencil (copie directe sans programme `final`) : une vue dessinée au milieu de
   `render` n'est qu'une surface de plus, et rien de ce qu'écrit sa passe finale ne respecte le stencil. Les vues se
   dessinent après l'image (`PortalStencilRenderer.renderAfterWorld`, injection `TAIL` appliquée après son
   `@At("RETURN")`), chacune par le rendu complet de son renderer : il tient un pipeline par dimension (`client.world`
   lu en tête de `render`), lit la position de la caméra du joueur (`gameRenderer.getCamera()`) pour ses shaders,
   n'efface que ses tampons de couleur (la profondeur vient du `RenderSystem.clear` vanilla, épargné pendant une vue par
-  `@WrapOperation`), ne dessine pas la main d'une caméra détachée, et ses framebuffers de géométrie attachent la texture
+  un masque nul, `@ModifyArg`), ne dessine pas la main d'une caméra détachée, et ses framebuffers de géométrie attachent la texture
   profondeur-stencil de l'écran. L'image du joueur est remise autour du cadre depuis une copie (`glCopyTexSubImage2D`),
   stencil `NOTEQUAL`. Rendu complet d'un renderer de vue (`WorldRenderer.render` appelé par le mod) : il empile
   lui-même sa matrice de vue sur la pile de `RenderSystem` (la laisser à l'identité, sinon les entités tournent
@@ -180,18 +194,22 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   luminosité ambiante à `client.cameraEntity` dans `client.world` (le portail d'arrivée tient ce rôle), et sa passe
   finale laisse `depthMask(false)` : remettre les masques avant le rendu, sans quoi l'effacement n'efface rien et la
   profondeur de l'image du joueur masque la vue ; et les remettre en fin d'image même sans vue dessinée, sinon
-  l'effacement de l'image suivante n'efface pas la profondeur (après une traversée : monde noir ou noyé de brouillard). Son API (`isShaderPackInUse`) répond faux tant que la tête de `render`
-  n'a pas préparé le pipeline de l'image (première image après une connexion ou un rechargement de pack) : le pack se
-  relève à la première instruction vanilla du `render` du joueur (`MixinWorldRenderStart`). Le rendu complet d'une vue
+  l'effacement de l'image suivante n'efface pas la profondeur (après une traversée : monde noir ou noyé de brouillard). Le pack se reconnaît sans le nommer, au milieu du `render`
+  du joueur, juste avant les portails (`ShaderPackState`, injection avant la couche translucide) : les programmes que
+  vanilla donne aux entités et aux translucides (`GameRenderer.getRenderTypeEntitySolidProgram`,
+  `getRenderTypeTranslucentProgram`) sont alors d'une classe à lui. En tête de `render` ou à sa première instruction,
+  il ne les a pas encore remplacés (vérifié au banc) ; ses programmes ne passent pas par `ShaderProgram.bind`, et les
+  programmes du mod (chargés par Fabric API) sont eux aussi d'une sous-classe : seuls ces accesseurs, à ce point,
+  disent le pack. Le rendu complet d'une vue
   repasse par les injections du mod dans `render` (muettes pendant `PortalRenderState.isRendering()`) et déclenche
   `WorldRenderEvents.END` de Fabric (le moniteur de perf ne le compte pas comme une image). Les shaders du pack ignorent
   `gl_ClipDistance` : une entité à cheval sur un portail est rognée au plan sur le processeur (`ClippedVertexConsumers`),
   et un mod de terrain peut écrire une fois dans le journal qu'un tel tampon n'a pas son chemin d'écriture rapide (il
-  repasse par celui de vanilla). Iris tient un pipeline par identifiant de dimension (`PipelineManager.preparePipeline`, fabrique
-  `Iris.createPipeline`) et remet ses compteurs d'animation à zéro à chaque création ; un pipeline à part pour une vue du
+  repasse par celui de vanilla). Le mod de shaders tient un pipeline par identifiant de dimension, créé à la demande, et
+  remet ses compteurs d'animation à zéro à chaque création ; un pipeline à part pour une vue du
   monde du joueur, sous une autre clé, a été essayé puis retiré : avec une entité à cheval, cette vue perdait du terrain.
   Il nomme pareil les programmes de chacun de ses pipelines, et `ShaderProgram.loadShader` redonne tout étage déjà
-  compilé sous le même nom (`ShaderStage.Type.getLoadedShaders()`, cache statique) : seul, Iris n'a jamais deux pipelines
+  compilé sous le même nom (`ShaderStage.Type.getLoadedShaders()`, cache statique) : seul, le mod n'a jamais deux pipelines
   vivants ; une vue ou une traversée en fait vivre deux, et le second recevait les étages du premier (entités et main
   éclairées comme dans l'autre dimension). `MixinShaderProgram` ne redonne un étage qu'à la fabrique qui l'a chargé.
   Projection à plan proche oblique et pack : son plan lointain est incliné, et pour une partie des pixels de ciel
@@ -273,6 +291,12 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 - Envoi des chunks : tant qu'un chunk attend son tour dans le `ChunkDataSender` d'un joueur, vanilla ne lui envoie aucun
   changement de bloc (`isTracked` exclut `isInNextBatch`), comptant l'envoyer entier : un chunk qu'on lui épargne (tenu
   après une traversée, `MixinChunkDataSender`) et qui change doit partir quand même.
+- `ChunkBuilder$BuiltChunk$RebuildTask` reçoit une région nulle pour une section vide (`ChunkRendererRegionBuilder.build`
+  rend `null` quand tout est vide) ; et un mod de rendu du terrain ne passe pas par elle. Ce qui doit connaître les
+  blocs d'un monde client (index des néons) se relève sur les chunks eux-mêmes : `ClientChunkEvents.CHUNK_LOAD` de
+  Fabric (fin de `loadChunkFromPacket`, mondes distants compris), `ChunkSection.hasAny` (la palette, sans parcourir
+  les blocs), puis `ClientWorld.setBlockState(BlockPos, BlockState, int, int)`, par où passent paquets, mondes distants
+  et prédiction du joueur.
 - `ClientPlayNetworkHandler.onBlockEntityUpdate` applique les données à `client.world`, pas au monde du gestionnaire :
   rebrancher le gestionnaire sur un monde distant ne suffit pas, le monde distant les applique lui-même.
 - Tests en jeu : un client rapporte les sorties fugaces qu'il voit quand cela change (au plus tous les quatre ticks) et au
@@ -311,6 +335,11 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   Rejouer en local : `runGameTest` puis `jacocoFullReport jacocoCoverageVerification`, sans `clean`. Un joueur simulé a
   la portée de vue par défaut d'un client, deux chunks (`SyncedClientOptions.createDefault`) : moins que la fenêtre
   d'un portail (`DestinationLoader.syncRadius`).
+- Tests du client : le serveur envoie un son aussitôt, les blocs changés seulement en fin de tick ; un test qui pose des
+  blocs puis joue un son attend que le client ait les blocs. Le délai de libération d'un monde distant y vaut 5 s
+  (`remoteWorldReleaseSeconds`), et après le dernier test le client quitte le monde : la fin de partie est un test
+  (`end_of_game`). Une règle de rendu ou d'audio qu'aucune image ne montre se lit dans l'état (uniforme, sampler,
+  `alGetSourcef`, diagnostic `AcousticRouter.describe`), jamais à l'œil.
 - Tests en jeu : `GameTestPlayers.sent` consomme ce qu'il rend. Une attente puis une vérification qui lisent le même
   type doivent accumuler ce qu'elles lisent, sinon la vérification ne voit plus ce que l'attente a déjà lu (et un envoi
   fautif passe inaperçu).
@@ -359,7 +388,8 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   sur le chunk d'à côté (colonnes de basalte des deltas, arbres) donne un terrain différent d'un monde neuf à l'autre,
   à graine égale. Un test qui fige une arrivée prépare son terrain chunk par chunk au statut `FEATURES` dans un ordre
   fixe (`PortalArrivalReferenceGameTests.prepare`).
-- Framebuffers : `Framebuffer.delete()`, comme sa création et `resize`, laisse lié le framebuffer par défaut (0) ; au milieu
+- Framebuffers : `Framebuffer.delete()`, comme sa création et `resize`, laisse lié le framebuffer par défaut (0), et la
+  création comme `resize` activent le test de profondeur (`GlStateManager._enableDepthTest`) ; au milieu
   d'une image, relier celui du jeu (`client.getFramebuffer().beginWrite(false)`), sinon le reste de l'image se dessine à
   côté de l'écran (journal de débogage des portails : « Framebuffer lie 0 »). Une vue capturée sur un rectangle de l'écran
   (`FrozenViews`) garde la projection du joueur et décale la fenêtre de rendu (`glViewport` accepte une origine
@@ -367,6 +397,100 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 - Parcours des sections d'une vue : sa caméra est en deçà du plan d'arrivée, à la distance du joueur au cadre, et le
   volume visible (`ViewCone`) est fermé par ce plan ; un parcours parti de la caméra n'atteint pas le cadre (fond noir de
   loin). `ViewSectionWalker` part alors des sections du cadre (`ViewCone.startsAtFrame`).
+- Shaders vanilla : la source donnée au pilote (`ShaderStage.load`, interceptée par `MixinShaderStage`) a ses
+  `#moj_import` déjà résolus par `GlImportProcessor` : bibliothèques insérées, leur `#version` mis en commentaire,
+  directives `#line` posées. Un patch analyse cette source-là (commentaires blanchis sans déplacer un caractère) et
+  s'insère après la seule `#version` active. Les `#moj_import` ne résolvent que `minecraft:shaders/include/` : une
+  bibliothèque du mod s'insère par le patch, lue par la fabrique de ressources qui charge le programme (`loadShader`),
+  à cache que vanilla pose sur le gestionnaire du rechargement (`GameRenderer.CachedResourceFactory`, à déballer :
+  `original()`, ce n'est pas un `ResourceManager`), le même que notre écouteur de rechargement reçoit après ; les
+  shaders de l'écran de chargement arrivent avant, par la fabrique du pack vanilla, sans énumération. Un patch jamais
+  appliqué ne se voit pas à l'œil (lightmap, brouillard et post du profil suffisent à changer l'image) : le journal
+  dit « N étage(s) de shaders patché(s) compilé(s) par le pilote » à chaque rechargement, et un programme patché a
+  l'uniforme `gtgs_LookId` (emplacement ≥ 0). `ShaderProgram.bind` est appelé à chaque dessin : un uniforme ne se
+  renvoie que si sa version a changé (`LookState.version`). Bloc d'uniformes (UBO, `layout(std140)`) : son index se
+  lie une fois par programme (`glUniformBlockBinding`) à un point de liaison fixe, où `glBindBufferBase` pose le tampon
+  de la vue courante ; vanilla 1.21.1 n'en utilise aucun. Un `${position}` dans le code d'une injection vaut
+  `Position + ChunkOffset` dans un shader qui déclare `ChunkOffset` (terrain), `Position` sinon. Le stencil des portails
+  porte le niveau dans `0x03` et le look dans `0x1C` : tout test de niveau masque avec `StencilLookMask.LEVEL_MASK`, un
+  effacement n'écrit que les bits du masque d'écriture courant (`glStencilMask(0xFF)` avant), INCR et DECR du niveau
+  laissent les bits de look, qu'une seconde passe sur la zone (REPLACE, masque `LOOK_MASK`) écrit pour la vue.
+- Pack de shaders et pipeline vanilla du mod de shaders : il tient un pipeline par dimension, en cache, et chaque
+  pipeline pose a sa creation des reglages globaux (format des maillages de sections du mod de terrain, AO separe...)
+  qui ne sont pas reposes quand un pipeline en cache redevient courant. Deux pipelines dans une meme image (le pack pour
+  le monde du joueur, vanilla pour une vue) dessinent le terrain en eclats (maillages d'un format, shader de l'autre).
+  Solution livree le 29 octobre 2026 (`compat/iris`) : tant que le joueur est dans une dimension a look, Iris rend son
+  pipeline vanilla pour tout ce qui se dessine, vues comprises (`PipelineManager.preparePipeline` en tete, pipeline
+  courant pose par accesseur) ; a chaque bascule, les reglages de `WorldRenderingSettings` du pipeline quitte sont
+  gardes et ceux de l'autre reposes, le compteur de rechargement des shaders de sections de Sodium avance, et le
+  renderer du joueur se recharge (ceux des vues suivent). Le pipeline du pack reste en cache : aucune recompilation au
+  retour (mesure : 52 ms d'image au retour, contre environ 1 s pour couper et rallumer le pack). Un pipeline vanilla
+  construit par le mod pose ses reglages a sa construction ; `destroyPipeline` d'Iris (pack change, recharge) le detruit
+  avec les siens. Depuis l'Overworld, une vue du Level 0 reste rendue par le pack, le look pose dessus
+  (`LookPost.renderUnderShaderPackView`). La bascule ne se fait qu'au rendu du joueur, jamais au milieu d'une vue.
+  Ordre des imports : les paquets d'un mod tiers (`net.irisshaders`, `net.caffeinemc`) ne sont dans aucun groupe de
+  Checkstyle et vont en dernier, apres `com.gtgpuke`. Le greffon de mixins tourne pendant le demarrage de Mixin : il ne
+  touche aucune classe du mod vise (version lue par Fabric Loader, `IrisVersion`).
+- Moteur de son vanilla : `SoundSystem.play` attend la création de la source (`join`) et la retient dans `sources`
+  avant de rendre la main : à la fin de `play`, la `SourceManager` d'un son se lit dans cette table, et
+  `SourceManager.run(consumer)` exécute sur le thread du son, seul endroit des appels OpenAL par source. Le contexte
+  OpenAL est courant pour tout le processus (`alcMakeContextCurrent` dans `SoundEngine.init`, sur le thread de rendu) :
+  les objets EFX (slots, effets, filtres) se créent où l'on veut, et disparaissent avec lui à `close` (identifiants à
+  oublier, jamais à réutiliser). `AL.getCapabilities().ALC_EXT_EFX` dit si EFX existe ; les envois auxiliaires se lisent
+  par `alcGetInteger(device, ALC_MAX_AUXILIARY_SENDS)` (OpenAL Soft en donne deux sans les demander). Une source
+  copie les réglages d'un filtre quand on le lui attache (`AL_DIRECT_FILTER`) : après `alFilterf`, le reposer. Une
+  table par `SoundInstance` à clés faibles perd ses entrées dès que vanilla lâche le son et que le ramasse-miettes
+  passe, avant une revue périodique : ce qu'elle tenait par son (un filtre) n'est jamais rendu ; clés fortes, revue
+  d'après la table du moteur. `SoundSystem.reloadSounds` (F3+T, changement de périphérique) arrête toutes les sources
+  puis ferme et recrée le contexte : tout ce qui se souvient d'un son en cours s'oublie à `SoundEngine.close`.
+  `alGetError` rend l'erreur au premier qui la lit : une erreur laissée par le mod est journalisée par vanilla comme
+  sienne (`AlUtil.checkErrors`) ; la lire après chaque série d'appels EFX.
+- OpenAL Soft et EFX : le filtre direct d'une source ne se relit pas (`alGetSourcei(AL_DIRECT_FILTER)` lève une
+  erreur) ; un autre moteur qui travaille dans le contexte se reconnaît à ses objets (`alIsFilter`, `alIsEffect`,
+  `alIsAuxiliaryEffectSlot` sur les identifiants, qu'OpenAL Soft donne à partir de 1 ; sans erreur pour un nom inconnu,
+  et `alIsFilter(0)` vrai : le filtre nul). Le nombre d'envois auxiliaires se demande à la création du contexte
+  (`ALC_MAX_AUXILIARY_SENDS` dans les attributs d'`alcCreateContext`, `MixinSoundEngine`), il ne se change pas après.
+- `/playsound` n'est pas un son du monde : le paquet part aux seuls joueurs visés, sans monde ni relais par les
+  portails. Un son du monde au banc : un bloc musical sous une tête qui porte le son (`note_block_sound`), déclenché
+  par un bloc de redstone posé à côté.
+- Jumeau GLSL d'un hachage Java sur `int` : en GLSL 150, `uint` (multiplications modulo 2^32 comme Java) ; le `>>>` de
+  Java est le `>>` de GLSL sur `uint`, le `>>` sur `int` est arithmétique des deux côtés ; aucun flottant dans une
+  décision (un `fract(sin())` diffère d'un pilote à l'autre). Les deux se tiennent par un fichier de vecteurs communs
+  écrit par un programme indépendant (`neon_schedule_vectors.json`).
+- État GL de repos : entre deux dessins, vanilla laisse le test de profondeur coupé (chaque `RenderLayer` le coupe en
+  sortie) et l'écriture de la profondeur active ; une passe en fin de `renderWorld` rend cet état. Sous un pack, après
+  l'image du pack, le test de profondeur est actif ; dans le cadre d'une vue sous un pack, l'écriture de la profondeur
+  est coupée et le test de stencil de la vue posé (`GL_EQUAL` sur sa valeur) : une passe au milieu d'une vue ne le
+  coupe jamais, la suite (vues imbriquées, image du joueur remise autour du cadre en `GL_NOTEQUAL`) en dépend ; coupé,
+  l'image du joueur recouvre l'écran entier et les vues disparaissent (bug du look par vue, 28 octobre 2026). Une passe
+  se vérifie au banc par `-PlookCheckGlState=true` (`GlStateCheck` : état relu au pilote avant et après elle). Le
+  masque d'écriture du stencil vaut tous les bits à 1 par défaut (`glGetInteger` rend -1), 0xFF pour le mod : même effet
+  sur un stencil de huit bits.
+- Copie du monde client pour un autre thread : le client n'a pas la graine du monde (`GameJoinS2CPacket` porte une
+  graine hachée), rien ne se recalcule de la génération côté client. Classer un bloc (`isOpaqueFullCube`,
+  `getCollisionShape`) coûte bien plus que le lire : 4096 blocs classés un par un valaient 0,7 ms par section, classés
+  par état distinct (quelques-uns par section) beaucoup moins. `ChunkSection.isEmpty()` dit qu'une section n'a aucun
+  bloc non vide : une copie partagée suffit. Une section copiée se remplace entière, jamais en place (un autre thread
+  la lit). `ChunkManager.getWorldChunk(x, z)` rend `null` pour un chunk non chargé, sans le charger.
+- Sons et ressources : les jeux de sons (`SoundManager.get`) n'existent qu'après le rechargement du gestionnaire de sons ;
+  un écouteur de rechargement qui les lit déclare `ResourceReloadListenerKeys.SOUNDS` dans ses dépendances Fabric. Les
+  variantes d'un `WeightedSoundSet` sont privées (`sounds`, accesseur) ; `Sound.getLocation()` est déjà le chemin du
+  fichier (`sounds/.../x.ogg`, à donner tel quel à `ResourceManager.getResource`, pas à `Sound.FINDER` une seconde fois),
+  et `OggAudioStream` (jorbis) le décode en 16 bits dans l'ordre natif, par `read(taille)` jusqu'à un tampon vide. Un
+  renvoi vers un autre évènement (`"type": "event"`) est un conteneur anonyme qui ne dit pas sa cible : ses variantes
+  s'énumèrent par un `Random` à tirage fixe (une valeur par unité de poids), pas par des graines voisines
+  (`Random.create(0..15)` donne seize fois le même premier `nextInt(4)`). `AL_SEC_OFFSET` se lit sur le thread du son
+  (`SourceManager.run`), jamais ailleurs.
+- Banc : une fonction de datapack qui nomme un bloc ou une entité du mod ne se charge pas du tout sur un client sans le
+  mod (une commande inconnue invalide la fonction entière) : ces commandes vont dans une fonction à part, appelée par
+  `function` (l'appel échoue seul). Un monde du banc se rejoue sans le mod par une copie dont `level.dat` perd la
+  dimension du mod (`WorldGenSettings.dimensions`) et son pack (`DataPacks`), le joueur remis dans l'Overworld
+  (`make_vanilla_world.py` du scratchpad, `nbtlib`).
+- Dessin plein écran : `ShaderProgram.initializeUniforms` alloue douze noms de samplers (`"Sampler" + i`) à chaque
+  appel, et le tessellator vanilla un tampon par dessin : une passe par image passe par un `VertexBuffer` persistant et
+  `addSampler` sous un nom constant, seulement quand la texture change (`FullscreenTriangle`). Une seule requête
+  `GL_TIME_ELAPSED` peut être ouverte à la fois : les sections GPU ne s'imbriquent jamais, et rien sous un pack de
+  shaders, qui dessine ses vues au milieu des nôtres (`GpuTimer`).
 - L'extension Java de VSCode compile avec JDT dans `build/classes/java/main` (même dossier que Gradle) ; avec un modèle de projet périmé, elle y écrit des classes `Unresolved compilation problems` qui font planter le client au chargement. L'autobuild est coupé dans `.vscode/settings.json` ; ne jamais le réactiver sans un import Gradle sain (JDK 21).
 
 ## Avant de push

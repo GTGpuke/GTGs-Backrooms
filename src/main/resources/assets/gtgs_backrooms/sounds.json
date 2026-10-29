@@ -1,4 +1,40 @@
 {
+  "block.neon.click_off": {
+    "subtitle": "subtitles.gtgs_backrooms.block.neon.click_off",
+    "sounds": [
+      {
+        "name": "minecraft:block.lever.click",
+        "type": "event"
+      }
+    ]
+  },
+  "block.neon.click_on": {
+    "subtitle": "subtitles.gtgs_backrooms.block.neon.click_on",
+    "sounds": [
+      {
+        "name": "minecraft:block.lever.click",
+        "type": "event"
+      }
+    ]
+  },
+  "block.neon.hum": {
+    "subtitle": "subtitles.gtgs_backrooms.block.neon.hum",
+    "sounds": [
+      {
+        "name": "minecraft:block.beacon.ambient",
+        "type": "event"
+      }
+    ]
+  },
+  "entity.howler.scream": {
+    "subtitle": "subtitles.gtgs_backrooms.entity.howler.scream",
+    "sounds": [
+      {
+        "name": "minecraft:entity.enderman.scream",
+        "type": "event"
+      }
+    ]
+  },
   "item.portal_wand.place": {
     "subtitle": "subtitles.gtgs_backrooms.item.portal_wand.place",
     "sounds": [

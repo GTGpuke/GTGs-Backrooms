@@ -1,0 +1,12 @@
+{
+  "dimension": "gtgs_backrooms:backrooms_level_0",
+  "id": 1,
+  "tint": [1.06, 1.0, 0.82, 0.35],
+  "desaturation": 0.15,
+  "grain": 0.02,
+  "flicker": 0.0,
+  "lightmap": { "floor": 0.08, "warmth": 0.2, "max_brightness": 0.92 },
+  "fog": { "color": [0.48, 0.44, 0.30], "start": 4.0, "end": 48.0 },
+  "post": { "vignette": 0.25, "chromatic": 0.0, "bloom": true, "bloom_threshold": 0.6, "bloom_strength": 0.8 },
+  "neons": { "block": "gtgs_backrooms:level_zero_fluorescent_light", "radius": 8.0, "color": [1.0, 0.96, 0.82], "strength": 0.6, "flickering": 0.0, "dead": 0.0 }
+}

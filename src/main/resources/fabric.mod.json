@@ -16,7 +16,8 @@
     ]
   },
   "mixins": [
-    "gtgs_backrooms.mixins.json"
+    "gtgs_backrooms.mixins.json",
+    "gtgs_backrooms.compat.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.16.9",

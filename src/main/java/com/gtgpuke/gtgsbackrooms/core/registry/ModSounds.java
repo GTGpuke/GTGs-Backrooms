@@ -15,6 +15,14 @@ public final class ModSounds {
 
     /** Un portail s'ouvre : la baguette vient de poser un bloc portail. */
     public static final SoundEvent PORTAL_WAND_PLACE = register("item.portal_wand.place");
+    /** Bourdonnement d'un neon des Backrooms (son par defaut : celui d'un phare vanilla, en attendant le vrai). */
+    public static final SoundEvent NEON_HUM = register("block.neon.hum");
+    /** Claquement d'un neon qui s'eteint (son par defaut : un levier vanilla). */
+    public static final SoundEvent NEON_CLICK_OFF = register("block.neon.click_off");
+    /** Claquement d'un neon qui se rallume (son par defaut : un levier vanilla). */
+    public static final SoundEvent NEON_CLICK_ON = register("block.neon.click_on");
+    /** Cri d'une creature des Backrooms, lie a l'image (son par defaut : un cri vanilla). */
+    public static final SoundEvent HOWLER_SCREAM = register("entity.howler.scream");
 
     private ModSounds() {
         throw new UnsupportedOperationException("Classe de registre.");

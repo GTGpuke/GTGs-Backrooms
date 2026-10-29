@@ -21,6 +21,8 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.event.Event;
+import net.fabricmc.fabric.api.event.EventFactory;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
@@ -65,6 +67,27 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
  * demi-tour ; un seul angle oublie, et la main ou le corps rattrape ce demi-tour en quelques images.
  */
 public final class ClientPortalCrossing {
+
+    /**
+     * Point d'acces : le monde principal du client vient de changer par une traversee de portail (prediction ou passage
+     * confirme), sans passer par vanilla. Les etats tenus par monde du joueur (rendu, audio, contenu) s'y raccrochent.
+     */
+    public static final Event<WorldSwitched> WORLD_SWITCHED = EventFactory.createArrayBacked(WorldSwitched.class, listeners -> (from, to) -> {
+        for (WorldSwitched listener : listeners) {
+            listener.onSwitched(from, to);
+        }
+    });
+
+    /** Le monde du joueur a change par un portail. */
+    @FunctionalInterface
+    public interface WorldSwitched {
+
+        /**
+         * @param from monde quitte, garde comme monde distant
+         * @param to monde ou le joueur se trouve maintenant
+         */
+        void onSwitched(ClientWorld from, ClientWorld to);
+    }
 
     /** Delai de securite avant de considerer qu'une prediction est restee sans reponse. */
     private static final int SERVER_ANSWER_TIMEOUT_TICKS = 60;
@@ -466,6 +489,7 @@ public final class ClientPortalCrossing {
         ModPerformanceMonitor.onCrossingSwitched(newWorld.getRegistryKey().getValue());
         ModConstants.LOGGER.debug("[Portal] Bascule client vers {} ({}).", newWorld.getRegistryKey().getValue(),
                 confirmed ? "confirmee par le serveur" : "prediction");
+        WORLD_SWITCHED.invoker().onSwitched(oldWorld, newWorld);
     }
 
     /** Les paquets vanilla alimentent desormais {@code world} ; le nettoyage de l'ancien monde qui suit est ignore. */

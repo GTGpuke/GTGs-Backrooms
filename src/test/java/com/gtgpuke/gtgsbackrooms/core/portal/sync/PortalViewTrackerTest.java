@@ -3,6 +3,8 @@ package com.gtgpuke.gtgsbackrooms.core.portal.sync;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,13 +20,20 @@ import net.minecraft.network.packet.s2c.play.PlaySoundFromEntityS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.util.math.ChunkSectionPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 import net.minecraft.world.WorldEvents;
 
 import com.gtgpuke.gtgsbackrooms.MinecraftTestBootstrap;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 
 @DisplayName("Paquets relayes aux joueurs qui regardent une dimension")
 class PortalViewTrackerTest {
@@ -47,5 +56,26 @@ class PortalViewTrackerTest {
                 "Des particules.");
         assertTrue(PortalViewTracker.isRelayed(new BlockBreakingProgressS2CPacket(42, BlockPos.ORIGIN, 3)), "Les fissures d'un bloc mine.");
         assertFalse(PortalViewTracker.isRelayed(new GameMessageS2CPacket(Text.literal("Bonjour."), false)), "Un message de chat.");
+    }
+
+    @Test
+    @DisplayName("Un portail vu a travers un autre ouvre son arrivee s'il est visible, dans la fenetre de son monde, et mene hors du monde du joueur")
+    void portalsSeenThroughAnother() {
+        Vec3d position = new Vec3d(20.5, 70.0, 36.5);
+        long chunk = ChunkPos.toLong(ChunkSectionPos.getSectionCoord(position.x), ChunkSectionPos.getSectionCoord(position.z));
+        LongSet window = new LongOpenHashSet();
+        window.add(chunk);
+        BackroomsPortalEntity toEnd = portal(position, World.END, true);
+        assertTrue(PortalViewTracker.seenThroughAnother(toEnd, World.OVERWORLD, window), "Dans la fenetre, visible, vers un troisieme monde.");
+        assertFalse(PortalViewTracker.seenThroughAnother(toEnd, World.OVERWORLD, null), "Son monde n'est pas synchronise pour ce joueur.");
+        assertFalse(PortalViewTracker.seenThroughAnother(toEnd, World.OVERWORLD, new LongOpenHashSet()), "Hors de la fenetre de son monde.");
+        assertFalse(PortalViewTracker.seenThroughAnother(portal(position, World.END, false), World.OVERWORLD, window), "Invisible.");
+        assertFalse(PortalViewTracker.seenThroughAnother(portal(position, World.OVERWORLD, true), World.OVERWORLD, window),
+                "Vers le monde du joueur : le client le tient deja.");
+    }
+
+    private static BackroomsPortalEntity portal(Vec3d position, RegistryKey<World> destination, boolean visible) {
+        return BackroomsPortalEntity.builder(null).position(position).facingSource(PortalFacing.NORTH).facingDestination(PortalFacing.SOUTH)
+                .destinationDim(destination).destinationPos(new Vec3d(0.5, 65.0, 0.5)).size(1.0f, 2.0f).visible(visible).build();
     }
 }

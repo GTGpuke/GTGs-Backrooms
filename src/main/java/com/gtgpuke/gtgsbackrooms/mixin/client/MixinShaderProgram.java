@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import net.minecraft.client.gl.GlUniform;
 import net.minecraft.client.gl.ShaderProgram;
@@ -22,10 +23,15 @@ import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalClipping;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderClipInjector;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderStageOrigin;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookUniformUploader;
+import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
 
 /**
  * A chaque activation d'un shader pendant le dessin d'une vue de portail, lui transmet le plan de decoupe courant
- * ({@link PortalClipping}). L'emplacement de l'uniforme est resolu une fois par shader.
+ * ({@link PortalClipping}) ; et a chaque activation, le look courant ({@link LookState}) s'il a change depuis le dernier
+ * envoi a ce shader. Les emplacements des uniformes sont resolus une fois par shader. Avant le chargement d'un etage,
+ * les ressources du moteur de shaders sont chargees depuis la meme fabrique que lui ({@link LookResources}).
  *
  * <p>Au chargement d'un programme, vanilla redonne tout etage deja compile sous le meme nom. Un pack de shaders nomme
  * pareil les programmes de chacun de ses pipelines (un par dimension) et n'en garde normalement qu'un seul vivant ; une
@@ -40,6 +46,12 @@ public abstract class MixinShaderProgram {
     private boolean backrooms$clipPlaneResolved;
     @Unique
     private int backrooms$clipPlaneLocation;
+    @Unique
+    private boolean backrooms$lookResolved;
+    @Unique
+    private final int[] backrooms$lookLocations = new int[LookUniformUploader.LOCATIONS];
+    @Unique
+    private int backrooms$lookVersion;
 
     @Shadow
     public abstract int getGlRef();
@@ -54,6 +66,34 @@ public abstract class MixinShaderProgram {
             this.backrooms$clipPlaneResolved = true;
         }
         PortalClipping.onProgramBound(this.backrooms$clipPlaneLocation);
+    }
+
+    /** Le look courant, envoye seulement s'il a change depuis le dernier envoi a ce programme ; rien pour un programme non patche. */
+    @Inject(method = "bind", at = @At("TAIL"))
+    private void backrooms$uploadLook(CallbackInfo ci) {
+        if (!ModConfig.ENABLE_LOOK) {
+            return;
+        }
+        if (!this.backrooms$lookResolved) {
+            // Le bloc des neons est lie une fois a son point de liaison : le tampon y est lie par le rendu de chaque vue.
+            LookUniformUploader.resolve(this.getGlRef(), this.backrooms$lookLocations);
+            this.backrooms$lookResolved = true;
+        }
+        if (!LookUniformUploader.patched(this.backrooms$lookLocations)) {
+            return;
+        }
+        int version = LookState.version();
+        if (this.backrooms$lookVersion != version) {
+            this.backrooms$lookVersion = version;
+            LookUniformUploader.upload(this.backrooms$lookLocations);
+        }
+    }
+
+    /** Les ressources du moteur de shaders viennent de la fabrique qui charge les shaders vanilla, avant le premier d'entre eux. */
+    @Inject(method = "loadShader", at = @At("HEAD"))
+    private static void backrooms$loadLookResources(ResourceFactory factory, ShaderStage.Type type, String name,
+            CallbackInfoReturnable<ShaderStage> cir) {
+        LookResources.ensure(factory);
     }
 
     /** Un etage deja compile n'est redonne qu'a un programme charge par la meme fabrique ; sinon il est recompile. */

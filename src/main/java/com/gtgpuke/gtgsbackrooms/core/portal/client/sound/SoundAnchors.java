@@ -2,7 +2,10 @@ package com.gtgpuke.gtgsbackrooms.core.portal.client.sound;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.WeakHashMap;
+
+import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -33,8 +36,20 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.SoundSystemAccessor;
  */
 public final class SoundAnchors {
 
-    /** Vraie source d'un son : son monde, sa position et son volume avant tout trajet par un cadre. */
-    private record Anchor(RegistryKey<World> world, Vec3d source, float volume) {
+    /**
+     * Vraie source d'un son : son monde, sa position et son volume avant tout trajet par un cadre, et, pour un son
+     * rejoue au cadre, le point de son monde par ou il entre dans le cadre (le point de sortie, vu de l'autre cote) :
+     * le moteur audio y mesure le trajet de la source au cadre.
+     *
+     * @param world monde de la vraie source
+     * @param source position de la source dans son monde
+     * @param volume volume a la source
+     * @param arrival point d'entree dans le cadre, dans le monde de la source ; {@code null} pour un son joue a sa place
+     * @param played point ou le son joue maintenant, dans le monde du joueur : sa source au depart, le point du cadre
+     *     pour un son rejoue au cadre, et celui ou il a ete replace apres une traversee (l'instance, elle, garde ses
+     *     coordonnees de depart)
+     */
+    public record Anchor(RegistryKey<World> world, Vec3d source, float volume, @Nullable Vec3d arrival, Vec3d played) {
     }
 
     /** Les sons oublies par le moteur le sont ici aussi : cles faibles, identite des instances. */
@@ -51,9 +66,10 @@ public final class SoundAnchors {
      * @param world monde de la source
      * @param source position de la source dans son monde
      * @param volume volume a la source
+     * @param arrival point d'entree dans le cadre, dans le monde de la source
      */
-    static void anchor(SoundInstance sound, RegistryKey<World> world, Vec3d source, float volume) {
-        ANCHORS.put(sound, new Anchor(world, source, volume));
+    public static void anchor(SoundInstance sound, RegistryKey<World> world, Vec3d source, float volume, Vec3d arrival) {
+        ANCHORS.put(sound, new Anchor(world, source, volume, arrival, new Vec3d(sound.getX(), sound.getY(), sound.getZ())));
     }
 
     /**
@@ -67,7 +83,8 @@ public final class SoundAnchors {
         }
         ClientWorld world = MinecraftClient.getInstance().world;
         if (world != null) {
-            ANCHORS.put(sound, new Anchor(world.getRegistryKey(), new Vec3d(sound.getX(), sound.getY(), sound.getZ()), sound.getVolume()));
+            Vec3d at = new Vec3d(sound.getX(), sound.getY(), sound.getZ());
+            ANCHORS.put(sound, new Anchor(world.getRegistryKey(), at, sound.getVolume(), null, at));
         }
     }
 
@@ -93,15 +110,22 @@ public final class SoundAnchors {
                 continue;
             }
             Vec3d position = anchor.source();
+            Vec3d arrival = null;
             float volume = 0.0f;
             if (anchor.world().equals(world.getRegistryKey())) {
                 volume = anchor.volume();
             } else {
-                PortalSound.Exit exit = PortalSound.bestExit(portals, anchor.world(), anchor.source(), listener, PortalSound.radius(anchor.volume()));
+                PortalSound.Exit exit = PortalSound.bestExit(portals, FrameSoundPlayer::portalsOf, anchor.world(), anchor.source(), listener,
+                        PortalSound.radius(anchor.volume()));
                 if (exit != null) {
                     position = exit.point();
                     volume = PortalSound.volumeThroughPortal(anchor.volume(), exit.distance());
+                    arrival = exit.arrival();
                 }
+            }
+            if (!Objects.equals(arrival, anchor.arrival()) || !position.equals(anchor.played())) {
+                // Le son entre par un autre cadre, ou plus par aucun, et joue ailleurs : son ancre le dit au moteur audio.
+                ANCHORS.put(playing.getKey(), new Anchor(anchor.world(), anchor.source(), anchor.volume(), arrival, position));
             }
             float gain = system.backrooms$adjustedVolume(volume, playing.getKey().getCategory());
             Vec3d at = position;
@@ -110,6 +134,11 @@ public final class SoundAnchors {
                 source.setVolume(gain);
             });
         }
+    }
+
+    /** Ancre d'un son, sa vraie source ; {@code null} pour un son sans place dans un monde ou qui suit une entite. */
+    public static @Nullable Anchor anchorOf(SoundInstance sound) {
+        return ANCHORS.get(sound);
     }
 
     /** Deconnexion : plus aucun son a replacer. */

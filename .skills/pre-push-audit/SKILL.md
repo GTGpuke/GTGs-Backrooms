@@ -127,7 +127,7 @@ grep -rn " $" src/main/java/ --include="*.java" | head -5 || echo "✅ Aucun tra
 
 ```bash
 echo "========== ÉTAPE 2.7 — Imports client hors package client/ =========="
-grep -rn "import net.minecraft.client" src/main/java/com/gtgpuke/gtgsbackrooms/ --include="*.java" | grep -v "/client/" | grep -v "compat/" || echo "✅ Aucun import client dans les classes communes."
+grep -rn "import net.minecraft.client" src/main/java/com/gtgpuke/gtgsbackrooms/ --include="*.java" | grep -v "/client/" || echo "✅ Aucun import client dans les classes communes."
 ```
 
 ```bash

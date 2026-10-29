@@ -5,6 +5,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
+import com.gtgpuke.gtgsbackrooms.backrooms.level0.LevelZeroLayoutSync;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.layout.LevelZeroLayout;
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
@@ -68,6 +69,7 @@ public class GtgsBackroomsMod implements ModInitializer {
         ServerTickEvents.START_SERVER_TICK.register(server -> ModPerformanceMonitor.onServerTickStart());
         ServerTickEvents.END_SERVER_TICK.register(server -> ModPerformanceMonitor.onServerTickEnd());
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> LevelZeroLayout.clearCache());
+        LevelZeroLayoutSync.register();
     }
 
     /**

@@ -1,0 +1,11 @@
+{
+  "id": "gtgs_backrooms:scream",
+  "sounds": ["gtgs_backrooms:entity.howler.scream"],
+  "envelope": true,
+  "reactions": [
+    { "type": "neon_disturbance", "radius": 12.0, "strength": 0.8, "follow_envelope": true },
+    { "type": "screen_pulse", "strength": 0.15, "max_distance": 24.0 },
+    { "type": "lightmap_flicker", "strength": 0.2 },
+    { "type": "camera_shake", "strength": 0.4, "max_distance": 16.0, "easing": "out_quad" }
+  ]
+}

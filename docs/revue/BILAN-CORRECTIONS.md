@@ -7,7 +7,8 @@
 > **Rien n'est implémenté.** Ce bilan est un plan : le code ne change que sur décision explicite de l'auteur, lot par
 > lot.
 >
-> Ce document ne nomme aucun autre mod que Iris (règle de `docs/prompt/FINALCHECK.md`).
+> Ce document ne nomme aucun autre mod : chacun est désigné par sa famille (mod de shaders, mod de terrain), selon la
+> règle de `docs/prompt/FINALCHECK.md`.
 
 ## Sommaire
 
@@ -22,8 +23,8 @@
 
 **Renvois.** « PERF 3.2 » désigne la section 3.2 de la partie PERF, « REVUE 1.3.3 » le point 3 de la section 1.3 de la
 partie REVUE, et « NR 3.8 (4) » le point 4 de la section 3.8 de la partie NR. Dans une partie, « section 3.2 » ou
-« (3.2) » renvoie à la même partie. GUIDE, CLAUDE.md, PORTALS.md, TESTING.md et les autres noms de fichiers désignent
-ceux du projet.
+« (3.2) » renvoie à la même partie. GUIDE, PORTALS.md, TESTING.md et les autres noms de fichiers désignent ceux du
+projet, et « les règles du projet » le fichier de règles chargé à chaque session.
 
 **Identifiants.** C01 à C83 : corrections (BILAN 3). G1 à G12 : garde-fous (BILAN 2, NR 4.2). GPU1 à GPU7 : pistes pour
 la carte graphique (EXPLO 3.3). S0 à S7 et R0 à R6 : scènes du banc de performance, sur la puce Intel et sur la RTX
@@ -50,7 +51,7 @@ la carte graphique (EXPLO 3.3). S0 à S7 et R0 à R6 : scènes du banc de perfor
    - l'API de Loom dépréciée (C14), préalable à toute montée d'outils ;
    - 44 % des lignes hors de la mesure de couverture, alors que la règle ne permet d'exclure que la colle GL (C22,
      C49) ;
-   - `.vscode/settings.json` absent du dépôt, alors que CLAUDE.md compte dessus (C37) ;
+   - `.vscode/settings.json` absent du dépôt, alors que les règles du projet comptent dessus (C37) ;
    - le moniteur de performance, qui fausse ses propres mesures (C77) ;
    - le jeu qui tourne sur la puce Intel de ce portable, deux à trois fois moins vite (C36).
 3. **Les portails noirs et le retour lent dans le champ** viennent surtout du serveur, pas du rendu :
@@ -124,7 +125,7 @@ jour (règle d'or 9 de `docs/GUIDE.md`), et `docs/prompt/FINALCHECK.md`.
 | G8 | Contrôle des garde-fous : graphe du build, planchers de tests, liste des exclusions de couverture, passage canari | Un garde-fou débranché en silence | Liste de 29 classes et deux paquets, planchers 749 et 99, forme de `build/junit.xml` (REF 1 et 7) | NR 4.2 ; REF 1, 7 | 0 |
 | G9 | Mutation testing, en rapport | Remanier en se croyant protégé par des tests qui n'assertent rien | Outil à valider avec le chargeur de tests Fabric | NR 4.2 ; REVUE 3.9 | 0 |
 | G10 | Tests d'architecture | Une dépendance interdite qui réapparaît | Les cinq règles sont vraies aujourd'hui ; listes blanches (REF 2) | NR 4.2 ; REVUE 3.3 ; REF 2 | 0 |
-| G11 | Matrice de compatibilité manuelle : vanilla, mod de terrain, Iris avec deux packs | Une régression avec un autre mod de rendu | Banc de l'auteur | NR 4.2 ; GUIDE §8 | chaque PR client |
+| G11 | Matrice de compatibilité manuelle : vanilla, mod de terrain, mod de shaders avec deux packs | Une régression avec un autre mod de rendu | Banc de l'auteur | NR 4.2 ; GUIDE §8 | chaque PR client |
 | G12 | Rejeu explicite des tests en jeu sur un monde déjà joué | La perte de cette robustesse, qui ne tient qu'à un effet de bord de la CI | — | NR 4.2, 3.8 (4) ; REVUE 1.3.6 | 2 |
 
 ---
@@ -180,13 +181,13 @@ Colonnes :
 | C24 | Workflow Git décrit (branches, messages) contre celui pratiqué | REVUE 1.4.3, 3.12 | P2 | Décision | Appliquer la règle, ou l'assouplir dans CONTRIBUTING | — |
 | C25 | Autres mods nommés hors des exceptions de FINALCHECK : skill `add-dependency`, `docs/AUDIT.md`, GUIDE hors de sa section 8 | REVUE 1.4.4 | P2 | Sûr | — | 1 |
 | C26 | Skills : `add-dependency` recommande ce que `verifyJarContents` refuse ; `pre-push-audit` est plus vieux que `BEFOREPUSH.md` | REVUE 1.4.5 | P2 | Sûr | — | 1 |
-| C27 | `docs/AUDIT.md` : le marquer historique ; CLAUDE.md n'en fait plus le « dernier audit » ; un nouvel audit après la 0.10.0 | REVUE 1.4.6, 3.13 | P2 | Sûr | — | 1 |
-| C28 | Specs de l'auteur : `backrooms-mod-plan.md` (archive ou retrait), section 7 de `BACKROOMS_CONTENT_RULES.md`, titre de `backrooms-level0-pipeline-v6.md` | REVUE 1.4.7 à 1.4.9, 3.13 | P2 | Décision | Claude ne modifie pas ces fichiers | — |
+| C27 | `docs/AUDIT.md` : le marquer historique ; les règles du projet n'en font plus le « dernier audit » ; un nouvel audit après la 0.10.0 | REVUE 1.4.6, 3.13 | P2 | Sûr | — | 1 |
+| C28 | Specs de l'auteur : `backrooms-mod-plan.md` (archive ou retrait), section 7 de `BACKROOMS_CONTENT_RULES.md`, titre de `backrooms-level0-pipeline-v6.md` | REVUE 1.4.7 à 1.4.9, 3.13 | P2 | Décision | Les sessions de développement ne modifient pas ces fichiers | — |
 | C29 | README : un nombre de tests vérifiable (298 méthodes, 749 exécutions, 99 tests en jeu), ou aucun | REVUE 1.4.10 | P3 | Sûr | — | 1 |
 | C30 | Traductions françaises : accent de « Néon », casse des noms | REVUE 1.4.11 ; NR 3.1 | P3 | Voulu | Texte visible en jeu | 1, déc. |
 | C31 | GUIDE §2.2 (« au-delà, cadre sombre ») contre PORTALS.md et le code (transparent) | REVUE 1.4.12 | P3 | Sûr | Corriger GUIDE, ou consigner l'écart dans sa section 2.4 | 1 |
-| C32 | CLAUDE.md : le socle dépend aussi de `BackroomsConstants` ; « quatre `VertexBuffer` » par section au lieu de cinq | REVUE 1.1.4 ; PERF 3.4 | P3 | Sûr | — | 1 |
-| C33 | Pièges de CLAUDE.md : les garder dans CLAUDE.md, ou les importer par `@docs/PIEGES.md` ; jamais un simple renvoi | REVUE 3.13 ; NR 3.8 (5) | P2 | Sûr | — | 1 |
+| C32 | Règles du projet : le socle dépend aussi de `BackroomsConstants` ; « quatre `VertexBuffer` » par section au lieu de cinq | REVUE 1.1.4 ; PERF 3.4 | P3 | Sûr | — | 1 |
+| C33 | Pièges des règles du projet : les garder dans les règles du projet, ou les importer par `@docs/PIEGES.md` ; jamais un simple renvoi | REVUE 3.13 ; NR 3.8 (5) | P2 | Sûr | — | 1 |
 | C34 | Catalogue des tests écrit une seule fois (TESTING.md) ; PORTALS.md y renvoie | REVUE 3.13 | P2 | Sûr si | Aucune information perdue au passage | 1 |
 | C35 | Dossier de décisions (`docs/decisions/`, une fiche datée par décision) | REVUE 3.13 | P2 | Décision | — | — |
 | C36 | Documenter le choix de la carte graphique sur les portables : réglage « Hautes performances » de Windows, ou `SHIM_MCCOMPAT` en dev (`docs/SETUP.md`, `docs/TROUBLESHOOTING.md`) ; une ligne pour les joueurs ; le coût d'un grand cadre sur une puce intégrée | PERF 3.1, 3.6 ; EXPLO 3.2 | P1 | Sûr | Vérifier d'abord si le launcher officiel a déjà son propre profil graphique | 1 |
@@ -297,7 +298,7 @@ Colonnes :
 | Compatibilité | C15 b, C43 | Relever le chargeur minimal ou la Fabric API minimale écarte des joueurs |
 | Carte graphique | C36, C76 | Doc seule, message en jeu, ou réglage de Windows |
 | Options pour les joueurs | C55 | Un fichier de configuration lu au démarrage ; GUIDE §3.5 a reporté l'interface graphique |
-| Version de Minecraft visée | C82, C83 | Jusqu'où porter, et quand ; selon le public visé et Iris |
+| Version de Minecraft visée | C82, C83 | Jusqu'où porter, et quand ; selon le public visé et le mod de shaders |
 | Refontes du socle | C47, C48, C50 | Règle d'or 2 : proposer, puis valider |
 | Dépôt, publication, specs | C24, C28, C35, C40, C53, C54, C21, C80 | Workflow Git, specs de l'auteur, dossier de décisions, toolchain téléchargée, icône et publication, réglages GitHub, tag, scripts du banc |
 
@@ -307,7 +308,7 @@ Colonnes :
 
 | Proposition | Raison | Source |
 |---|---|---|
-| Brouillard figé au tick | Le rendu décide sur la position affichée (CLAUDE.md) ; couture à la bascule | NR 3.6 |
+| Brouillard figé au tick | Le rendu décide sur la position affichée (règles du projet) ; couture à la bascule | NR 3.6 |
 | Brouillard partagé entre les vues, ou pris au tick puis interpolé, présenté comme sans écart | Change l'image : chaque vue a sa caméra, et la couleur dépend de la caméra, de l'heure et des chunks reçus. La variante approchée reste possible comme Voulu (C62 b) | NR 5.3 (3) |
 | Monde quitté vidé d'un coup | Un retour rapide verrait un monde vide : couture | NR 3.6 |
 | Création du monde distant étalée sur plusieurs images | Vue vide ou incomplète à ses premières images | NR 5.3 (5) |
@@ -315,9 +316,9 @@ Colonnes :
 | `loader_version` dans `fabric.mod.json` | Relève le minimum de 0.16.9 à 0.19.5 | NR 5.3 (1) |
 | Critère de JVM du démon à 25 dès maintenant | Exige un JDK 25 partout, CI comprise | NR 5.3 (2) |
 | Tests en jeu joués une seule fois en CI, sans étape de rejeu | Perd la robustesse sur un monde déjà joué | NR 3.8 (4) |
-| Pièges de CLAUDE.md déplacés derrière un simple renvoi | Les sessions ne les liraient plus | NR 3.8 (5) |
+| Pièges des règles du projet déplacés derrière un simple renvoi | Les sessions ne les liraient plus | NR 3.8 (5) |
 | `UtilityClassesTest` sans constructeurs qui refusent l'appel | Perd une garantie testée | NR 3.8 (6) |
-| Parcours des sections d'une vue en arrière-plan | Une image de retard : vues qui clignotent (piège de CLAUDE.md) | EXPLO 4.2 |
+| Parcours des sections d'une vue en arrière-plan | Une image de retard : vues qui clignotent (piège des règles du projet) | EXPLO 4.2 |
 | Chunks reçus appliqués hors du thread de rendu | Rompt le chemin `readLightData` des mods de terrain | EXPLO 4.2 |
 | Requête d'occlusion lue à l'image suivante | Une image de retard au retour d'un portail dans le champ ; acceptable seulement en option | EXPLO 6.2 |
 | Rayons vers une grille de points pour décider du rendu | Un interstice entre deux points ferait disparaître une vue visible | EXPLO 6.2 |
@@ -528,12 +529,12 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
    retrouve sans commentaire. Déplacer le bloc au-dessus de la bonne méthode.
 3. **P2. Messages de la commande de debug en texte brut.**
    [DebugPortalCommand.java:53-68](../../src/main/java/com/gtgpuke/gtgsbackrooms/core/portal/debug/DebugPortalCommand.java#L53-L68) :
-   `Text.literal("... portail(s) charge(s) ...")`. CLAUDE.md impose `Text.translatable()` et des clés EN et FR pour tout
-   texte visible en jeu. Comme les sources sont en ASCII, le message s'affiche en plus sans accents. Passer par des clés
-   de traduction (les accents sont permis dans les fichiers de langue). Changement visible : la console d'un serveur
-   dédié affichera ces messages en anglais. À décider par l'auteur (NR 5.4).
-4. **P3. Le socle dépend du contenu un peu plus que ce que dit CLAUDE.md.** CLAUDE.md : « `LevelZeroArrival` : seul
-   lien, avec les registres, du socle vers le contenu ». En réalité
+   `Text.literal("... portail(s) charge(s) ...")`. Les règles du projet imposent `Text.translatable()` et des clés EN
+   et FR pour tout texte visible en jeu. Comme les sources sont en ASCII, le message s'affiche en plus sans accents.
+   Passer par des clés de traduction (les accents sont permis dans les fichiers de langue). Changement visible : la
+   console d'un serveur dédié affichera ces messages en anglais. À décider par l'auteur (NR 5.4).
+4. **P3. Le socle dépend du contenu un peu plus que ce que disent les règles du projet.** Elles écrivent :
+   « `LevelZeroArrival` : seul lien, avec les registres, du socle vers le contenu ». En réalité
    [PortalTargets.java](../../src/main/java/com/gtgpuke/gtgsbackrooms/core/portal/block/PortalTargets.java) importe aussi
    `BackroomsConstants` (la clé du monde du Level 0). Soit corriger la phrase, soit inverser la dépendance (section 3.2).
 5. **P3. Une allocation dans un tick.**
@@ -594,7 +595,7 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
 5. **P2. Les actions GitHub ont deux à trois versions majeures de retard** (section 2.1). Dependabot les suit tous
    les mois : soit ses PR attendent, soit elles ont été fermées. À regarder sur GitHub.
 6. **P3. La CI rejoue trois fois les tests en jeu.** Étapes `runGameTest`, puis `jacocoFullReport` (qui en dépend), puis
-   `build`. CLAUDE.md présente ce triple passage comme un fait ; il a une vertu (un test doit tenir sur un monde déjà
+   `build`. Les règles du projet présentent ce triple passage comme un fait ; il a une vertu (un test doit tenir sur un monde déjà
    joué), mais il coûte du temps de CI. Si le but est la robustesse, le dire et le garder. Une seule invocation `build`
    n'est acceptable qu'avec une étape explicite qui rejoue les tests en jeu sur le monde déjà joué (NR 4.2, G12) :
    sinon, cette robustesse se perd en silence.
@@ -604,8 +605,8 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
 
 #### REVUE 1.4 Documentation et règles
 
-1. **P1. La règle de couverture et la pratique divergent.** GUIDE.md et CLAUDE.md : « Colle OpenGL et OpenAL :
-   minimale, isolée, nommée dans TESTING.md ; tout le reste est couvert à 100 % ». En réalité, les exclusions de
+1. **P1. La règle de couverture et la pratique divergent.** GUIDE.md et les règles du projet : « Colle OpenGL et
+   OpenAL : minimale, isolée, nommée dans TESTING.md ; tout le reste est couvert à 100 % ». En réalité, les exclusions de
    [build.gradle:131-150](../../build.gradle#L131-L150) retirent **10 096 lignes sur 22 802 (44 %)**. Le détail est dans
    l'annexe A. Les mixins (2 032 lignes) sont une exclusion classique. Mais `core/portal/client/world/**` entier
    (3 501 lignes) contient de la logique pure : le parcours en largeur de `ViewSectionWalker`, la sélection de
@@ -624,12 +625,12 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
    - `docs/AUDIT.md`, 2 mentions ;
    - GUIDE.md hors de sa section 8 : lignes 23, 170, 239, 539, 544, 728 et 732.
 
-   Le code, les tests, README et CLAUDE.md sont propres (Iris excepté, comme accordé).
+   Le code, les tests, README et les règles du projet sont propres (le mod de shaders excepté, comme accordé).
 5. **P2. Le skill `add-dependency` contredit le build.** Il recommande `include` (jar-in-jar) ; `verifyJarContents`
    refuse toute dépendance embarquée. Le skill `pre-push-audit` est plus ancien que `docs/prompt/BEFOREPUSH.md`, qui
-   fait autorité. Mettre les deux au niveau, ou retirer `pre-push-audit` au profit du prompt.
-6. **P2. L'« audit complet » de référence date de deux versions.** CLAUDE.md renvoie à `docs/AUDIT.md` (2026-10-15,
-   version 0.8.0). Depuis : 0.9.0, 0.10.0, changement d'arborescence, retrait de contenu. L'audit reste juste comme
+   fait autorité. Mettre les deux au niveau, ou retirer `pre-push-audit` au profit de la consigne.
+6. **P2. L'« audit complet » de référence date de deux versions.** Les règles du projet renvoient à `docs/AUDIT.md`
+   (2026-10-15, version 0.8.0). Depuis : 0.9.0, 0.10.0, changement d'arborescence, retrait de contenu. L'audit reste juste comme
    historique et comme référence de performance, mais n'est plus le « dernier audit complet ». Le dire en tête, et en
    faire un nouveau après la 0.10.0.
 7. **P2. Deux versions du guide coexistent.** `docs/backrooms/backrooms-mod-plan.md` (ajouté par `d331d53`) est le
@@ -637,9 +638,9 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
    « 36 paires d'orientations » (144 aujourd'hui). `docs/INDEX.md` ne le cite pas. Ce sont des specs de l'auteur, je
    ne fais que signaler. Décider s'il s'agit d'une archive (et le dire en tête), ou le retirer.
 8. **P2. `BACKROOMS_CONTENT_RULES.md` contient des consignes techniques contraires au projet.** C'est un document de
-   game design écrit pour une autre plateforme de mods et pour une version future de Minecraft. Sa section 7, « Notes
-   techniques pour Claude Code », prescrit d'embarquer des dépendances (jar-in-jar), un fichier `mods.toml` et un
-   portail tiers optionnel. Tout cela contredit `verifyJarContents`, la pile Fabric et le système de portails déjà
+   game design écrit pour une autre plateforme de mods et pour une version future de Minecraft. Sa section 7, des notes
+   techniques destinées aux sessions de développement, prescrit d'embarquer des dépendances (jar-in-jar), un fichier
+   `mods.toml` et un portail tiers optionnel. Tout cela contredit `verifyJarContents`, la pile Fabric et le système de portails déjà
    construit. INDEX.md le présente comme « règles de contenu et direction artistique ». Risque : une session qui en
    suivrait la section 7 à la lettre. Proposition : une ligne en tête du fichier (par l'auteur) disant que seules les
    sections de contenu font foi.
@@ -662,8 +663,8 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
 
 #### REVUE 1.5 Environnement de développement (cette machine)
 
-1. **P1. `.vscode/settings.json` est absent du dépôt.** CLAUDE.md compte dessus pour couper la compilation automatique
-   de l'extension Java, et `.gitignore` le laisse passer (`!.vscode/settings.json`), mais il n'a jamais été commité.
+1. **P1. `.vscode/settings.json` est absent du dépôt.** Les règles du projet comptent dessus pour couper la compilation
+   automatique de l'extension Java, et `.gitignore` le laisse passer (`!.vscode/settings.json`), mais il n'a jamais été commité.
    Sur un clone neuf, l'extension peut écrire dans `build/classes/java/main` des classes « Unresolved compilation
    problems » qui font planter le client.
 2. **P2. Le démon Gradle tourne sur le JDK 25** (`JAVA_HOME = C:\Program Files\Java\jdk-25.0.2`). La toolchain trouve le
@@ -687,7 +688,7 @@ garde-fous d'abord (lot 0), les montées d'outils au lot 7, chacune sous ses gar
 | Fabric Loader | 0.19.5 | 0.20.1 (Mixin 0.17.5, ASM, tiny-remapper) | Oui |
 | Fabric API | 0.116.17+1.21.1 | dernière pour 1.21.1 ✓ (0.165.0 pour 26.3) | Déjà à jour |
 | Yarn | 1.21.1+build.3 | dernière pour 1.21.1 ✓ ; Yarn s'arrête à 1.21.11+build.6 | Déjà à jour |
-| Iris (compilation seulement) | 1.8.8+1.21.1 | dernière stable pour 1.21.1 ✓ (1.8.14-beta.1 existe) | Déjà à jour |
+| Mod de shaders (compilation seulement) | 1.8.8+1.21.1 | dernière stable pour 1.21.1 ✓ (1.8.14-beta.1 existe) | Déjà à jour |
 | JUnit | 5.11.4 | 5.14.4 (branche 5) ; 6.1.3 (branche 6) | Oui |
 | Checkstyle | 10.21.1 | 14.3.0 | Oui (quatre versions majeures : relire les notes de version) |
 | JaCoCo | non épinglé (défaut de Gradle) | 0.8.15, le défaut de Gradle 9.8.2 | Oui |
@@ -711,7 +712,7 @@ année : 26.1 (2026-03-24), 26.1.1, 26.1.2, 26.2 (2026-06-16), 26.3 (2026-09-15)
   reste pour la compatibilité. Passer à `net.fabricmc.fabric-loom-remap` dès maintenant prépare la suite.
 - **Loom 1.17** a déprécié l'ancienne API des configurations de lancement (point 1.3.2). **Loom 1.18** lance par
   défaut les configurations d'IDE par les tâches Gradle et améliore la configuration cache.
-- **Fabric Loader 0.20** met à jour Mixin (0.17.5). Le piège de `@Redirect` (CLAUDE.md) vient d'un écart de versions
+- **Fabric Loader 0.20** met à jour Mixin (0.17.5). Le piège de `@Redirect` (règles du projet) vient d'un écart de versions
   de Mixin et MixinExtras entre chargeurs. Après la mise à jour, il faut rejouer l'essai d'un chargeur ancien en
   production, puisque `fabric.mod.json` accepte `>=0.16.9`.
 - **JUnit 6** exige Java 17 et retire des API dépréciées de la branche 5. Vérifier qu'il s'accorde avec
@@ -725,7 +726,7 @@ année : 26.1 (2026-03-24), 26.1.1, 26.1.2, 26.2 (2026-06-16), 26.3 (2026-09-15)
 - **Coût d'un portage** : le rendu des portails tient à l'intérieur de `WorldRenderer.render` (injections, shaders,
   tampons de sommets, framebuffers, `RenderSystem`). Minecraft a profondément réécrit sa couche de rendu entre 1.21.2
   et 1.21.11 (pipelines de rendu, abstraction du GPU, rendu des entités par états extraits). Une grande partie de
-  `core/portal/client/` et de `mixin/client/` serait à réécrire, avec un nouveau relevé des pièges de CLAUDE.md. La
+  `core/portal/client/` et de `mixin/client/` serait à réécrire, avec un nouveau relevé des pièges des règles du projet. La
   génération du Level 0 (logique pure, `StageRandom` maison) devrait garder ses empreintes, à vérifier au premier
   build.
 
@@ -747,7 +748,7 @@ année : 26.1 (2026-03-24), 26.1.1, 26.1.2, 26.2 (2026-06-16), 26.3 (2026-09-15)
 - **Étape B : passer aux noms Mojang sur 1.21.1 (mécanique, gros diff).** Loom sait utiliser les mappings officiels de
   Mojang pour 1.21.1 et fournit une tâche de migration des noms (`migrateMappings`, à confirmer dans la doc Fabric le
   moment venu). Le renommage est ainsi découplé du portage : on vérifie que tout marche avec les nouveaux noms avant de
-  changer de version. CLAUDE.md, PORTALS.md et les commentaires citent des noms Yarn (`WorldRenderer`, `ClientWorld`…) :
+  changer de version. Les règles du projet, PORTALS.md et les commentaires citent des noms Yarn (`WorldRenderer`, `ClientWorld`…) :
   à traduire en même temps.
 - **Étape C : 1.21.1 → 1.21.11 (Java 21, encore obfusqué).** C'est le vrai portage du rendu, par jalons :
   1. compilation ;
@@ -760,7 +761,7 @@ année : 26.1 (2026-03-24), 26.1.1, 26.1.2, 26.2 (2026-06-16), 26.3 (2026-09-15)
   25.
 
 Décision à prendre par l'auteur : jusqu'où aller, et quand. Le critère principal est la version jouée par le public
-visé et la disponibilité de Iris pour cette version.
+visé et la disponibilité du mod de shaders pour cette version.
 
 ---
 
@@ -900,15 +901,15 @@ modèles d'issue et de PR si des joueurs doivent remonter des problèmes.
 
 #### REVUE 3.13 Documentation (P2)
 
-- **Les « Pièges » de CLAUDE.md** (environ 240 lignes, chargées à chaque session) seraient plus lisibles dans un
-  `docs/PIEGES.md` rangé par système. Mais un simple renvoi ferait perdre ce savoir aux sessions qui ne suivent pas le
-  lien : CLAUDE.md est chargé d'office, pas `docs/`. Les garder dans CLAUDE.md, ou les importer depuis CLAUDE.md par
-  `@docs/PIEGES.md`, qui ne réduit pas le contexte (NR 3.8).
+- **Les « Pièges » des règles du projet** (environ 240 lignes, chargées à chaque session) seraient plus lisibles
+  dans un `docs/PIEGES.md` rangé par système. Mais un simple renvoi ferait perdre ce savoir aux sessions qui ne
+  suivent pas le lien : les règles du projet sont chargées d'office, pas `docs/`. Les garder dans les règles du
+  projet, ou les y importer par `@docs/PIEGES.md`, qui ne réduit pas le contexte (NR 3.8).
 - **Le catalogue des tests** est écrit deux fois : TESTING.md, et une cellule de tableau géante dans PORTALS.md. Une
   seule source, l'autre renvoie.
 - **Un dossier de décisions** (`docs/decisions/`, une fiche datée par décision) remplacerait les décisions dispersées
-  dans GUIDE §2.4, le CHANGELOG et CLAUDE.md : GPL reportée, pipeline Iris séparé essayé puis retiré, pas de module
-  dédié au mod de terrain, etc.
+  dans GUIDE §2.4, le CHANGELOG et les règles du projet : GPL reportée, pipeline séparé du mod de shaders essayé puis
+  retiré, pas de module dédié au mod de terrain, etc.
 - **Statut des anciens documents** : AUDIT.md à marquer comme historique (point 1.4.6) ; statut de
   `backrooms-mod-plan.md` et de la section 7 de `BACKROOMS_CONTENT_RULES.md` à décider par l'auteur (points 1.4.7 et
   1.4.8).
@@ -926,7 +927,7 @@ fichier lu au démarrage en est un premier pas, plus petit. À rouvrir avant une
 - Fixer la JVM du démon Gradle : `./gradlew updateDaemonJvm` écrit `gradle/gradle-daemon-jvm.properties`. Toute machine
   et la CI lancent alors Gradle sous la même version. **Proposition corrigée le 25 octobre** (NR 5.3) : le critère est
   21 tant que Loom reste en 1.17. Un critère 25 exigerait un JDK 25 partout, CI comprise (elle n'installe que le 21),
-  alors que CLAUDE.md promet qu'un seul JDK suffit. Il ne passe à 25 qu'avec la montée de Loom 1.18+, que ce dernier
+  alors que les règles du projet promettent qu'un seul JDK suffit. Il ne passe à 25 qu'avec la montée de Loom 1.18+, que ce dernier
   exige. La toolchain de compilation reste à 21.
 - Optionnel : laisser Gradle télécharger la toolchain manquante (plugin de résolution de toolchains), pour qu'un
   clone neuf compile sans installation manuelle de Java 21.
@@ -961,7 +962,7 @@ Lignes de source (commentaires compris) exclues par `coverageExcludes`, sur 22 8
 
 ### REVUE — Annexe B : contrôles automatisés faits pour cette revue
 
-- **Doc contre code** : chaque identifiant en forme de classe cité entre backticks dans CLAUDE.md, README.md,
+- **Doc contre code** : chaque identifiant en forme de classe cité entre backticks dans les règles du projet, README.md,
   `docs/*.md`, `docs/prompt/*.md` et `.skills/*` a été comparé aux classes du mod, de Minecraft 1.21.1 (jar mappé
   Yarn) et de Fabric API. Seuls restent des noms historiques (AUDIT, CHANGELOG : normal), des exemples fictifs des
   skills et des concepts futurs de GUIDE (`WorldProfile`…). **Aucune référence morte dans la doc vivante.**
@@ -1027,7 +1028,7 @@ Lignes de source (commentaires compris) exclues par `coverageExcludes`, sur 22 8
 |---|---|
 | Machine | Dell G15 5511, Intel Core i5-11400H (6 cœurs, 12 threads), **8 Go de RAM**, Windows 11 (build 26200) |
 | GPU | Intel UHD Graphics (intégré, OpenGL 3.2, pilote 32.0.101.7085) et NVIDIA GeForce RTX 3050 Laptop 4 Go (pilote 610.60), commutés par Optimus. « iGPU » dans la partie PERF, « puce Intel » dans les autres parties. OpenGL 3.2 est la version du contexte que Minecraft 1.21.1 demande |
-| Charge de fond | Chrome, Discord, VS Code, Claude, agents Dell : mémoire engagée à 16,4 Go sur une limite de 18,8 Go ; **300 à 700 Mo de RAM libre** pendant le banc |
+| Charge de fond | Chrome, Discord, VS Code, une application de bureau, agents Dell : mémoire engagée à 16,4 Go sur une limite de 18,8 Go ; **300 à 700 Mo de RAM libre** pendant le banc |
 | JVM du client | Temurin 21.0.8, sans `-Xmx` : tas maximal par défaut de 1 980 Mo (un quart de la RAM) |
 | Démon Gradle | JDK 25.0.2, `-Xmx4G` (`gradle.properties`), au repos pendant le banc |
 | Client | 854×480, distance de rendu 12, simulation 12, graphismes Fancy, VSync coupée, FPS illimités, son à 10 % |
@@ -1233,7 +1234,7 @@ ont abouti. Ce n'est pas prouvé.
   image pour le monde du joueur. Chaque vue refait le calcul à chaque image. D'où environ 70 Ko par vue et par image, et
   autant de temps CPU.
 - **Piste**, corrigée le 25 octobre (NR 5.3) :
-  - Ne pas figer la couleur au tick : la règle de CLAUDE.md veut que le rendu décide sur la position affichée, et la
+  - Ne pas figer la couleur au tick : les règles du projet veulent que le rendu décide sur la position affichée, et la
     règle d'or 5 interdit toute couture.
   - Les deux solutions proposées d'abord changent encore l'image. Une couleur partagée entre les vues d'un monde serait
     prise à la caméra d'une seule d'entre elles. Une couleur prise au tick puis interpolée s'écarterait du calcul
@@ -1251,7 +1252,7 @@ ont abouti. Ce n'est pas prouvé.
   - Trois portails donnent 2,9 à 4,1 vues par image, parce que la vue de l'Overworld sur lui-même en imbrique d'autres.
   - Une vue secondaire tient une grille de sections à la distance de rendu du joueur : 15 000 `BuiltChunk` pour
     l'Overworld (25×25 chunks sur 24 sections), 75 000 `VertexBuffer` Java.
-  - Écart avec CLAUDE.md, qui écrit « chaque BuiltChunk crée quatre VertexBuffer » : l'histogramme en compte cinq
+  - Écart avec les règles du projet, qui écrivent « chaque BuiltChunk crée quatre VertexBuffer » : l'histogramme en compte cinq
     (213 145 pour 42 500 sections), un par couche de blocs en 1.21.1 (solid, cutout_mipped, cutout, translucent,
     tripwire).
   - Sur l'iGPU, la scène à trois portails perd 43 % des FPS.
@@ -1327,7 +1328,7 @@ ont abouti. Ce n'est pas prouvé.
 
 #### PERF 3.9 Petites allocations dans les chemins chauds (P3)
 
-La règle « aucune allocation dans tick/render » (CLAUDE.md) n'est pas tenue partout. Les montants sont faibles :
+La règle « aucune allocation dans tick/render » (règles du projet) n'est pas tenue partout. Les montants sont faibles :
 
 | Section | Allocation | Remarque |
 |---|---|---|
@@ -1448,7 +1449,7 @@ Mesurée sur ce PC le 24 octobre 2026, avant tout changement :
 | `LevelZeroGoldenTest` | 15 empreintes inchangées |
 | Benchmark de génération (ce PC) | layout froid 0,319 ms/chunk, chaud 0,021, layout + écriture 0,198 (0,129 sur le PC de référence) |
 | Banc client des portails | chiffres de la partie PERF, scènes S0 à S7 (iGPU, la puce Intel) et R0 à R6 (RTX), définies en PERF 1 |
-| Contrats de comportement | `docs/PORTALS.md` (en jeu, protocole, limites), pièges de `CLAUDE.md`, règles d'or de `docs/GUIDE.md` |
+| Contrats de comportement | `docs/PORTALS.md` (en jeu, protocole, limites), pièges des règles du projet, règles d'or de `docs/GUIDE.md` |
 
 La qualité se juge sur neuf dimensions, chacune avec son oracle :
 
@@ -1461,7 +1462,7 @@ La qualité se juge sur neuf dimensions, chacune avec son oracle :
 | (e) Compatibilité réseau | format des payloads |
 | (f) Performance | banc et moniteur |
 | (g) Règles du dépôt | ASCII, traductions, aucun autre mod nommé, documentation |
-| (h) Compatibilité en production | chargeurs plus anciens, Iris, mods de terrain |
+| (h) Compatibilité en production | chargeurs plus anciens, mod de shaders, mods de terrain |
 | (i) Robustesse sur un monde déjà joué | triple passage des tests en jeu en CI |
 
 ### NR 2. Les angles morts des garde-fous actuels
@@ -1473,7 +1474,7 @@ Ce qu'un changement peut casser aujourd'hui **sans que le build ne rougisse** :
 2. **Le lancement de dev** : les propriétés `-P…` transmises à `runClient` et le chargement rapide `quickPlayWorld` ne
    sont exercés par aucun test.
 3. **Le JAR de production** : le remapping, la refmap, le chargeur minimal déclaré (`>=0.16.9`) et les versions de Mixin
-   et de MixinExtras ne sont essayés qu'à la main. L'épisode `@Redirect` de CLAUDE.md en est la preuve.
+   et de MixinExtras ne sont essayés qu'à la main. L'épisode `@Redirect`, consigné dans les règles du projet, en est la preuve.
 4. **Les sauvegardes** : le format est testé par morceaux (`PortalSettingsTest` « le format est stable », relectures
    NBT), mais aucune sauvegarde réelle d'une version publiée ne sert de référence. Celles de la 0.10.0 sont relevées
    depuis (REF 6), pas encore dans les tests.
@@ -1481,7 +1482,7 @@ Ce qu'un changement peut casser aujourd'hui **sans que le build ne rougisse** :
    n'existe : un client et un serveur de versions différentes du mod se connectent, puis échouent au décodage sans
    message clair. Les octets de la 0.10.0 sont relevés depuis (REF 5), pas encore dans les tests.
 6. **La performance** : aucun budget automatique, et le moniteur fausse lui-même ses « images lentes » (PERF 3.8).
-7. **Les autres mods** (Iris, mods de terrain) : matrice manuelle seulement.
+7. **Les autres mods** (mod de shaders, mods de terrain) : matrice manuelle seulement.
 8. **Les garde-fous eux-mêmes** : si un remaniement du build débranche une vérification (couverture retirée de `check`,
    une classe qui glisse dans un chemin exclu), le build reste vert, et même plus vert qu'avant. Les listes et planchers
    qui permettront de le vérifier sont relevés (REF 1 et 7).
@@ -1511,7 +1512,7 @@ puis la condition ou le garde-fou nécessaire (G1 à G12, définis en section 4)
 - **Accent de « Néon » dans `fr_fr.json`** (REVUE 1.4.11). Seul le texte affiché change. `ModRegistriesTest` vérifie la
   présence des clés, pas leur texte. Sans risque pour la qualité, mais c'est un texte visible qui change : décision de
   l'auteur (5.4).
-- **Documentation : CONTRIBUTING, skills, en-tête d'AUDIT, phrase de CLAUDE.md sur le socle, nombre de `VertexBuffer`**
+- **Documentation : CONTRIBUTING, skills, en-tête d'AUDIT, phrase des règles du projet sur le socle, nombre de `VertexBuffer`**
   (REVUE 1.4.x). Rien côté code. Ne pas toucher aux specs de l'auteur (`BACKROOMS_CONTENT_RULES.md`,
   `docs/backrooms/**`, `INDEX.md`) : on signale, on ne corrige pas.
 
@@ -1586,9 +1587,9 @@ changement visible, à décider par l'auteur (5.4).
 | Ressources générées par datagen (REVUE 3.8) | Un JSON généré qui diffère de l'actuel : modèle, état de bloc ou tag faux, **visible en jeu seulement** | Comparer le contenu JSON (sémantique) de chaque fichier généré à l'existant avant de basculer. `ModRegistriesTest` et `ModDatapackLoadingTest` restent | **Sûr si…** |
 | Fichier de configuration pour les joueurs (REVUE 3.14) | Les valeurs par défaut ; **la priorité des `-D`** (la CI règle le cooldown des tests en jeu par `-D`) ; un fichier absent | Défauts identiques (`ModConfigTest`), `-D` prioritaire sur le fichier (test), fichier absent égal à aujourd'hui | **Sûr si…** |
 | Icône et contact dans `fabric.mod.json` (REVUE 3.11) | `verifyJarContents` refuse une icône à la racine du JAR (bruyant) | La mettre sous `assets/gtgs_backrooms/` | **Sans risque** |
-| Pièges de CLAUDE.md déplacés dans `docs/PIEGES.md` (REVUE 3.13) | **Les sessions d'IA ne liraient plus les pièges** : CLAUDE.md est chargé d'office, pas `docs/` | Voir 3.8 | **À reformuler** |
+| Pièges des règles du projet déplacés dans `docs/PIEGES.md` (REVUE 3.13) | **Les sessions de développement ne liraient plus les pièges** : les règles du projet sont chargées d'office, pas `docs/` | Voir 3.8 | **À reformuler** |
 | `.vscode/settings.json` (REVUE 1.5.1, 3.15) | Rien côté code | Build complet | **Sans risque** |
-| Critères de JVM du démon (REVUE 1.5.2, 3.15) | **Proposition corrigée le 25 octobre** (5.3) : un critère « Java 25 » exigerait un JDK 25 sur chaque machine et dans la CI, qui n'installe que le 21 ; le build ne se lancerait plus avec Java 21 seul, ce que promet CLAUDE.md | Critère 21 tant que Loom reste en 1.17 ; 25 seulement dans le lot qui monte Loom en 1.18+ et adapte la CI | **Sûr si…** |
+| Critères de JVM du démon (REVUE 1.5.2, 3.15) | **Proposition corrigée le 25 octobre** (5.3) : un critère « Java 25 » exigerait un JDK 25 sur chaque machine et dans la CI, qui n'installe que le 21 ; le build ne se lancerait plus avec Java 21 seul, ce que promettent les règles du projet | Critère 21 tant que Loom reste en 1.17 ; 25 seulement dans le lot qui monte Loom en 1.18+ et adapte la CI | **Sûr si…** |
 
 #### NR 3.6 Performance (PERF)
 
@@ -1597,14 +1598,14 @@ changement visible, à décider par l'auteur (5.4).
 | Résolution asynchrone de l'arrivée (PERF 3.2) | **Le moment** où le portail apparaît : aujourd'hui au tick de la pose (après le gel), ensuite quand les chunks d'arrivée sont prêts ; entre les deux, le cadre n'est pas encore un portail (5.4). **Le résultat** (même arrivée qu'avant ?). Les tickets (fuite de chunks chargés). Les tests en jeu bornés en ticks. **Trois fichiers de tests en jeu appellent `PortalTargets.resolve` et `arrive` de façon synchrone** | Garder **le noyau de recherche synchrone et pur, inchangé**, oracle de ces tests ; n'ajouter qu'une couche qui attend les chunks. **G3** (arrivées de référence relevées avant) ; **G4** (aucune génération synchrone, aucun ticket restant). Allonger une borne de ticks est permis, affaiblir une assertion non | **Sûr si…**, puis décision de l'auteur sur le délai d'apparition (5.4) |
 | Charge processeur du moniteur lue hors des threads de jeu (PERF 3.8) | `ModPerformanceMonitorTest` (format `cpuProc=n/a cpuSys=n/a`, `Snapshot.capture(null)`) ; un thread qui survit dans les tests ; la couverture du code du thread | Garder l'API et le format ; un échantillonneur injectable et déterministe en test ; thread démon arrêté avec le moniteur | **Sûr si…** |
 | Choix du GPU documenté (PERF 3.1) | Rien | — | **Sans risque** |
-| Brouillard et ciel des vues une fois par tick (PERF 3.3) | **Conflit avec CLAUDE.md** : « une décision de rendu se prend sur la position affichée, jamais sur celle du tick ». **Conflit avec la règle d'or 5** (zéro couture). La couleur, échantillonnée à la position de la caméra, marcherait par paliers de 50 ms, avec un saut possible à la bascule | Voir 3.8, corrigé en 5.3 : seule une réutilisation à entrées identiques ne change aucune image | **À reformuler** |
-| Budget de vues, imbrication réglable, grille réduite (PERF 3.4) | Une imbrication coupée change l'image : le cadre imbriqué devient transparent, comme au-delà d'un niveau aujourd'hui (`docs/PORTALS.md`), ou sombre si on le remplit. **Une grille réduite touche des pièges connus** : la détection d'un mod de terrain par `getViewDistance() == 0`, le rendu complet sous Iris (`renderWhole`), `ViewSectionWalker` | Le défaut doit rester le comportement actuel ; une option seulement ; la grille réduite est une **recherche** à prototyper sur les trois chemins de rendu (G11) | **À reformuler** |
+| Brouillard et ciel des vues une fois par tick (PERF 3.3) | **Conflit avec les règles du projet** : « une décision de rendu se prend sur la position affichée, jamais sur celle du tick ». **Conflit avec la règle d'or 5** (zéro couture). La couleur, échantillonnée à la position de la caméra, marcherait par paliers de 50 ms, avec un saut possible à la bascule | Voir 3.8, corrigé en 5.3 : seule une réutilisation à entrées identiques ne change aucune image | **À reformuler** |
+| Budget de vues, imbrication réglable, grille réduite (PERF 3.4) | Une imbrication coupée change l'image : le cadre imbriqué devient transparent, comme au-delà d'un niveau aujourd'hui (`docs/PORTALS.md`), ou sombre si on le remplit. **Une grille réduite touche des pièges connus** : la détection d'un mod de terrain par `getViewDistance() == 0`, le rendu complet sous un pack de shaders (`renderWhole`), `ViewSectionWalker` | Le défaut doit rester le comportement actuel ; une option seulement ; la grille réduite est une **recherche** à prototyper sur les trois chemins de rendu (G11) | **À reformuler** |
 | Monde quitté ramené à la fenêtre, mondes inutilisés libérés (PERF 3.5) | **Zéro couture** : un retour rapide verrait un monde vidé (image noire, chunks manquants) ; même reformulé, un retour tardif se reconstruit (5.3) | Voir 3.8 et 5.4 | **À reformuler**, puis décision de l'auteur |
 | Chunks du monde quitté gardés plus longtemps (PERF 3.7) | La mémoire (contraire de la proposition précédente) ; un chunk périmé. Les trois tests en jeu des chunks tenus protègent le serveur | Arbitrer avec la proposition précédente (on ne peut pas maximiser les deux) ; étendre les tests en jeu des chunks tenus à la nouvelle durée | **Sûr si…** (après arbitrage) |
 | Allocations résiduelles (PERF 3.9) | Le comportement de classes **client non mesurées** (`PortalSightReporter`, `StraddlingEntityRenderer`, `RemoteWorld`). `PortalViewTransform.aim`, ajouté depuis à la liste, est dans une classe mesurée | D'abord extraire la logique, mesurée (3.5) ; **G5** (zéro allocation) ; G6 | **Sûr si…** |
 | Création du monde distant étalée ou anticipée (PERF 3.10) | Images vides au début d'une vue si on étale ; mémoire pour des portails jamais regardés si on anticipe | Corrigé en 5.3 : anticiper seulement ; prototype ; G6 sur « apparition d'un portail » | **Sûr si…** (anticipation, prototype validé) |
 | Options pour les joueurs (PERF 3.4, 3.6) | Rien si les valeurs par défaut sont celles d'aujourd'hui | Tests des défauts | **Sans risque** |
-| Monde du joueur non dessiné derrière un grand cadre (PERF 3.6) | Ordre des translucides, entités à cheval sur le cadre, troisième personne, chemin Iris | Recherche ; G6 et G11. La variante par pré-passe de profondeur (EXPLO 3.3, GPU2) vise une image identique : prouvée par G6 sur V5, elle reste dans les lots | **Risqué**, à prototyper |
+| Monde du joueur non dessiné derrière un grand cadre (PERF 3.6) | Ordre des translucides, entités à cheval sur le cadre, troisième personne, chemin du mod de shaders | Recherche ; G6 et G11. La variante par pré-passe de profondeur (EXPLO 3.3, GPU2) vise une image identique : prouvée par G6 sur V5, elle reste dans les lots | **Risqué**, à prototyper |
 | Cooldown de traversée par défaut non nul (PERF 3.7) | **Le jeu** : un joueur ne peut plus enchaîner aller et retour. Les tests en jeu règlent déjà leur cooldown par `-D` (3 ticks) | Garder 0 par défaut ; une autre valeur s'annonce dans le CHANGELOG | **Changement voulu**, hors des lots sans régression (5.4) |
 | Cadre trop haut pour un étage du Level 0 (PERF 3.12) | **Les nouvelles arrivées** dans le Level 0 changent (voulu). Les portails existants gardent leur arrivée sauvée (`DestX/Y/Z`). Les empreintes ne bougent pas (génération intacte) | Changement voulu : annoncé dans le CHANGELOG, attentes de `LevelZeroArrivalTest` étendues, pas réécrites | **Changement voulu**, hors des lots sans régression (5.4) |
 
@@ -1615,7 +1616,7 @@ changement visible, à décider par l'auteur (5.4).
   - les noms de champs lus par réflexion dans les tests en jeu (`"worlds"`, `"goalSelector"`) ;
   - les cibles de mixins écrites en chaînes (`@Inject(method = …)`, `@At(target = …)`) ;
   - les `@Accessor` nommés ;
-  - les noms vanilla cités dans CLAUDE.md, PORTALS.md et les commentaires.
+  - les noms vanilla cités dans les règles du projet, PORTALS.md et les commentaires.
 
   Ce qui protège déjà :
   - `MixinTargetsTest` et les tests en jeu (bruyants) ;
@@ -1652,7 +1653,7 @@ octobre (5.3), qui l'emporte. Les lignes « À reformuler » des tableaux 3.3 à
    (5.4).
 2. **Budget de vues (PERF 3.4).** Une option **désactivée par défaut**, ou dont la valeur par défaut reproduit le
    comportement actuel (un niveau d'imbrication). La réduction de la grille est un sujet de recherche, pas un correctif :
-   elle passe par un prototype validé sur le chemin vanilla, avec un mod de terrain, et sous Iris (G11).
+   elle passe par un prototype validé sur le chemin vanilla, avec un mod de terrain, et sous le mod de shaders (G11).
 3. **Monde quitté allégé (PERF 3.5).** N'alléger qu'après un délai sans retour, et seulement loin de tout portail vers
    ce monde. Le délai est à mesurer : bien au-delà d'un aller-retour réel. Garder toujours la fenêtre du portail.
    Prouver :
@@ -1665,9 +1666,9 @@ octobre (5.3), qui l'emporte. Les lignes « À reformuler » des tableaux 3.3 à
 4. **Tests en jeu joués une seule fois en CI (REVUE 1.3.6).** Seulement si une étape **explicite** rejoue les tests en
    jeu sur le monde déjà joué (G12). Sinon, garder le triple passage et l'écrire comme une règle, pas comme un effet de
    bord.
-5. **Pièges de CLAUDE.md (REVUE 3.13).** Soit les garder dans CLAUDE.md, soit les importer depuis CLAUDE.md par
-   `@docs/PIEGES.md` (Claude Code charge les imports, mais le coût en contexte reste le même). Un simple renvoi en prose
-   fait perdre ce savoir aux sessions qui ne suivent pas le lien.
+5. **Pièges des règles du projet (REVUE 3.13).** Soit les garder dans les règles du projet, soit les y importer par
+   `@docs/PIEGES.md` (les sessions de développement chargent les imports, mais le coût en contexte reste le même). Un
+   simple renvoi en prose fait perdre ce savoir aux sessions qui ne suivent pas le lien.
 6. **`UtilityClassesTest` (REVUE 3.9).** Garder les constructeurs qui refusent l'appel (garantie actuelle), et ne
    remplacer que la **liste à la main** par une découverte des classes, sans perte de garantie.
 
@@ -1696,13 +1697,13 @@ octobre (5.3), qui l'emporte. Les lignes « À reformuler » des tableaux 3.3 à
 | **G2** | **Octets de référence des payloads** et numéro de protocole | Un client et un serveur qui ne se comprennent plus | Toute PR qui touche `sync/` ; noms Mojang ; portage | Un test qui encode chaque payload d'exemple et compare aux octets versionnés (en plus de l'aller-retour). Un changement voulu va avec un numéro de protocole incrémenté. Ce numéro, vérifié à la connexion avec un message clair, est une fonctionnalité nouvelle, à décider. Octets relevés : REF 5 |
 | **G3** | **Arrivées de référence** (test en jeu) | Une destination différente après un remaniement | PERF 3.2 ; REVUE 3.2 ; PERF 3.12 | Cas fixes (graine 0 du serveur de test) : Level 0 prêté, colonne du Nether, vide de l'End (plateforme), surface, sortie fixée, tirage au sort. L'arrivée attendue (position, orientation) est relevée sur le code actuel |
 | **G4** | **Pas de génération synchrone à la pose** (test en jeu, après PERF 3.2) | Le retour du gel serveur | PERF 3.2 | Au tick de la pose vers une zone jamais générée, le chunk d'arrivée n'est pas encore chargé ; la destination arrive ensuite ; plus aucun ticket de recherche une fois résolue. Une assertion structurelle, sans chronomètre (le serveur de test tique sans attendre) |
-| **G5** | **Zéro allocation mesurée** (tests unitaires) | Le retour d'allocations dans les chemins chauds (règle de CLAUDE.md) | PERF 3.3, 3.9 ; découpages | `ThreadMXBean.getThreadAllocatedBytes` autour des fonctions pures chaudes, après échauffement : attendu 0 octet. Limite : l'analyse d'échappement du JIT peut masquer une allocation, pas en inventer une. En complément, un relevé statique du bytecode, qui doit nommer les méthodes mémoïsées : REF 4 |
+| **G5** | **Zéro allocation mesurée** (tests unitaires) | Le retour d'allocations dans les chemins chauds (règles du projet) | PERF 3.3, 3.9 ; découpages | `ThreadMXBean.getThreadAllocatedBytes` autour des fonctions pures chaudes, après échauffement : attendu 0 octet. Limite : l'analyse d'échappement du JIT peut masquer une allocation, pas en inventer une. En complément, un relevé statique du bytecode, qui doit nommer les méthodes mémoïsées : REF 4 |
 | **G6** | **Banc client scripté** : chiffres et captures | Une régression d'image ou de performance côté client (angle mort 1) | Toute PR qui touche `client/`, `mixin/client/` ou le rendu ; montées d'outils ; portage | Le monde « Portal Lab », rejoué par touches postées à la fenêtre du banc : les chiffres sur les scènes S0 à S7 et R0 à R6 de PERF 1, les captures sur les scènes V0 à V7 (5.2). HUD caché (F1), captures `PrintWindow`, comparées aux références avec une tolérance par pixel. Chiffres du moniteur comparés à la référence (±10 %), **après** la correction de PERF 3.8, sans quoi les « images lentes » ne veulent rien dire. Sur le PC de l'auteur (référence de PORTALS.md) et, si possible, sur ce portable. Les scripts sont à verser au dépôt, décision de l'auteur (voir `docs/TESTING.md`). Protocole, bruit mesuré et critère d'acceptation : section 5.2 |
 | **G7** | **Test de fumée en production** | Un JAR de production qui ne démarre pas (remapping, refmap, chargeur ancien, point d'entrée client) | Loom, Loader, Mixin, noms Mojang, source sets séparés, déplacements de paquets, portage | Loom 1.17 a déjà les tâches `ClientProductionRunTask` et `ServerProductionRunTask`. Le client de production (qui contient le serveur intégré, donc aussi les mixins communs) se lance avec le JAR construit, **avec le chargeur minimal déclaré puis avec le chargeur courant**, jusqu'au chargement d'un monde, puis le journal est lu (aucune erreur de mixin). En CI Linux sous écran virtuel, ou en local. Pas de serveur de production : il faudrait accepter l'EULA, ce que FINALCHECK interdit |
 | **G8** | **Contrôle des garde-fous** | Un garde-fou débranché ou affaibli en silence (angle mort 8) | `build-logic`, montées d'outils, source sets séparés, couverture, API de lancement | (a) le graphe de `./gradlew build --dry-run` contient `checkstyleMain`, `checkstyleTest`, `checkstyleGametest`, `test`, `runGameTest`, `jacocoCoverageVerification`, `verifyJarContents` ; (b) planchers : au moins 749 exécutions unitaires, 99 tests en jeu, `build/junit.xml` présent ; (c) la liste des classes exclues de la couverture est égale à la liste approuvée de TESTING.md ; (d) à chaque modification du build, un passage « canari » en local : une branche jetable qui introduit une violation de chaque sorte (branche non couverte, ligne non ASCII, `@Redirect`, fichier parasite dans le JAR, clé de traduction manquante, empreinte modifiée) doit faire échouer le build. Données : REF 1 et 7 |
 | **G9** | **Mutation testing** (rapport, pas un verrou au départ) | Remanier en croyant être protégé par des tests qui n'assertent rien | Découpage des classes serveur, extraction de logique client | Sur les paquets purs (génération, `PortalFacing`, transition, logique de synchronisation) : les mutants survivants désignent les tests à renforcer **avant** le remaniement |
 | **G10** | **Tests d'architecture** | Une dépendance interdite qui réapparaît | Structure | REVUE 3.3. Les cinq règles sont vraies aujourd'hui ; listes blanches : REF 2 |
-| **G11** | **Matrice de compatibilité** (manuelle) | Une régression avec un mod de terrain ou un pack de shaders | Rendu des vues, montées de Loader et de Loom, portage | Vanilla, mod de terrain, Iris avec deux packs, sur le banc de l'auteur (GUIDE section 8) ; une ligne par PR client |
+| **G11** | **Matrice de compatibilité** (manuelle) | Une régression avec un mod de terrain ou un pack de shaders | Rendu des vues, montées de Loader et de Loom, portage | Vanilla, mod de terrain, mod de shaders avec deux packs, sur le banc de l'auteur (GUIDE section 8) ; une ligne par PR client |
 | **G12** | **Rejeu explicite sur monde déjà joué** | La perte de la robustesse sur monde déjà joué | Toute modification de la CI | Une étape de CI qui relance `runGameTest` sur le dossier de run laissé par le passage précédent, au lieu d'un effet de bord |
 
 #### NR 4.3 L'ordre des lots, et la porte de sortie de chacun
@@ -1827,7 +1828,7 @@ Telles qu'elles étaient écrites, ces cinq propositions changeaient quelque cho
 2. **Critère de JVM du démon Gradle (REVUE 1.5.2 et 3.15).**
    - Problème : un critère « Java 25 » exigerait un JDK 25 sur chaque machine (ou son téléchargement par Gradle, qu'il
      faudrait configurer) et dans la CI, qui n'installe que le 21. Le build ne se lancerait plus là où seul Java 21 est
-     installé, alors que CLAUDE.md promet qu'un seul JDK suffit.
+     installé, alors que les règles du projet promettent qu'un seul JDK suffit.
    - Correction : critère 21 tant que Loom reste en 1.17. Passer à 25 seulement dans le lot qui monte Loom en 1.18 ou
      plus, avec la CI et la doc.
 3. **Brouillard et ciel des vues (PERF 3.3 ; reformulation 1 de 3.8).**
@@ -2266,7 +2267,7 @@ pas été essayée**. C'est la première vérification de G1.
    - Le principe du mod de physique convient à des milliers de corps calculés à chaque tick, pas à ce profil (section 4).
 3. **D'autres threads, oui, mais surtout côté serveur** : la recherche d'arrivée (gel de 0,7 à 2,9 s) et la mise en
    paquets des chunks envoyés aux vues. Côté client, le parcours des sections d'une vue doit rester dans l'image :
-   asynchrone, il ferait clignoter la vue (piège déjà documenté dans `CLAUDE.md`).
+   asynchrone, il ferait clignoter la vue (piège déjà documenté dans les règles du projet).
 4. **Un portail s'affiche mal dans huit cas**, et la distance elle-même n'en cause presque aucun (section 2). Six
    donnent du noir, la couleur de brouillard du Level 0 tant que rien n'est dessiné :
    - données pas encore reçues : le serveur envoie 8 chunks toutes les 250 ms ;
@@ -2422,8 +2423,8 @@ fonction d'OpenGL 3.3 ou plus récente n'y est donc disponible que par son exten
 |---|---|---|---|
 | Serveur : recherche d'arrivée hors du thread (PERF 3.2) | Oui, sauf le moment d'apparition | Le cadre devient portail plus tard (NR 5.4) | Décision de l'auteur |
 | Serveur : mise en paquets des chunks sur un thread de travail. Copie des sections sous le verrou du serveur, sérialisation à part, envoi dans l'ordre | Oui, si l'ordre est gardé | Un changement de bloc relayé avant son chunk serait perdu, et deux threads lisent le monde | À prototyper, avec un test de l'ordre |
-| Client : application des chunks reçus hors du thread de rendu | Non garanti | Rompt le chemin `readLightData` dont dépendent les mods de terrain (CLAUDE.md) | Écarté |
-| Client : parcours des sections d'une vue en arrière-plan | Non | Une image de retard, d'où des vues qui clignotent : c'est exactement le culling asynchrone de vanilla, écarté pour cette raison (CLAUDE.md) | Écarté |
+| Client : application des chunks reçus hors du thread de rendu | Non garanti | Rompt le chemin `readLightData` dont dépendent les mods de terrain (règles du projet) | Écarté |
+| Client : parcours des sections d'une vue en arrière-plan | Non | Une image de retard, d'où des vues qui clignotent : c'est exactement le culling asynchrone de vanilla, écarté pour cette raison (règles du projet) | Écarté |
 | Client : brouillard et ciel calculés en arrière-plan | Non | Une image de retard | Écarté ; seule la réutilisation à entrées identiques reste (NR 5.3) |
 | Client : préparation du monde distant hors de l'image | En partie | Les objets GL se créent sur le thread de rendu ; seuls les objets Java peuvent partir | Remplacé par la création anticipée |
 

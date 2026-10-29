@@ -3,7 +3,7 @@
   "id": "gtgs_backrooms_gametest",
   "version": "1.0.0",
   "name": "GTG's Backrooms - tests en jeu",
-  "description": "Tests en jeu du mod, charges uniquement par ./gradlew runGameTest ; jamais dans le JAR du mod.",
+  "description": "Tests en jeu du mod (serveur : ./gradlew runGameTest ; client : ./gradlew runClientTest) ; jamais dans le JAR du mod.",
   "environment": "*",
   "entrypoints": {
     "fabric-gametest": [
@@ -21,8 +21,14 @@
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalDestinationGameTests",
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalArrivalReferenceGameTests",
       "com.gtgpuke.gtgsbackrooms.gametest.core.portal.PortalWandGameTests"
+    ],
+    "client": [
+      "com.gtgpuke.gtgsbackrooms.gametest.client.ClientTestMod"
     ]
   },
+  "mixins": [
+    "gtgs_backrooms_gametest.mixins.json"
+  ],
   "depends": {
     "gtgs_backrooms": "*",
     "fabric-gametest-api-v1": "*"

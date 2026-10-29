@@ -30,8 +30,10 @@ public abstract class MixinFramebuffer {
 
     @Inject(method = "initFbo", at = @At("RETURN"))
     private void backrooms$attachStencil(int width, int height, boolean getError, CallbackInfo ci) {
+        // Le stencil tant que le pilote le tient, quelles que soient les vues de l'image (coupees sous un pack ou apres une
+        // erreur) : le post du look s'en sert aussi, et un framebuffer recree sans lui le perdrait pour la suite.
         if (!ModConfig.ENABLE_PORTAL_FEATURE || !this.useDepthAttachment || this.depthAttachment <= 0
-                || !PortalRenderState.remoteRenderingAvailable()) {
+                || !PortalRenderState.stencilAvailable()) {
             return;
         }
         int previousFramebuffer = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);

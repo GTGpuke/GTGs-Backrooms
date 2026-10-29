@@ -20,6 +20,9 @@ import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 import net.minecraft.world.dimension.DimensionType;
 
+import net.fabricmc.fabric.api.event.Event;
+import net.fabricmc.fabric.api.event.EventFactory;
+
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
@@ -36,6 +39,18 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.MinecraftClientAccessor;
  * le serveur repart lui aussi de zero a ce moment-la, les deux cotes restent donc d'accord.
  */
 public final class RemoteWorldRegistry {
+
+    /**
+     * Point d'acces : un monde client ne sert plus (monde distant libere, monde principal remplace par vanilla au respawn
+     * ou a un changement de dimension, fin des mondes distants). Ce que les autres systemes tiennent par monde client
+     * (index des neons, copie du monde pour le son) s'y oublie, sans quoi le monde resterait retenu jusqu'a la
+     * deconnexion.
+     */
+    public static final Event<WorldForgotten> WORLD_FORGOTTEN = EventFactory.createArrayBacked(WorldForgotten.class, listeners -> world -> {
+        for (WorldForgotten listener : listeners) {
+            listener.onForgotten(world);
+        }
+    });
 
     private static final Map<RegistryKey<World>, RemoteWorld> WORLDS = new HashMap<>();
     /** Memes mondes que {@link #WORLDS}, pour les parcourir a chaque tick sans iterateur. */
@@ -222,6 +237,7 @@ public final class RemoteWorldRegistry {
         }
         ClientPortalIndex.forget(remote.world());
         ViewLightmaps.forget(remote.world());
+        WORLD_FORGOTTEN.invoker().onForgotten(remote.world());
         for (int i = MIRRORS.size() - 1; i >= 0; i--) {
             RemoteWorld mirror = MIRRORS.get(i);
             if (mirror.world() == remote.world()) {
@@ -245,6 +261,9 @@ public final class RemoteWorldRegistry {
         if (currentMainWorld != mainWorld) {
             // Vanilla a remplace le monde principal (respawn, changement de dimension) : l'ancien n'existe plus pour personne.
             ClientPortalIndex.forget(mainWorld);
+            if (mainWorld != null) {
+                WORLD_FORGOTTEN.invoker().onForgotten(mainWorld);
+            }
             dispose();
             mainWorld = currentMainWorld;
         }
@@ -383,6 +402,7 @@ public final class RemoteWorldRegistry {
         for (int i = 0; i < WORLD_LIST.size(); i++) {
             RemoteWorld remote = WORLD_LIST.get(i);
             ClientPortalIndex.forget(remote.world());
+            WORLD_FORGOTTEN.invoker().onForgotten(remote.world());
             if (remote.renderer() != vanillaRenderer) {
                 remote.dispose();
             } else {
@@ -424,5 +444,13 @@ public final class RemoteWorldRegistry {
             MIRRORS.get(i).dispose();
         }
         MIRRORS.clear();
+    }
+
+    /** Un monde client ne sert plus. */
+    @FunctionalInterface
+    public interface WorldForgotten {
+
+        /** @param world monde oublie, a ne plus retenir */
+        void onForgotten(ClientWorld world);
     }
 }

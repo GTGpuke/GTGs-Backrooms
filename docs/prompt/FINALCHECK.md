@@ -15,9 +15,10 @@ de mémoire.
 - Ne pas toucher à la génération du Level 0 sans demande explicite.
 - Ne pas modifier mes specs : `docs/BACKROOMS_CONTENT_RULES.md`, `docs/backrooms/**`, `INDEX.md`. Une
   incohérence s'y signale, elle ne s'y corrige pas. `docs/GUIDE.md` se corrige, écart consigné (sa règle d'or 11).
-- Aucune mention d'un autre mod dans le code, les tests ou la doc, et aucun nom ou structure de code calqué sur un autre
-  mod. Les noms à chercher sont dans la mémoire de l'assistant (« Pas d'autre mod ») ; ils ne s'écrivent pas dans le
-  dépôt, pas même ici.
+- Un autre mod ne se nomme que dans son module de compatibilité (`compat/<mod>/`), ses messages (clés `compat.*`) et la
+  doc qui décrit ce module (décision du 29 octobre 2026) ; nulle part ailleurs dans le code, les tests ou la doc, et
+  aucun nom ou structure de code calqué sur un autre mod. Les noms à chercher sont dans la mémoire de l'assistant
+  (« Pas d'autre mod ») ; ils ne s'écrivent pas dans le dépôt, pas même ici.
 - Client de développement :
   - ne rien lancer si un client de GTGpuke tourne déjà ;
   - les scripts ne visent et n'arrêtent que le PID qu'ils ont lancé, et aucun autre processus n'est tué ;
@@ -178,8 +179,9 @@ grep -rn "import net.minecraft.client" src/main/java --include=*.java | grep -v 
 grep -rniE "<noms de la mémoire « Pas d'autre mod »>" src docs CLAUDE.md README.md
 find src -type d -empty; find src -name ".gitkeep"
 ```
-- [ ] Toutes ces commandes ne renvoient rien. Exception : les specs de GTGpuke (`BACKROOMS_CONTENT_RULES.md`,
-      `INDEX.md`, `docs/backrooms/**`) et `docs/GUIDE.md` (section 8, compatibilité), qui citent d'autres mods.
+- [ ] Toutes ces commandes ne renvoient rien. Exceptions : les specs de GTGpuke (`BACKROOMS_CONTENT_RULES.md`,
+      `INDEX.md`, `docs/backrooms/**`), et les modules de compatibilité (`compat/<mod>/`, leurs clés `compat.*`, leur
+      dépendance de compilation et la doc qui les décrit).
 
 ## 5. Vérification en jeu (dès qu'un mixin, du code client ou le rendu est touché)
 

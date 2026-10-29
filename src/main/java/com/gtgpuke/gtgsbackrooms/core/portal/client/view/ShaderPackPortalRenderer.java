@@ -30,16 +30,21 @@ import net.minecraft.entity.Entity;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
+import com.gtgpuke.gtgsbackrooms.core.audio.client.CueTracker;
+import com.gtgpuke.gtgsbackrooms.core.audio.cue.CueClock;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorld;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.StraddlingEntityRenderer;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookPost;
+import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
+import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
 import com.gtgpuke.gtgsbackrooms.mixin.client.CameraAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.MinecraftClientAccessor;
 
 /**
- * Vues des portails sous un pack de shaders ({@code IrisCompat}) : apres l'image du monde du joueur, que le mod de
+ * Vues des portails sous un pack de shaders ({@link ShaderPackState}) : apres l'image du monde du joueur, que le mod de
  * shaders a composee et ecrite a l'ecran, plutot qu'au milieu de son rendu. Un pack dessine le monde dans son propre
  * pipeline (geometrie dans ses tampons, eclairage differe, composition, passe finale ecrite dans la texture de couleur
  * de l'ecran sans test de stencil) : une vue dessinee au milieu n'y serait qu'une surface de plus, eclairee comme le
@@ -185,6 +190,8 @@ public final class ShaderPackPortalRenderer {
         if (drawn == null) {
             return;
         }
+        // La vue couvre l'ecran : le look de sa dimension sur tout l'ecran, avant ses portails imbriques.
+        LookPost.renderUnderShaderPackView(client, view.world().getRegistryKey(), LookPost.NO_FRAME);
         // La passe finale du pack a pu laisser son framebuffer lie : le stencil est celui de l'ecran.
         client.getFramebuffer().beginWrite(false);
         GL11.glEnable(GL11.GL_STENCIL_TEST);
@@ -272,6 +279,8 @@ public final class ShaderPackPortalRenderer {
             if (drawn == null) {
                 FrameAreaRenderer.fill(portal, cameraPos, positionMatrix, 0.0f, 0.0f, 0.0f);
             } else {
+                // Le look de la dimension vue, sur les pixels du cadre, avant les vues imbriquees qui remplacent les leurs.
+                LookPost.renderUnderShaderPackView(client, view.world().getRegistryKey(), value);
                 renderNested(client, portal, view, remoteCameraPos, remoteLook, drawn, value, tickCounter, camera, lightmap, projection);
             }
         } finally {
@@ -360,6 +369,8 @@ public final class ShaderPackPortalRenderer {
             if (renderView(client, innerView, tickCounter, camera, nestedCamera, innerCameraPos, NESTED_POSITION, projection, lightmap, inner,
                     remoteCameraPos, PortalStencilRenderer.reducedDetail(inner, remoteCameraPos, projection)) == null) {
                 FrameAreaRenderer.fill(inner, remoteCameraPos, VIEW_POSITION, 0.0f, 0.0f, 0.0f);
+            } else {
+                LookPost.renderUnderShaderPackView(client, innerView.world().getRegistryKey(), nestedValue);
             }
         } finally {
             limitedToFrame = false;
@@ -437,9 +448,16 @@ public final class ShaderPackPortalRenderer {
         Entity hidden = camera.isThirdPerson() ? null : mainCameraEntity;
         // Une vue secondaire montre le monde du joueur : sa lightmap est deja celle des shaders.
         boolean ownLightmap = view.world() != mainWorld;
+        boolean looked = false;
         try {
             client.world = view.world();
             clientAccessor.backrooms$setWorldRenderer(view.renderer());
+            // Le look de la dimension vue, pour chaque shader vanilla que le rendu complet active.
+            LookState.push(LookProfiles.of(view.world().getRegistryKey()), viewCameraPos.x, viewCameraPos.y, viewCameraPos.z,
+                    CueClock.tick(view.world().getTime()));
+            // Sous un pack, la vue compte pour tout l'ecran au plafond de clignotement : prudent, son rectangle n'est pas tenu ici.
+            CueTracker.viewSeen(view.world().getRegistryKey().getValue(), 1.0f);
+            looked = true;
             // Le mod de shaders lit la lumiere et la couleur du ciel a l'entity camera, dans le monde courant : le portail
             // d'arrivee, dans le monde de la vue, tient ce role (le joueur y serait a des coordonnees quelconques).
             Entity arrival = arrivalEntity(view, portal);
@@ -477,6 +495,9 @@ public final class ShaderPackPortalRenderer {
             PortalRenderState.disableRemoteRendering("exception pendant le rendu distant sous un pack de shaders", exception);
             return null;
         } finally {
+            if (looked) {
+                LookState.pop();
+            }
             drawnView = null;
             drawnFrame = null;
             drawnFrameCamera = null;

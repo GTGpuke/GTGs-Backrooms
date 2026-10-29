@@ -5,7 +5,6 @@ import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.MinecraftClient;
 
-import com.gtgpuke.gtgsbackrooms.compat.iris.IrisCompat;
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 
 /**
@@ -29,7 +28,7 @@ public final class HandMask {
 
     /** Debut du dessin de la main du joueur : sous un pack, chaque pixel qu'elle couvre prend le bit de la main. */
     public static void begin() {
-        if (active || !ModConfig.ENABLE_PORTAL_FEATURE || !IrisCompat.shaderPackInUse() || PortalRenderState.isRendering()) {
+        if (active || !ModConfig.ENABLE_PORTAL_FEATURE || !ShaderPackState.inUse() || PortalRenderState.isRendering()) {
             return;
         }
         active = true;

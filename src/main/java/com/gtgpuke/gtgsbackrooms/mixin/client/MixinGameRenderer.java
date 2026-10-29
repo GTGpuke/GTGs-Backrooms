@@ -13,11 +13,13 @@ import net.minecraft.client.render.RenderTickCounter;
 
 import com.gtgpuke.gtgsbackrooms.core.portal.client.interaction.RemoteTargeting;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.transition.ClientPortalCrossing;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookFrame;
 
 /**
  * Avant chaque rendu du monde : si la camera vient de franchir un portail, le client bascule de monde
  * tout de suite, et l'image qui suit est deja celle de l'autre cote. Apres le raycast de visee : si le
- * regard traverse un portail avant sa cible, la cible est cherchee de l'autre cote.
+ * regard traverse un portail avant sa cible, la cible est cherchee de l'autre cote. Apres le rendu du monde,
+ * main comprise : le look redevient vanilla pour l'interface.
  */
 @Mixin(GameRenderer.class)
 public abstract class MixinGameRenderer {
@@ -29,6 +31,11 @@ public abstract class MixinGameRenderer {
     @Inject(method = "renderWorld", at = @At("HEAD"))
     private void backrooms$predictPortalCrossing(RenderTickCounter tickCounter, CallbackInfo ci) {
         ClientPortalCrossing.predictCrossing(tickCounter.getTickDelta(true));
+    }
+
+    @Inject(method = "renderWorld", at = @At("TAIL"))
+    private void backrooms$endLook(RenderTickCounter tickCounter, CallbackInfo ci) {
+        LookFrame.endWorld(this.client);
     }
 
     @Inject(method = "updateCrosshairTarget", at = @At("TAIL"))

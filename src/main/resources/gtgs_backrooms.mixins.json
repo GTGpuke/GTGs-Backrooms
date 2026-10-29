@@ -34,7 +34,13 @@
     "client.AbstractClientPlayerEntityAccessor",
     "client.MixinBuiltChunk",
     "client.MixinRebuildTask",
-    "client.MixinParticleManager"
+    "client.MixinParticleManager",
+    "client.MixinLightmapTextureManager",
+    "client.MixinBackgroundRenderer",
+    "client.MixinSoundEngine",
+    "client.SourceAccessor",
+    "client.MixinSource",
+    "client.WeightedSoundSetAccessor"
   ],
   "mixins": [
     "MixinServerChunkManager",

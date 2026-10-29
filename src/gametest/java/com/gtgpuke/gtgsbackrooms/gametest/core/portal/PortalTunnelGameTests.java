@@ -67,7 +67,7 @@ public final class PortalTunnelGameTests implements FabricGameTest {
         Vec3d entry = context.getAbsolute(new Vec3d(4.5, 1.0, 4.0));
         Vec3d arrival = context.getAbsolute(new Vec3d(14.5, 6.0, 4.0));
         BackroomsPortalEntity floor = spawn(world, entry, PortalFacing.UP, PortalFacing.DOWN, arrival);
-        // Des porte-armures : des corps qui tombent, sans IA qui les ferait deriver hors d'un cadre d'un bloc de large.
+        // Des porte-armures : des corps qui tombent, sans comportement qui les ferait deriver hors d'un cadre d'un bloc de large.
         ArmorStandEntity body = stand(world, entry.add(0.0, 4.0, 0.0), true);
         ArmorStandEntity beside = stand(world, context.getAbsolute(new Vec3d(6.5, 1.0, 4.0)), true);
         context.createTimedTaskRunner()

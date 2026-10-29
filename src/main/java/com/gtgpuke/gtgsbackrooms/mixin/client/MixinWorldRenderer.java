@@ -1,8 +1,6 @@
 package com.gtgpuke.gtgsbackrooms.mixin.client;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
-import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Final;
@@ -10,6 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import net.minecraft.client.MinecraftClient;
@@ -29,10 +28,12 @@ import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalStencilRenderer;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderPackPortalRenderer;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderPackState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewRenderStart;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorld;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.StraddlingEntityRenderer;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookFrame;
 
 /**
  * Points d'accroche du rendu monde pour les portails : dessin des portails avant la couche translucide et fin de l'image
@@ -53,6 +54,22 @@ public abstract class MixinWorldRenderer {
 
     @Shadow
     private @Nullable ClientWorld world;
+
+    /** Debut du rendu du monde du joueur : le look de sa dimension au fond de la pile ; rien pour le renderer d'une vue. */
+    @Inject(method = "render", at = @At("HEAD"))
+    private void backrooms$beginLook(
+            RenderTickCounter tickCounter,
+            boolean renderBlockOutline,
+            Camera camera,
+            GameRenderer gameRenderer,
+            LightmapTextureManager lightmapTextureManager,
+            Matrix4f positionMatrix,
+            Matrix4f projectionMatrix,
+            CallbackInfo ci) {
+        if (!PortalRenderState.isRendering() && this.world != null && (Object) this == this.client.worldRenderer) {
+            LookFrame.beginWorld(this.world, (WorldRendererAccessor) this, camera.getPos(), positionMatrix, tickCounter.getTickDelta(false));
+        }
+    }
 
     /**
      * Les portails se dessinent apres les blocs opaques, les entities et les block entities, et avant tout ce qui est
@@ -77,6 +94,8 @@ public abstract class MixinWorldRenderer {
             ShaderPackPortalRenderer.renderViewParts(tickCounter.getTickDelta(false));
             return;
         }
+        // Un pack de shaders a pris la place des programmes de vanilla a ce point-ci du rendu, pas avant : releve ici.
+        ShaderPackState.refresh();
         PortalRenderState.setBlockOutlineAllowed(renderBlockOutline);
         // Les renderers de vue repassent par la tete de cette methode avant de dessiner, avec ces parametres-ci.
         ViewRenderStart.beginFrame(tickCounter, camera, gameRenderer, lightmapTextureManager, positionMatrix, projectionMatrix);
@@ -108,18 +127,20 @@ public abstract class MixinWorldRenderer {
         }
         PortalStencilRenderer.endWorldRender();
         PortalStencilRenderer.renderAfterWorld(tickCounter, camera, lightmapTextureManager, positionMatrix, projectionMatrix);
+        if ((Object) this == this.client.worldRenderer) {
+            LookFrame.endWorldRender();
+        }
     }
 
     /**
      * Sous un pack de shaders, une vue limitee a un cadre est un rendu complet de son renderer, apres l'image du monde du
      * joueur deja a l'ecran : l'effacement de l'ecran en tete de ce rendu l'emporterait. La zone du cadre est deja au
-     * plan lointain.
+     * plan lointain. Le masque passe a zero (un effacement qui n'efface rien) : sans tableau d'arguments alloue a chaque
+     * rendu, contrairement a un enrobage de l'appel.
      */
-    @WrapOperation(method = "render", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;clear(IZ)V"))
-    private void backrooms$keepWorldImageUnderShaderView(int mask, boolean getError, Operation<Void> original) {
-        if (!ShaderPackPortalRenderer.skipsWorldClear()) {
-            original.call(mask, getError);
-        }
+    @ModifyArg(method = "render", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;clear(IZ)V"), index = 0)
+    private int backrooms$keepWorldImageUnderShaderView(int mask) {
+        return ShaderPackPortalRenderer.skipsWorldClear() ? 0 : mask;
     }
 
     /**
@@ -177,11 +198,6 @@ public abstract class MixinWorldRenderer {
     }
 
     /**
-     * Une section a reconstruire l'est aussi dans la vue secondaire de son monde (portails qui y ramenent). Le monde du
-     * renderer designe la vue, pas celui de {@code MinecraftClient}, substitue pendant le rendu des portails : les mises
-     * a jour de lumiere faites pendant une vue sont relayees elles aussi.
-     */
-    /**
      * Le renderer du joueur se recharge (pack de shaders active ou coupe, mode graphique, F3+A) : ceux des vues aussi. Leurs
      * sections gardaient sinon le format de sommets et les couches d'avant jusqu'au prochain rechargement des ressources (un
      * pack coupe laissait des feuilles et du verre opaques dans les vues, puis dans le monde rejoint par un portail). Pas
@@ -194,6 +210,11 @@ public abstract class MixinWorldRenderer {
         }
     }
 
+    /**
+     * Une section a reconstruire l'est aussi dans la vue secondaire de son monde (portails qui y ramenent). Le monde du
+     * renderer designe la vue, pas celui de {@code MinecraftClient}, substitue pendant le rendu des portails : les mises
+     * a jour de lumiere faites pendant une vue sont relayees elles aussi.
+     */
     @Inject(method = "scheduleChunkRender", at = @At("HEAD"))
     private void backrooms$mirrorChunkRender(int x, int y, int z, boolean important, CallbackInfo ci) {
         RemoteWorldRegistry.onChunkRenderScheduled((WorldRenderer) (Object) this, this.world, x, y, z, important);

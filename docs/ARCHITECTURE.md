@@ -38,13 +38,18 @@ com.gtgpuke.gtgsbackrooms/
 |   |   |-- ModChunkGenerators.java
 |   |   |-- ModCreativeTab.java         <- ENTRIES : contenu ordonné de l'onglet du mod
 |   |   `-- ModNetworking.java          <- types de payloads
-|   |-- perf/ModPerformanceMonitor (+ client/ClientPerformanceMonitorHook)
-|   `-- portal/                         <- portails : block, item, entity, transition, sync, interaction, propagation, light, client, debug (voir §Portails)
+|   |-- perf/ModPerformanceMonitor (+ client/ClientPerformanceMonitorHook, client/FrameStateCommand : /backrooms_state, etat de l'image au journal)
+|   |-- portal/                         <- portails : block, item, entity, transition, sync, interaction, propagation, light, client, debug (voir §Portails)
+|   |-- audio/                          <- moteur audio : profile/ (acoustique par dimension), acoustic/ (dimension d'émission, occlusion, copie du monde et rayons, forme générée, direction perçue, réglages de réverb, cadres traversés), cue/ (liaison son-image : horloge commune, liens, enveloppes, courbes, tremblement, perturbations, plafond de clignotement), client/ (colle OpenAL EFX, modes du moteur, routage des sons, copie du monde, thread de calcul, bourdonnement des néons, sons liés, rayons de débogage) (voir docs/AUDIO.md)
+|   `-- render/                         <- moteur de shaders : patch/ (enveloppe de main des shaders vanilla), profile/ (look par dimension), state/ (pile des looks), light/ (lightmap, brouillard, néons : calendrier, jumeau GLSL vérifié sur les mêmes vecteurs, sélection, carte), post/ (bits du stencil), fbo/ (framebuffers déclarés), quality/ (légère ou complète), client/ (colle GL : ressources, index des néons, face des néons dans l'atlas, bloc d'uniformes, post et bloom, compilation à blanc, vérification du jumeau) (voir docs/RENDERING.md)
 |
 |-- backrooms/                          <- le contenu des Backrooms
 |   |-- BackroomsConstants.java         <- clé de dimension, identifiants, échelle de cellule
 |   `-- level0/
 |       |-- LevelZeroArrival                     <- où un portail arrive dans le labyrinthe (demandé par core/portal)
+|       |-- LevelZeroRoomShape                   <- forme d'une salle lue dans le layout (acoustique générée, pour core/audio)
+|       |-- LevelZeroLayoutSync, LevelZeroLayoutPayload <- graine du layout envoyée au client à la connexion
+|       |-- client/LevelZeroEffects, client/LevelZeroAcoustics <- effets de dimension du look ; forme des salles donnée au moteur audio
 |       |-- biome/LevelZeroSurfaceBiome          <- palettes cosmétiques par région et par layer
 |       |-- block/LevelZeroWallpaperBlock        <- mur adaptatif (face_mask 0-15)
 |       |-- client/model/                        <- LevelZeroWallpaperBakedModel + handler
@@ -59,7 +64,7 @@ com.gtgpuke.gtgsbackrooms/
 |           `-- write/   LevelZeroBlockPalette, LevelZeroBlockWriter, LevelZeroWallSampler,
 |                        LevelZeroWallProps, LevelZeroDebugPalette
 |
-|-- compat/iris/                        <- compatibilité avec le mod de shaders Iris (seul mod nommé) : son API publique dit si un pack est actif
+|-- compat/iris/                        <- module de compatibilite avec le mod de shaders Iris : dans les Backrooms, le rendu du mod remplace le pack (mixins filtres par CompatMixinPlugin)
 `-- mixin/                              <- communs (relais de blocs, chunks tenus, sons et particules, collision, mobs, lumière, météo) + client/ (rendu des portails)
 ```
 
@@ -70,8 +75,12 @@ Où ranger quoi :
 | Bloc, item ou entity d'un niveau des Backrooms | `backrooms/<niveau>/{block,item,entity}/` | `core/registry/Mod{Blocks,Items,Entities}` |
 | Objet d'un système du socle (portails…) | `core/<système>/{block,item,entity}/` (la baguette : `core/portal/item/`) | idem |
 | Son | — (un `SoundEvent` n'a pas de classe à lui) | `core/registry/ModSounds`, déclaré dans `assets/gtgs_backrooms/sounds.json` avec son sous-titre |
-| Payload réseau | dans le paquet de son système (`core/portal/sync/`) | `core/registry/ModNetworking` |
+| Payload réseau | dans le paquet de son système (`core/portal/sync/`) ou de son contenu (`backrooms/level0/LevelZeroLayoutPayload`) | `core/registry/ModNetworking` |
 | Système transverse (rendu, audio, `docs/GUIDE.md`) | `core/<système>/` | — |
+| Look d'une dimension | — (donnée : `assets/gtgs_backrooms/look_profiles/<dimension>.json`) | chargé avec les ressources (`core/render/client/LookResources`) ; ses effets de dimension enregistrés par le contenu (`backrooms/<niveau>/client/`) sous l'identifiant `effects` de son type de dimension |
+| Patch de shaders vanilla | — (donnée : `assets/gtgs_backrooms/shader_patches/<nom>.json`, bibliothèques dans `assets/gtgs_backrooms/shaders/include/`) | idem |
+| Acoustique d'une dimension | — (donnée : `assets/gtgs_backrooms/audio_profiles/<dimension>.json`) | chargée avec les ressources (`core/audio/client/AudioResources`) ; son bourdonnement est un son du mod (`sounds.json`, `ModSounds`) ; une forme générée (`"acoustics": "generated"`) est donnée par le contenu (`GeneratedAcoustics.register`, depuis `backrooms/<niveau>/client/`) |
+| Lien son-image | — (donnée : `assets/gtgs_backrooms/sound_cues/<nom>.json`) | chargé après les sons (`core/audio/client/CueResources`) |
 
 Aucun paquet n'existe sans code : un paquet `item/` de niveau naît avec son premier item.
 
@@ -79,10 +88,14 @@ Dépendances : le contenu (`backrooms/`) s'appuie sur le socle (`core/`) ; le so
 enregistre (`core/registry/`) et l'endroit où ses portails mènent : `PortalTargets` demande au Level 0 où arriver
 (`LevelZeroArrival`) et lit sa clé de dimension (`BackroomsConstants`). Un niveau de plus s'ajoute là, sans autre lien.
 
-Les systèmes de rendu et d'audio à venir (`core/render/`, `core/audio/`, modules `compat/` supplémentaires)
-s'insèrent selon `docs/GUIDE.md`, section 3.4 : ils consomment l'API de `portal/` (vues, transformations par le passage,
-mondes distants, bascule de monde), qui leur expose des points d'accès sans réécriture de sa logique. Aucun de ces
-paquets n'existe tant qu'il n'a pas de code : pas de dossier vide.
+Les systèmes de rendu (`core/render/`, `docs/RENDERING.md`) et d'audio (`core/audio/`, `docs/AUDIO.md`) s'insèrent
+selon `docs/GUIDE.md`, section 3.4 : ils consomment l'API de `portal/` (vues, transformations par le passage, mondes
+distants, bascule de monde), qui leur expose des points d'accès sans réécriture de sa logique (le look d'une vue est
+empilé par `PortalStencilRenderer` et `ShaderPackPortalRenderer`, les bits de look du stencil écrits avec la zone de
+chaque vue ; `ClientPortalCrossing.WORLD_SWITCHED` à chaque bascule de monde ; `PortalSound` et `SoundAnchors` pour le
+son rejoué au cadre). Le contenu les configure par données (`look_profiles/`, `audio_profiles/`, `sound_cues/`) et
+enregistre ce qui le concerne (`backrooms/level0/client/LevelZeroEffects`, `LevelZeroAcoustics`). Aucun de ces paquets n'existe tant qu'il
+n'a pas de code : pas de dossier vide.
 
 Les tests en jeu vivent dans un source set séparé, `src/gametest/java/com/gtgpuke/gtgsbackrooms/gametest/`, rangé par
 domaine comme le code (`support/`, `backrooms/level0/`, `core/portal/`) : un mod

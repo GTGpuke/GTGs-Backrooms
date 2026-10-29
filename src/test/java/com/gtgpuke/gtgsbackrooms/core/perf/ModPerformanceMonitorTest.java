@@ -61,21 +61,21 @@ class ModPerformanceMonitorTest {
         ModPerformanceMonitor.onFrameRendered();
         ModPerformanceMonitor.onClientTick(90);
         String client = ModPerformanceMonitor.lastClientSummary();
-        assertTrue(client.startsWith("client: fps=90 pic="), "Resume client avec l'image la plus longue : " + client);
-        assertTrue(client.contains(" lentes=1 ") || client.contains(" lentes=2 "), "L'image de soixante millisecondes est lente : " + client);
+        assertTrue(client.startsWith("client: fps=90 pic="), "Resume client avec l'image la plus longue : " + client + ".");
+        assertTrue(client.contains(" lentes=1 ") || client.contains(" lentes=2 "), "L'image de soixante millisecondes est lente : " + client + ".");
         assertTrue(client.endsWith("top=client.test.render:1x/" + client.substring(client.indexOf("top=client.test.render:1x/") + 26)),
-                "Les sections client sont dans le resume client : " + client);
-        assertFalse(client.contains("test.server"), "Les sections serveur n'y sont pas : " + client);
+                "Les sections client sont dans le resume client : " + client + ".");
+        assertFalse(client.contains("test.server"), "Les sections serveur n'y sont pas : " + client + ".");
         ModPerformanceMonitor.onServerTickStart();
         ModPerformanceMonitor.onServerTickEnd();
         String server = ModPerformanceMonitor.lastServerSummary();
         assertTrue(server.contains("test.server:1x/") && !server.contains("client.test.render"),
-                "Les sections serveur sont dans le resume serveur, sans celles du client : " + server);
+                "Les sections serveur sont dans le resume serveur, sans celles du client : " + server + ".");
         // Le resume a remis les images a zero : le suivant repart de rien.
         ModPerformanceMonitor.resetLogTimers();
         ModPerformanceMonitor.onClientTick(91);
         assertTrue(ModPerformanceMonitor.lastClientSummary().startsWith("client: fps=91 pic=0.0ms lentes=0 "),
-                "Images remises a zero : " + ModPerformanceMonitor.lastClientSummary());
+                "Images remises a zero : " + ModPerformanceMonitor.lastClientSummary() + ".");
     }
 
     @Test
@@ -92,8 +92,22 @@ class ModPerformanceMonitorTest {
         ModPerformanceMonitor.onServerTickEnd();
         String server = ModPerformanceMonitor.lastServerSummary();
         assertTrue(server.endsWith("reseau=portal_remote_chunk:2x/3.0KiB | portal_remote_entity:1x/0.0KiB"),
-                "Le resume serveur donne le reseau : " + server);
+                "Le resume serveur donne le reseau : " + server + ".");
         assertEquals("aucun", ModPerformanceMonitor.networkSummary(), "Le resume a remis les compteurs a zero.");
+    }
+
+    @Test
+    @DisplayName("Une duree mesuree ailleurs entre dans sa section ; inactif, le moniteur l'ignore")
+    void externalDurationsAreRecorded() {
+        ModPerformanceMonitor.record("client.gpu.ignored", 5_000_000L);
+        ModPerformanceMonitor.setEnabled(true);
+        ModPerformanceMonitor.resetLogTimers();
+        ModPerformanceMonitor.record("client.gpu.pass", 2_000_000L);
+        ModPerformanceMonitor.record("client.gpu.pass", 3_000_000L);
+        ModPerformanceMonitor.onClientTick(60);
+        String client = ModPerformanceMonitor.lastClientSummary();
+        assertTrue(client.contains("client.gpu.pass:2x/5.000ms/max 3.000ms/alloc 0.0KiB"), "Deux durees cumulees, sans allocation : " + client + ".");
+        assertFalse(client.contains("client.gpu.ignored"), "Rien d'enregistre avant l'activation : " + client + ".");
     }
 
     @Test
@@ -112,15 +126,15 @@ class ModPerformanceMonitorTest {
         ModPerformanceMonitor.onClientTick(120);
 
         String server = ModPerformanceMonitor.lastServerSummary();
-        assertTrue(server.startsWith("serveur: mspt="), "Resume serveur publie : " + server);
-        assertTrue(server.contains("test.generation"), "La section mesuree apparait dans le top : " + server);
+        assertTrue(server.startsWith("serveur: mspt="), "Resume serveur publie : " + server + ".");
+        assertTrue(server.contains("test.generation"), "La section mesuree apparait dans le top : " + server + ".");
         assertTrue(server.contains("heap="), "La memoire est rapportee.");
 
         List<String> hud = new ArrayList<>();
         ModPerformanceMonitor.appendDebugHudText(hud);
         assertEquals(4, hud.size(), "Quatre lignes au F3.");
         assertEquals("Perf monitor : actif", hud.get(0), "Entete du F3.");
-        assertTrue(hud.get(2).startsWith("client: fps=120"), "Resume client avec les FPS : " + hud.get(2));
+        assertTrue(hud.get(2).startsWith("client: fps=120"), "Resume client avec les FPS : " + hud.get(2) + ".");
     }
 
     @Test
@@ -156,7 +170,7 @@ class ModPerformanceMonitorTest {
         ModPerformanceMonitor.onServerTickStart();
         ModPerformanceMonitor.onServerTickEnd();
         assertTrue(ModPerformanceMonitor.lastServerSummary().contains(" top=aucune section reseau="),
-                "Les sections ont ete videes par le resume precedent : " + ModPerformanceMonitor.lastServerSummary());
+                "Les sections ont ete videes par le resume precedent : " + ModPerformanceMonitor.lastServerSummary() + ".");
         ModPerformanceMonitor.scope("test.alpha").close();
         ModPerformanceMonitor.scope("test.beta").close();
         ModPerformanceMonitor.scope("test.beta").close();
@@ -164,9 +178,9 @@ class ModPerformanceMonitorTest {
         ModPerformanceMonitor.onServerTickStart();
         ModPerformanceMonitor.onServerTickEnd();
         String summary = ModPerformanceMonitor.lastServerSummary();
-        assertTrue(summary.contains("test.alpha:1x/") && summary.contains("test.beta:2x/"), "Les deux sections et leurs appels : " + summary);
-        assertTrue(summary.contains(" | "), "Les sections sont separees : " + summary);
-        assertTrue(summary.contains("ms/alloc ") && summary.contains("KiB"), "Chaque section donne ce qu'elle a alloue : " + summary);
+        assertTrue(summary.contains("test.alpha:1x/") && summary.contains("test.beta:2x/"), "Les deux sections et leurs appels : " + summary + ".");
+        assertTrue(summary.contains(" | "), "Les sections sont separees : " + summary + ".");
+        assertTrue(summary.contains("ms/alloc ") && summary.contains("KiB"), "Chaque section donne ce qu'elle a alloue : " + summary + ".");
     }
 
     @Test
@@ -190,7 +204,7 @@ class ModPerformanceMonitorTest {
         withoutBean.sample();
         ModPerformanceMonitor.Snapshot snapshot = ModPerformanceMonitor.Snapshot.capture(withoutBean);
         assertTrue(snapshot.heapMaxBytes() >= snapshot.heapUsedBytes(), "La memoire reste lue.");
-        assertTrue(snapshot.format().endsWith("cpuProc=n/a cpuSys=n/a"), "Sans extension JVM, charge inconnue : " + snapshot.format());
+        assertTrue(snapshot.format().endsWith("cpuProc=n/a cpuSys=n/a"), "Sans extension JVM, charge inconnue : " + snapshot.format() + ".");
         withoutBean.start(1_000_000_000L);
         assertFalse(withoutBean.running(), "Sans extension JVM, aucun thread ne tourne.");
         assertEquals("n/a", ModPerformanceMonitor.Snapshot.formatPercent(-1.0D), "Charge negative : inconnue.");
@@ -281,7 +295,7 @@ class ModPerformanceMonitorTest {
         ModPerformanceMonitor.onClientTick(31);
         List<String> hud = new ArrayList<>();
         ModPerformanceMonitor.appendDebugHudText(hud);
-        assertTrue(hud.get(2).startsWith("client: fps=30"), "Le second echantillon client, dans l'intervalle, est ignore : " + hud.get(2));
+        assertTrue(hud.get(2).startsWith("client: fps=30"), "Le second echantillon client, dans l'intervalle, est ignore : " + hud.get(2) + ".");
     }
 
     @Test

@@ -20,7 +20,10 @@ jobs:
   verification:
     name: Lint, tests, couverture et JAR (Java 21)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
+    env:
+      # Client de test : rendu logiciel de Mesa (aucun GPU sur l'hote), son sur le peripherique nul d'OpenAL Soft.
+      LIBGL_ALWAYS_SOFTWARE: "1"
 
     steps:
       - name: Checkout
@@ -43,6 +46,11 @@ jobs:
       - name: Rendre le wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Ecran virtuel et rendu logiciel pour le client de test (Xvfb, Mesa llvmpipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libglx-mesa0 libegl1
+
       - name: Conventions du code (Checkstyle, zero warning javac)
         run: ./gradlew checkstyleMain checkstyleTest checkstyleGametest --no-daemon --console=plain --warning-mode all
 
@@ -52,11 +60,14 @@ jobs:
       - name: Tests en jeu (serveur headless, sous agent JaCoCo)
         run: ./gradlew runGameTest --no-daemon --console=plain --warning-mode all
 
+      - name: Tests du client (vrai client cache, rendu logiciel, sous agent JaCoCo)
+        run: xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew runClientTest verifyClientTests --no-daemon --console=plain --warning-mode all
+
       - name: Couverture fusionnee (100 % des instructions et des branches)
-        run: ./gradlew jacocoFullReport jacocoCoverageVerification --no-daemon --console=plain --warning-mode all
+        run: xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew jacocoFullReport jacocoAllReport jacocoCoverageVerification --no-daemon --console=plain --warning-mode all
 
       - name: Build et contenu du JAR (ni dependance embarquee, ni test)
-        run: ./gradlew build --no-daemon --console=plain --warning-mode all
+        run: xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew build --no-daemon --console=plain --warning-mode all
 
       - name: Benchmark de generation du Level 0
         run: ./gradlew benchmarkLevelZeroGeneration --no-daemon --console=plain --warning-mode all
@@ -69,7 +80,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publier les rapports (Checkstyle, tests, couverture, serveur de test)
+      - name: Publier les rapports (Checkstyle, tests, couverture, serveur et client de test)
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -79,7 +90,10 @@ jobs:
             build/reports/tests/test/
             build/reports/jacoco/test/
             build/reports/jacoco/full/
+            build/reports/jacoco/all/
             build/junit.xml
+            build/client-junit.xml
             build/run/gameTest/logs/
+            build/run/clientTest/logs/
           if-no-files-found: ignore
           retention-days: 14

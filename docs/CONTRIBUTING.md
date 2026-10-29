@@ -59,3 +59,8 @@ Le détail pas à pas est dans `docs/prompt/BEFOREPUSH.md`.
 3. Tout texte visible en jeu passe par `Text.translatable` et existe en EN et FR.
 4. Aucune évolution de la génération du Level 0 sans mise à jour des empreintes et du CHANGELOG.
 5. Pas de dossier vide, pas de `.gitkeep`, pas de code « pour plus tard » sans utilisation.
+6. Un autre mod ne se nomme que dans son module de compatibilité (`compat/<mod>/`), seul endroit qui en lit l'API, et
+   dans ce qui le sert : ses messages (clés de langue `compat.*`) et la documentation qui le décrit ; ailleurs, aucun.
+   À l'exécution, aucune dépendance de mod hors Fabric Loader et Fabric API, rien d'embarqué : un module de
+   compatibilité compile contre son mod (`modCompileOnly`) et ne s'applique que s'il est là.
+7. Aucun code ni aucune ressource repris d'un projet tiers, quelle que soit sa licence (`LICENSE`).

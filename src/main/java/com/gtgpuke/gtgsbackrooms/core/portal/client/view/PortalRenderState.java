@@ -25,6 +25,7 @@ public final class PortalRenderState {
     private static boolean remoteRenderingDisabled;
     private static boolean blockOutlineAllowed;
     private static boolean reducedView;
+    private static boolean viewsSuppressed;
 
     private PortalRenderState() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -35,9 +36,27 @@ public final class PortalRenderState {
         return !rendering && remoteRenderingAvailable();
     }
 
-    /** {@code true} tant que le stencil est disponible et qu'aucun rendu distant n'a echoue. */
+    /**
+     * {@code true} tant que le stencil est disponible, qu'aucun rendu distant n'a echoue et que la cohabitation avec un
+     * pack de shaders ne coupe pas les vues de cette image.
+     */
     public static boolean remoteRenderingAvailable() {
-        return stencilAvailable && !remoteRenderingDisabled;
+        return stencilAvailable && !remoteRenderingDisabled && !viewsSuppressed;
+    }
+
+    /**
+     * Point d'acces : les vues de cette image sont coupees ou non par la cohabitation avec un pack de shaders (option
+     * {@code gtgsbackrooms.portal.shaderCohabitation} a {@code off}). Coupees, les cadres sont sombres, comme sans
+     * stencil, et rien ne se fait a travers eux. Pose a chaque image, au releve du pack ; le stencil des framebuffers,
+     * lui, reste attache.
+     */
+    public static void setViewsSuppressed(boolean suppressed) {
+        viewsSuppressed = suppressed;
+    }
+
+    /** {@code true} tant que le pilote tient le stencil du framebuffer : le post-traitement masque en depend aussi. */
+    public static boolean stencilAvailable() {
+        return stencilAvailable;
     }
 
     /** Debut du rendu des portails d'une image : garde posee, nouveau numero d'image. */

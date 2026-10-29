@@ -30,6 +30,15 @@ class ModConfigTest {
     }
 
     @Test
+    @DisplayName("Le parsing des chaines garde la valeur sans ses espaces et retombe sur la valeur par defaut")
+    void parseString() {
+        assertEquals("full", ModConfig.parseString(" full ", "auto"), "Valeur explicite, sans espaces.");
+        assertEquals("auto", ModConfig.parseString(null, "auto"), "Valeur absente : defaut.");
+        assertEquals("auto", ModConfig.parseString("  ", "auto"), "Valeur vide : defaut.");
+        assertEquals("auto", ModConfig.LOOK_QUALITY, "Qualite auto par defaut.");
+    }
+
+    @Test
     @DisplayName("Le parsing des booleens accepte true/false et retombe sur la valeur par defaut")
     void parseBoolean() {
         assertTrue(ModConfig.parseBoolean("true", false), "Valeur true explicite.");

@@ -34,6 +34,22 @@ def passthroughProperties = [
         portalDebugRendering              : 'gtgsbackrooms.portal.debugRendering',
         portalOcclusion                   : 'gtgsbackrooms.portal.occlusion',
         portalLod                         : 'gtgsbackrooms.portal.lod',
+        portalShaderCohabitation          : 'gtgsbackrooms.portal.shaderCohabitation',
+        lookEnabled                       : 'gtgsbackrooms.look.enabled',
+        lookDebugStencil                  : 'gtgsbackrooms.look.debugStencil',
+        lookQuality                       : 'gtgsbackrooms.look.quality',
+        lookVerifyNeonShader              : 'gtgsbackrooms.look.verifyNeonShader',
+        lookCheckGlState                  : 'gtgsbackrooms.look.checkGlState',
+        lookReplaceShaderPack             : 'gtgsbackrooms.look.replaceShaderPack',
+        audioEnabled                      : 'gtgsbackrooms.audio.enabled',
+        audioQuality                      : 'gtgsbackrooms.audio.quality',
+        audioEfx                          : 'gtgsbackrooms.audio.efx',
+        audioDebugRays                    : 'gtgsbackrooms.audio.debugRays',
+        audioCompareGenerated             : 'gtgsbackrooms.audio.compareGenerated',
+        reduceFlashes                     : 'gtgsbackrooms.audio.reduceFlashes',
+        reduceNoise                       : 'gtgsbackrooms.look.reduceNoise',
+        cameraShake                       : 'gtgsbackrooms.audio.cameraShake',
+        reduceBass                        : 'gtgsbackrooms.audio.reduceBass',
 ]
 def activeSystemProperties = passthroughProperties.findAll { project.hasProperty(it.key) }
         .collectEntries { [(it.value): project.property(it.key)] }
@@ -51,6 +67,23 @@ loom {
         server {
             server()
             runDir = 'run/server'
+        }
+        // Tests du client (src/gametest/.../client) : un vrai client, fenetre cachee, dans un monde neuf ; son sur le
+        // peripherique nul d'OpenAL Soft (EFX complet, rien d'audible). Lance par runClientTest, verifie par verifyClientTests.
+        clientTest {
+            client()
+            name = 'Client Test'
+            source 'gametest'
+            runDir = 'build/run/clientTest'
+            ideConfigGenerated = false
+            vmArg "-Dgtgsbackrooms.clientTest.report=${project.layout.buildDirectory.get().asFile}/client-junit.xml"
+            // Le jumeau GLSL du calendrier des neons, confronte au fichier de vecteurs communs sur le processeur graphique.
+            vmArg "-Dgtgsbackrooms.look.verifyNeonShader=${project.file('src/test/resources/neon_schedule_vectors.json').absolutePath}"
+            // Un monde distant sans portail est libere en cinq secondes (le plancher du delai), pas en une minute.
+            vmArg '-Dgtgsbackrooms.portal.remoteWorldReleaseSeconds=5'
+            activeSystemProperties.each { key, value -> vmArg "-D${key}=${value}" }
+            programArgs '--width', '854', '--height', '480'
+            environmentVariable 'ALSOFT_DRIVERS', 'null'
         }
     }
 }
@@ -72,7 +105,7 @@ afterEvaluate {
     }
 }
 
-// Conventions du code (CLAUDE.md), celles qu'un outil verifie : config/checkstyle/checkstyle.xml.
+// Conventions du code (docs/CONTRIBUTING.md), celles qu'un outil verifie : config/checkstyle/checkstyle.xml.
 checkstyle {
     toolVersion = '10.21.1'
     configDirectory = file('config/checkstyle')
@@ -91,7 +124,7 @@ repositories {
         name = 'Fabric'
         url = 'https://maven.fabricmc.net/'
     }
-    // API du mod de shaders Iris (compat/iris), a la compilation seulement.
+    // Modules de compatibilite (compat/) : les mods qu'ils visent, a la compilation seulement.
     maven {
         name = 'Modrinth'
         url = 'https://api.modrinth.com/maven'
@@ -104,8 +137,10 @@ dependencies {
     mappings "net.fabricmc:yarn:${yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
-    // Iris : son API publique (v0) dit si un pack de shaders est actif ; jamais embarque, jamais requis a l'execution.
+    // compat/iris : le mod de shaders et le mod de terrain qu'il exige, a la compilation seulement ; jamais embarques,
+    // jamais requis a l'execution (le module ne s'applique que s'ils sont la, CompatMixinPlugin).
     modCompileOnly "maven.modrinth:iris:${iris_version}"
+    modCompileOnly "maven.modrinth:sodium:${sodium_version}"
 
     testImplementation platform("org.junit:junit-bom:${junit_version}")
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -128,10 +163,11 @@ test {
 }
 
 // Couverture : classes mesurees. Hors mesure : la colle OpenGL du client (un contexte GL est obligatoire, hors de
-// portee de JUnit comme du serveur GameTest), les mixins (tisses dans les classes vanilla), la colle vers d'autres mods
-// (absents des tests) et les gametests eux-memes. La logique client pure (transformation de vue, etat de rendu) reste mesuree.
+// portee de JUnit comme du serveur GameTest), les mixins (tisses dans les classes vanilla), les modules de compatibilite
+// (leur mod est absent des tests) et les gametests eux-memes. La logique client pure (transformation de vue, etat de rendu) reste mesuree.
 def coverageExcludes = [
         'com/gtgpuke/gtgsbackrooms/GtgsBackroomsClientMod*',
+        'com/gtgpuke/gtgsbackrooms/core/audio/client/**',
         'com/gtgpuke/gtgsbackrooms/backrooms/level0/client/**',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/entity/**',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/interaction/**',
@@ -140,6 +176,7 @@ def coverageExcludes = [
         'com/gtgpuke/gtgsbackrooms/core/portal/client/transition/**',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/view/PortalStencilRenderer*',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/view/ShaderPackPortalRenderer*',
+        'com/gtgpuke/gtgsbackrooms/core/portal/client/view/ShaderPackState*',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/view/PortalClipping*',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/view/FrameAreaRenderer*',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/view/HandMask*',
@@ -147,11 +184,12 @@ def coverageExcludes = [
         'com/gtgpuke/gtgsbackrooms/core/portal/client/wand/**',
         'com/gtgpuke/gtgsbackrooms/core/portal/client/world/**',
         'com/gtgpuke/gtgsbackrooms/core/perf/client/**',
+        'com/gtgpuke/gtgsbackrooms/core/render/client/**',
         'com/gtgpuke/gtgsbackrooms/mixin/**',
         'com/gtgpuke/gtgsbackrooms/compat/**',
 ]
 def coverageClassDirs = { files(sourceSets.main.output.classesDirs.collect { fileTree(dir: it, exclude: coverageExcludes) }) }
-def coverageExecutionData = fileTree(layout.buildDirectory.dir('jacoco')) { include 'test.exec', 'gametest.exec' }
+def coverageExecutionData = fileTree(layout.buildDirectory.dir('jacoco')) { include 'test.exec', 'gametest.exec', 'clienttest.exec' }
 
 // Rapport des seuls tests unitaires, produit a chaque ./gradlew test.
 jacocoTestReport {
@@ -164,7 +202,8 @@ jacocoTestReport {
     classDirectories.setFrom(coverageClassDirs())
 }
 
-// Les tests en jeu tournent sous l'agent JaCoCo : leur couverture se fusionne avec celle des tests unitaires.
+// Les tests en jeu, serveur et client, tournent sous l'agent JaCoCo : leur couverture se fusionne avec celle des tests
+// unitaires.
 afterEvaluate {
     tasks.named('runGameTest') {
         def gametestExec = layout.buildDirectory.file('jacoco/gametest.exec').get().asFile
@@ -174,12 +213,70 @@ afterEvaluate {
             jvmArgs "-javaagent:${agentJar}=destfile=${gametestExec},append=false,includes=com.gtgpuke.gtgsbackrooms.*"
         }
     }
+    tasks.named('runClientTest') {
+        group = 'verification'
+        description = 'Tests du client : un vrai client, fenetre cachee, joue les tests de src/gametest/.../client.'
+        def clienttestExec = layout.buildDirectory.file('jacoco/clienttest.exec').get().asFile
+        def runDir = layout.buildDirectory.dir('run/clientTest').get().asFile
+        // Mise au point d'un test : ./gradlew runClientTest -PclientTestOnly=nom1,nom2 (-PclientTestVisible=true : fenetre visible).
+        def onlyTests = project.findProperty('clientTestOnly')
+        def visibleWindow = project.findProperty('clientTestVisible')
+        outputs.file clienttestExec
+        outputs.file layout.buildDirectory.file('client-junit.xml')
+        mustRunAfter 'runGameTest'
+        doFirst {
+            // Monde neuf et options figees a chaque lancement : les images ne dependent que des tests.
+            delete new File(runDir, 'saves/clienttest')
+            delete layout.buildDirectory.file('client-junit.xml')
+            runDir.mkdirs()
+            new File(runDir, 'options.txt').text = [
+                    'version:3955', 'onboardAccessibility:false', 'pauseOnLostFocus:false', 'renderDistance:8',
+                    'simulationDistance:8', 'graphicsMode:1', 'maxFps:120', 'enableVsync:false', 'bobView:false',
+                    'fov:0.0', 'guiScale:2', 'tutorialStep:none', 'joinedFirstServer:true', 'skipMultiplayerWarning:true',
+                    'narrator:0', 'particles:0', 'autoJump:false', 'soundCategory_master:1.0', 'soundCategory_music:0.0',
+            ].join('\n') + '\n'
+            def agentJar = zipTree(configurations.jacocoAgent.singleFile).matching { include 'jacocoagent.jar' }.singleFile
+            jvmArgs "-javaagent:${agentJar}=destfile=${clienttestExec},append=false,includes=com.gtgpuke.gtgsbackrooms.*"
+            if (onlyTests != null) {
+                jvmArgs "-Dgtgsbackrooms.clientTest.only=${onlyTests}"
+            }
+            if (visibleWindow != null) {
+                jvmArgs "-Dgtgsbackrooms.clientTest.visible=${visibleWindow}"
+            }
+        }
+    }
 }
+
+// Resultat des tests du client : le rapport doit exister, avoir des tests et aucun echec.
+tasks.register('verifyClientTests') {
+    group = 'verification'
+    description = 'Echoue si un test du client a echoue ou si le client n\'a rien rapporte.'
+    dependsOn 'runClientTest'
+    def report = layout.buildDirectory.file('client-junit.xml')
+    outputs.upToDateWhen { false }
+    doLast {
+        def file = report.get().asFile
+        if (!file.exists()) {
+            throw new GradleException("Tests du client : aucun rapport (${file}). Le client a-t-il demarre ?")
+        }
+        def suite = new groovy.xml.XmlSlurper().parse(file)
+        if (suite.testcase.size() == 0) {
+            throw new GradleException('Tests du client : aucun test joue.')
+        }
+        def failures = suite.testcase.findAll { it.failure.size() > 0 }
+        if (!failures.isEmpty()) {
+            def lines = failures.collect { "  ${it.@name} : ${it.failure.@message}" }.join('\n')
+            throw new GradleException("Tests du client : ${failures.size()} echec(s) sur ${suite.testcase.size()}.\n${lines}")
+        }
+        logger.lifecycle("Tests du client : ${suite.testcase.size()} test(s) reussi(s).")
+    }
+}
+check.dependsOn 'verifyClientTests'
 
 tasks.register('jacocoFullReport', JacocoReport) {
     group = 'verification'
-    description = 'Rapport JaCoCo fusionne : tests unitaires et tests en jeu.'
-    dependsOn test, 'runGameTest'
+    description = 'Rapport JaCoCo fusionne : tests unitaires et tests en jeu (serveur et client).'
+    dependsOn test, 'runGameTest', 'runClientTest'
     executionData coverageExecutionData
     sourceDirectories.setFrom(sourceSets.main.allSource.srcDirs)
     classDirectories.setFrom(coverageClassDirs())
@@ -191,11 +288,29 @@ tasks.register('jacocoFullReport', JacocoReport) {
     }
 }
 
+// Rapport de tout le code du mod, exclusions comprises : ce qui reste a couvrir avant de retirer une exclusion.
+tasks.register('jacocoAllReport', JacocoReport) {
+    group = 'verification'
+    description = 'Rapport JaCoCo de tout le code du mod, sans exclusion (unitaires + tests en jeu serveur et client).'
+    dependsOn test, 'runGameTest', 'runClientTest'
+    executionData coverageExecutionData
+    sourceDirectories.setFrom(sourceSets.main.allSource.srcDirs)
+    classDirectories.setFrom(files(sourceSets.main.output.classesDirs))
+    reports {
+        xml.required = true
+        csv.required = true
+        html.required = true
+        xml.outputLocation = layout.buildDirectory.file('reports/jacoco/all/jacocoAllReport.xml')
+        csv.outputLocation = layout.buildDirectory.file('reports/jacoco/all/jacocoAllReport.csv')
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco/all/html')
+    }
+}
+
 // Verrou : chaque instruction et chaque branche du code mesure sont couvertes par un test unitaire ou un test en jeu.
 tasks.register('jacocoCoverageVerification', JacocoCoverageVerification) {
     group = 'verification'
     description = 'Echoue sous 100 % des instructions ou des branches du code mesure (tests unitaires + tests en jeu).'
-    dependsOn test, 'runGameTest'
+    dependsOn test, 'runGameTest', 'runClientTest'
     executionData coverageExecutionData
     classDirectories.setFrom(coverageClassDirs())
     violationRules {
@@ -218,7 +333,8 @@ check.dependsOn 'jacocoCoverageVerification'
 // Le JAR ne contient que le mod : ni dependance embarquee, ni classe tierce, ni test en jeu.
 def allowedJarEntry = { String name ->
     name.endsWith('/')
-            || name == 'fabric.mod.json' || name == 'pack.mcmeta' || name == "${mod_id}.mixins.json" || name == 'META-INF/MANIFEST.MF'
+            || name == 'fabric.mod.json' || name == 'pack.mcmeta' || name == "${mod_id}.mixins.json" || name == "${mod_id}.compat.mixins.json"
+            || name == 'META-INF/MANIFEST.MF'
             || name == "LICENSE_${mod_id}"
             || name.startsWith("assets/${mod_id}/") || name.startsWith("data/${mod_id}/") || name.startsWith('data/minecraft/tags/')
             || (name.startsWith('com/gtgpuke/gtgsbackrooms/') && !name.startsWith('com/gtgpuke/gtgsbackrooms/gametest/'))

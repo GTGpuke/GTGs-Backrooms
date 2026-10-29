@@ -18,7 +18,7 @@ jobs:
   release:
     name: Verification complete et publication
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -41,6 +41,11 @@ jobs:
       - name: Rendre le wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Ecran virtuel et rendu logiciel pour le client de test (Xvfb, Mesa llvmpipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libglx-mesa0 libegl1
+
       - name: Resoudre le tag
         id: tag
         run: |
@@ -54,8 +59,10 @@ jobs:
         id: version
         run: echo "VERSION=${{ steps.tag.outputs.name }}" | sed 's/^VERSION=v/VERSION=/' >> "$GITHUB_OUTPUT"
 
-      - name: Verification complete (Checkstyle, tests, tests en jeu, couverture, contenu du JAR) et build
-        run: ./gradlew clean build --no-daemon --console=plain --warning-mode all
+      - name: Verification complete (Checkstyle, tests, tests en jeu serveur et client, couverture, contenu du JAR) et build
+        run: xvfb-run -a -s "-screen 0 1280x720x24" ./gradlew clean build --no-daemon --console=plain --warning-mode all
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
 
       - name: Verifier la version
         run: |

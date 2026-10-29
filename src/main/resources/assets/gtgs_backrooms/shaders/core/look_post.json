@@ -1,0 +1,13 @@
+{
+    "vertex": "gtgs_backrooms:look_post",
+    "fragment": "gtgs_backrooms:look_post",
+    "samplers": [
+        { "name": "Sampler0" },
+        { "name": "Sampler1" }
+    ],
+    "uniforms": [
+        { "name": "gtgs_PostParams", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] },
+        { "name": "gtgs_PostTint", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 0.0 ] },
+        { "name": "gtgs_PostLook", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
+    ]
+}

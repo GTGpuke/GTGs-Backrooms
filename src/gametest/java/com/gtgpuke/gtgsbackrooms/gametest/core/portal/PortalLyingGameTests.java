@@ -38,8 +38,8 @@ public final class PortalLyingGameTests implements FabricGameTest {
     public void aFallingBodyGoesThroughAFloorPortalAndDropsOutOfTheCeiling(TestContext context) {
         ServerWorld world = context.getWorld();
         BackroomsPortalEntity floor = lying(world, context.getAbsolute(FLOOR_FRAME), PortalFacing.UP, context.getAbsolute(CEILING_FRAME));
-        // Un porte-armure : un corps vivant qui tombe, sans IA qui le ferait derive hors d'un cadre d'un bloc de large (un mob
-        // sans IA, lui, n'a plus de gravite).
+        // Un porte-armure : un corps vivant qui tombe, sans comportement qui le ferait deriver hors d'un cadre d'un bloc de large
+        // (un mob dont le comportement est coupe, lui, n'a plus de gravite).
         ArmorStandEntity body = EntityType.ARMOR_STAND.create(world);
         body.refreshPositionAndAngles(floor.getX(), floor.getY() + 2.0, floor.getZ(), 0.0f, 0.0f);
         world.spawnEntity(body);

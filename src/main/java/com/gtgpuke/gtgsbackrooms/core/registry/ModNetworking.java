@@ -2,6 +2,7 @@ package com.gtgpuke.gtgsbackrooms.core.registry;
 
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 
+import com.gtgpuke.gtgsbackrooms.backrooms.level0.LevelZeroLayoutPayload;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalBlockActionPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalCrossPayload;
@@ -20,7 +21,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
 
 /**
  * Enregistrement des payloads reseau du mod (cote commun) : synchronisation, traversee et interaction a travers les portails,
- * reglages de la baguette.
+ * reglages de la baguette, graine du layout du Level 0 (acoustique tiree de la generation).
  */
 public final class ModNetworking {
 
@@ -39,6 +40,7 @@ public final class ModNetworking {
         PortalNetwork.registerS2C(RemoteEntityPacketPayload.ID, RemoteEntityPacketPayload.CODEC);
         PortalNetwork.registerS2C(RemoteBlockBreakingPayload.ID, RemoteBlockBreakingPayload.CODEC);
         PortalNetwork.registerS2C(PortalTeleportPayload.ID, PortalTeleportPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(LevelZeroLayoutPayload.ID, LevelZeroLayoutPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(PortalCrossPayload.ID, PortalCrossPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(PortalEntityActionPayload.ID, PortalEntityActionPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(PortalBlockActionPayload.ID, PortalBlockActionPayload.CODEC);

@@ -1,48 +1,121 @@
 package com.gtgpuke.gtgsbackrooms.compat.iris;
 
-import net.fabricmc.loader.api.FabricLoader;
+import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayerEntity;
+
+import com.gtgpuke.gtgsbackrooms.compat.iris.mixin.PipelineManagerAccessor;
+import com.gtgpuke.gtgsbackrooms.core.ModConfig;
+import com.gtgpuke.gtgsbackrooms.core.ModConstants;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
+import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
+
+import net.irisshaders.iris.Iris;
+import net.irisshaders.iris.pipeline.PipelineManager;
+import net.irisshaders.iris.pipeline.VanillaRenderingPipeline;
+import net.irisshaders.iris.pipeline.WorldRenderingPipeline;
+import net.irisshaders.iris.shaderpack.materialmap.WorldRenderingSettings;
 
 /**
- * Compatibilite avec le mod de shaders Iris. Avec un pack de shaders actif, Iris dessine le monde dans son propre
- * pipeline (geometrie dans ses tampons, eclairage differe, composition, passe finale ecrite dans la texture de couleur
- * de l'ecran hors de tout test de stencil) : une vue de portail dessinee au milieu du rendu vanilla n'y est qu'une
- * surface de plus, eclairee comme le cadre. Les vues passent alors par {@code ShaderPackPortalRenderer} : apres l'image
- * du monde du joueur, chaque vue est un rendu complet de son renderer ({@code WorldRenderer.render}), ou Iris deroule
- * tout son pipeline avec celui qu'il tient pour la dimension de la vue (un pipeline par dimension, comme il le fait deja
- * d'un changement de monde a l'autre), puis l'image du joueur est remise autour du cadre.
+ * Compatibilite avec le mod de shaders Iris : dans une dimension a look (les Backrooms), le rendu du mod remplace le pack
+ * de shaders actif (decision de l'auteur). Tant que le joueur est dans une telle dimension, le gestionnaire de pipelines
+ * d'Iris rend son pipeline vanilla pour tout ce qui se dessine, monde du joueur et vues de portail : les shaders vanilla,
+ * patches par le mod, dessinent tout (look, neons, post), et aucune image ne melange le format de maillage du terrain du
+ * pack et celui de vanilla (melanges, ils dessinaient le terrain en eclats, essai du 27 octobre 2026). En sortant, le
+ * pipeline du pack, garde compile dans le cache d'Iris, reprend sans recompilation.
  *
- * <p>Seule l'API publique d'Iris ({@code IrisApi}, v0) est lue, depuis {@link IrisApiBridge}, et seulement quand le mod
- * est charge : sans lui, aucune classe d'Iris n'est touchee. Le reste du mod ne connait Iris que par cette classe.
+ * <p>Chaque pipeline d'Iris pose a sa creation des reglages globaux (format des maillages, ombrage, identifiants pour le
+ * pack) qu'un pipeline repris du cache ne repose pas : ils sont gardes et reposes a chaque bascule
+ * ({@link PipelineSettings}), le mod de terrain recharge ses shaders de sections, et le terrain est reconstruit dans le
+ * format du pipeline courant (le renderer du joueur ; ceux des vues suivent son rechargement). La bascule ne se fait
+ * qu'au rendu du monde du joueur, jamais au milieu d'une vue. Depuis l'Overworld, une vue du Level 0 reste rendue par le
+ * pack, le look du mod pose dessus.
+ *
+ * <p>Option {@code gtgsbackrooms.look.replaceShaderPack} (vrai par defaut) ; coupee, ou Iris hors de la plage verifiee
+ * ({@link IrisVersion}), le pack rend aussi les Backrooms et le look se pose sur son image. Chargee seulement quand
+ * Iris l'est (les mixins qui l'appellent ne s'appliquent pas sans lui).
  */
 public final class IrisCompat {
 
-    private static final String MOD_ID = "iris";
-    private static final boolean LOADED = FabricLoader.getInstance().isModLoaded(MOD_ID);
-    /** Pack actif, releve a la premiere instruction de chaque rendu du monde du joueur ({@link #refresh}) et lu partout ailleurs. */
-    private static boolean shaderPackInUse;
+    private static @Nullable WorldRenderingPipeline vanilla;
+    private static @Nullable PipelineSettings packSettings;
+    private static @Nullable PipelineSettings vanillaSettings;
+    private static boolean replacing;
+    private static boolean logged;
 
     private IrisCompat() {
         throw new UnsupportedOperationException("Classe utilitaire.");
     }
 
-    /** {@code true} si Iris est charge. */
-    public static boolean isLoaded() {
-        return LOADED;
-    }
-
     /**
-     * Releve si un pack de shaders est actif, une fois par image, a la premiere instruction vanilla de
-     * {@code WorldRenderer.render} pour le monde du joueur : derriere la tete de la methode, ou Iris prepare son pipeline
-     * pour l'image. Releve avant (en tete de {@code GameRenderer.renderWorld}), son API dit "pas de pack" sur la premiere
-     * image apres une connexion ou un rechargement de pack. La decision vaut pour toute l'image (entities coupees par un
-     * portail ou dessinees entieres, puis vues), quoi qu'il arrive entre-temps.
+     * Au debut de chaque rendu du monde, avant qu'Iris ne prepare le sien : le pipeline a utiliser a la place, ou
+     * {@code null} pour celui d'Iris.
+     *
+     * @param manager gestionnaire de pipelines d'Iris
+     * @return le pipeline vanilla du mod dans une dimension a look, sinon {@code null}
      */
-    public static void refresh() {
-        shaderPackInUse = LOADED && IrisApiBridge.shaderPackInUse();
+    public static @Nullable WorldRenderingPipeline override(PipelineManager manager) {
+        if (PortalRenderState.isRendering()) {
+            // Au milieu d'une vue : le choix de l'image tient.
+            return replacing ? vanilla : null;
+        }
+        if (wantsVanilla()) {
+            if (!replacing) {
+                packSettings = PipelineSettings.capture();
+                if (vanilla == null) {
+                    // Sa construction pose ses reglages : les garder pour les bascules suivantes.
+                    vanilla = new VanillaRenderingPipeline();
+                    vanillaSettings = PipelineSettings.capture();
+                } else {
+                    vanillaSettings.apply();
+                }
+                replacing = true;
+                switched(manager);
+            }
+            ((PipelineManagerAccessor) manager).backrooms$setPipeline(vanilla);
+            return vanilla;
+        }
+        if (replacing) {
+            replacing = false;
+            packSettings.apply();
+            switched(manager);
+        }
+        return null;
     }
 
-    /** {@code true} si un pack de shaders etait actif au debut de l'image : les vues de portail se dessinent apres le monde. */
-    public static boolean shaderPackInUse() {
-        return shaderPackInUse;
+    /** Iris detruit ses pipelines (pack change, recharge, shaders coupes) : le pipeline vanilla du mod part avec eux. */
+    public static void onPipelinesDestroyed() {
+        if (vanilla != null) {
+            vanilla.destroy();
+            vanilla = null;
+        }
+        replacing = false;
+        packSettings = null;
+        vanillaSettings = null;
+    }
+
+    /** Un pack est charge, l'option le permet, et le joueur est dans une dimension a look. */
+    private static boolean wantsVanilla() {
+        if (!ModConfig.LOOK_REPLACE_SHADER_PACK || !ModConfig.ENABLE_LOOK || Iris.getCurrentPack().isEmpty()) {
+            return false;
+        }
+        ClientPlayerEntity player = MinecraftClient.getInstance().player;
+        return player != null && !LookProfiles.of(player.getWorld().getRegistryKey()).vanilla();
+    }
+
+    /** Apres une bascule : shaders de sections recharges, terrain reconstruit dans le nouveau format. */
+    private static void switched(PipelineManager manager) {
+        PipelineManagerAccessor accessor = (PipelineManagerAccessor) manager;
+        accessor.backrooms$setShaderReloadCounter(accessor.backrooms$getShaderReloadCounter() + 1);
+        WorldRenderingSettings.INSTANCE.clearReloadRequired();
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.worldRenderer != null) {
+            client.worldRenderer.reload();
+        }
+        if (!logged) {
+            logged = true;
+            ModConstants.LOGGER.info("[Look] Pack de shaders actif : dans les dimensions a look, le rendu du mod le remplace (pipeline vanilla d'Iris).");
+        }
     }
 }

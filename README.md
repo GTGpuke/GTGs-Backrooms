@@ -70,7 +70,7 @@ src/main/java/com/gtgpuke/gtgsbackrooms/
 │           ├── sector/  (labyrinthe brut + cache LRU)
 │           ├── layout/  (évaluation des cellules : topologie, lumière, gaps)
 │           └── write/   (palette, writer, détails muraux)
-├── compat/iris/                   ← compatibilité avec le mod de shaders Iris
+├── compat/iris/                   ← compatibilité avec le mod de shaders Iris (le rendu du mod remplace le pack dans les Backrooms)
 └── mixin/                         ← mixins (relais serveur des blocs, sons et particules, collision, mobs ; rendu client des portails)
 
 src/test/java/...                         ← ~500 tests JUnit 5 (logique pure + registres réels via fabric-loader-junit)

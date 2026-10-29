@@ -1,0 +1,7 @@
+{
+  "name": "gtgs_backrooms:screen_copy",
+  "scale": 1.0,
+  "format": "RGBA8",
+  "depth": false,
+  "filter": "nearest"
+}

@@ -1,0 +1,10 @@
+{
+    "vertex": "gtgs_backrooms:look_post",
+    "fragment": "gtgs_backrooms:look_blur",
+    "samplers": [
+        { "name": "Sampler0" }
+    ],
+    "uniforms": [
+        { "name": "gtgs_BlurStep", "type": "float", "count": 2, "values": [ 0.0, 0.0 ] }
+    ]
+}

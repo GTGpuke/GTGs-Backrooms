@@ -37,7 +37,7 @@ avant/après, benchmark avant/après sur la même machine, suite de tests rééc
 | Aucune mesure de couverture. | JaCoCo (XML, CSV, HTML), code client et mixins exclus. |
 | Aucun test en jeu. | Fabric GameTest : `./gradlew runGameTest` charge la dimension et vérifie la pile des 5 layers. Ajouté à la CI et à la release. |
 | 13 blocs `if (project.hasProperty(...)) vmArg ...` dupliqués entre `runClient` et le benchmark. | Une map de propriétés, appliquée aux deux. |
-| Dépendances `suggests` geckolib/patchouli sans effet. | Retirées ; l'étude `docs/DEPENDENCIES.md` a été retirée à son tour le 2026-10-20 (`docs/GUIDE.md` fait référence). |
+| Dépendances `suggests` vers deux mods tiers, sans effet. | Retirées ; l'étude `docs/DEPENDENCIES.md` a été retirée à son tour le 2026-10-20 (`docs/GUIDE.md` fait référence). |
 | `META-INF/mods.toml` (Forge), `atlases/blocks.json` (atlas jamais référencé), `assets/.../items/*.json` (format 1.21.4, ignoré en 1.21.1), dossiers `.github/java-upgrade` et `.github/modernize` d'un outil IDE, répertoires `com/ net/ org/` de `.class` à la racine. | Supprimés (les deux dossiers `.github/*` non versionnés et `tools/` n'ont pas pu être supprimés par l'agent : à faire à la main). |
 
 ### 2.2 Structure du code
@@ -48,7 +48,7 @@ avant/après, benchmark avant/après sur la même machine, suite de tests rééc
 | ~25 `package-info.java` d'une ligne. | Supprimés ; `docs/ARCHITECTURE.md` décrit les packages. |
 | `backrooms/level/level0/`, `perf/section/`, `creative/`, `network/`, `feature/gang/item/gang_badge/`, `feature/gang/network/c2s/` (payload S2C rangé en c2s). | `backrooms/level0/`, `perf/`, `init/` regroupe onglet et payloads, features aplaties. |
 | `GangBadgeActivatePacket` et l'ancienne classe de tests en jeu du contenu Gang : classes vides dépréciées « conservées pour éviter les conflits git ». | Supprimées. |
-| `AGENT.md` au contenu « CLAUDE.md ». | Renommé `CLAUDE.md`, réécrit. |
+| Fichier des règles du projet mal nommé. | Renommé, réécrit. |
 
 ### 2.3 Génération du Level 0 : intention
 

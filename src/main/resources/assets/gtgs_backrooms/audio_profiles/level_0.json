@@ -1,0 +1,9 @@
+{
+  "dimension": "gtgs_backrooms:backrooms_level_0",
+  "acoustics": "generated",
+  "reverb_base": { "decay": 1.1, "density": 0.8, "diffusion": 0.9, "gain": 0.32, "brightness": 0.7 },
+  "occlusion": { "wall": 0.6, "partial_block": 0.25, "max": 0.85 },
+  "air_absorption": 0.6,
+  "underwater": { "gain": 0.8, "gain_hf": 0.15 },
+  "ambience": { "hum": "gtgs_backrooms:block.neon.hum", "hum_volume": 0.25, "click_off": "gtgs_backrooms:block.neon.click_off", "click_on": "gtgs_backrooms:block.neon.click_on" }
+}

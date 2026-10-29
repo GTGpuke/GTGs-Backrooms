@@ -36,7 +36,6 @@ com.gtgpuke.gtgsbackrooms/
 |  `- level0/                    <- dont LevelZeroArrival : ou un portail arrive dans le labyrinthe
 |     |- biome/  block/  client/model/
 |     `- generation/  (LevelZeroChunkGenerator ; coord/ noise/ sector/ layout/ write/)
-|- compat/iris/                 <- compatibilité Iris (seul mod nommé)
 `- mixin/                       <- communs + client/
 ```
 

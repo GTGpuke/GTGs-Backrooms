@@ -1,9 +1,12 @@
 package com.gtgpuke.gtgsbackrooms.core.portal.client.sound;
 
+import java.util.List;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.math.Vec3d;
@@ -12,6 +15,8 @@ import net.minecraft.world.World;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 
 /**
  * Son qui traverse un portail : un son d'un monde distant (ou du monde du joueur, loin de lui) est rejoue au point du
@@ -19,8 +24,9 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
  * trajet jusqu'au cadre ({@link PortalSound}). Le joueur l'entend donc venir du cadre par lequel il voit l'autre
  * cote, d'autant plus faible que la source en est loin, que ce portail ait un retour ou non (aller simple). Un son d'un
  * monde distant qu'aucun portail ouvert ne rapproche du joueur n'est pas joue : a ses coordonnees brutes, il sonnerait
- * n'importe ou. Le son rejoue garde sa vraie source ({@link SoundAnchors}) : si le joueur traverse pendant qu'il joue, il
- * est replace de l'autre cote.
+ * n'importe ou. Un son peut passer deux cadres, par un portail vu a travers un autre (le monde intermediaire tel que le
+ * client le tient). Le son rejoue garde sa vraie source ({@link SoundAnchors}) : si le joueur traverse pendant qu'il
+ * joue, il est replace de l'autre cote.
  */
 public final class FrameSoundPlayer {
 
@@ -74,8 +80,8 @@ public final class FrameSoundPlayer {
         }
         Vec3d source = new Vec3d(x, y, z);
         // Les portails du monde du joueur vers celui du son : ceux par ou il voit l'autre cote, qu'ils aient un retour ou non.
-        PortalSound.Exit best = PortalSound.bestExit(ClientPortalIndex.portals(listenerWorld), soundWorld.getRegistryKey(), source, listener,
-                PortalSound.radius(volume));
+        PortalSound.Exit best = PortalSound.bestExit(ClientPortalIndex.portals(listenerWorld), FrameSoundPlayer::portalsOf, soundWorld.getRegistryKey(),
+                source, listener, PortalSound.radius(volume));
         if (best == null) {
             return remote;
         }
@@ -85,7 +91,7 @@ public final class FrameSoundPlayer {
         }
         Vec3d bestExit = best.point();
         PositionedSoundInstance sound = new PositionedSoundInstance(event, category, through, pitch, Random.create(seed), bestExit.x, bestExit.y, bestExit.z);
-        SoundAnchors.anchor(sound, soundWorld.getRegistryKey(), source, volume);
+        SoundAnchors.anchor(sound, soundWorld.getRegistryKey(), source, volume, best.arrival());
         double squared = listener.squaredDistanceTo(bestExit);
         if (useDistance && squared > DELAY_THRESHOLD_SQUARED) {
             client.getSoundManager().play(sound, (int) (Math.sqrt(squared) / DELAY_BLOCKS_PER_TICK));
@@ -93,5 +99,15 @@ public final class FrameSoundPlayer {
             client.getSoundManager().play(sound);
         }
         return true;
+    }
+
+    /**
+     * Les portails d'un monde que le client tient : le sien, ou un monde distant d'une vue ; aucun sinon. Le monde
+     * intermediaire d'un son qui passe deux cadres.
+     */
+    public static List<BackroomsPortalEntity> portalsOf(RegistryKey<World> key) {
+        ClientWorld main = MinecraftClient.getInstance().world;
+        World world = main != null && main.getRegistryKey().equals(key) ? main : RemoteWorldRegistry.worldOf(key);
+        return world == null ? List.of() : ClientPortalIndex.portals(world);
     }
 }
