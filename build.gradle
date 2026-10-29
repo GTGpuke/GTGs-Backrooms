@@ -105,7 +105,7 @@ afterEvaluate {
     }
 }
 
-// Conventions du code (docs/CONTRIBUTING.md), celles qu'un outil verifie : config/checkstyle/checkstyle.xml.
+// Conventions du code (docs/dev/CONTRIBUER.md), celles qu'un outil verifie : config/checkstyle/checkstyle.xml.
 checkstyle {
     toolVersion = '10.21.1'
     configDirectory = file('config/checkstyle')

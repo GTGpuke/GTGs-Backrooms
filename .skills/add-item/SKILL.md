@@ -32,7 +32,7 @@ description: "Ajouter un nouvel item au mod GTG's Backrooms (Fabric 1.21.1). Uti
 
 ### 2. Créer la classe item (si elle a un comportement)
 
-Sa classe va dans le paquet de son domaine (tableau « Où ranger quoi » de `docs/ARCHITECTURE.md`) :
+Sa classe va dans le paquet de son domaine (tableau « Où ranger quoi » de `docs/systemes/ARCHITECTURE.md`) :
 
 - objet d'un niveau des Backrooms : `backrooms/<niveau>/item/` (par exemple `backrooms/level0/item/AlmondWaterItem.java`) ;
 - objet d'un système du socle : `core/<système>/item/` (la baguette de portail : `core/portal/item/PortalWandItem.java`).
@@ -184,14 +184,14 @@ Un comportement qui demande un monde ou un joueur (clic droit, consommation) se 
 `src/gametest/java/com/gtgpuke/gtgsbackrooms/gametest/<domaine>/` (classe déclarée dans `src/gametest/resources/fabric.mod.json`).
 Modèle, texture, traductions EN et FR et onglet créatif sont vérifiés automatiquement par `ModRegistriesTest` et
 `ModCreativeTabTest` (`src/test/java/com/gtgpuke/gtgsbackrooms/core/registry/`). La couverture fusionnée exige que chaque
-instruction et chaque branche de la classe soient exécutées par un test unitaire ou un test en jeu (`docs/TESTING.md`).
+instruction et chaque branche de la classe soient exécutées par un test unitaire ou un test en jeu (`docs/dev/TESTS.md`).
 
 ---
 
 ### 10. Mettre à jour la documentation
 
-- [ ] `docs/ITEMS.md` — ajouter la fiche de l'item
-- [ ] `docs/CHANGELOG.md` — ajouter sous `### Added`
+- [ ] `docs/reference/CONTENU.md` — ajouter la fiche de l'item
+- [ ] `CHANGELOG.md` — ajouter sous `### Added`
 - [ ] Build : `./gradlew build --warning-mode all`
 
 ---
@@ -206,5 +206,5 @@ instruction et chaque branche de la classe soient exécutées par un test unitai
 - [ ] `lang/en_us.json` et `lang/fr_fr.json` mis à jour
 - [ ] Recette ajoutée (si applicable)
 - [ ] Test de comportement ajouté (paquet miroir) ; `ModRegistriesTest` vert
-- [ ] `docs/ITEMS.md` et `docs/CHANGELOG.md` mis à jour
+- [ ] `docs/reference/CONTENU.md` et `CHANGELOG.md` mis à jour
 - [ ] `./gradlew build --warning-mode all` passe sans erreur ni warning

@@ -5,7 +5,7 @@ description: "Rappelle les conventions du projet GTG's Backrooms (Fabric 1.21.1)
 
 # Conventions du projet GTG's Backrooms (Fabric 1.21.1)
 
-Source de vérité : `CLAUDE.md` (racine) et `docs/ARCHITECTURE.md` (dont le tableau « Où ranger quoi »).
+Source de vérité : `CLAUDE.md` (racine) et `docs/systemes/ARCHITECTURE.md` (dont le tableau « Où ranger quoi »).
 
 ## Identifiants clés
 
@@ -30,7 +30,7 @@ com.gtgpuke.gtgsbackrooms/
 |  |- registry/                 <- ModBlocks, ModItems, ModBlockEntities, ModEntities, ModDataComponents,
 |  |                               ModSounds, ModChunkGenerators, ModCreativeTab, ModNetworking
 |  |- perf/                     <- moniteur opt-in (+ client/)
-|  `- portal/                   <- portails (block, item, entity, transition, sync, interaction, client...), voir docs/PORTALS.md
+|  `- portal/                   <- portails (block, item, entity, transition, sync, interaction, client...), voir docs/systemes/PORTAILS.md
 |- backrooms/                   <- le contenu des Backrooms
 |  |- BackroomsConstants.java
 |  `- level0/                    <- dont LevelZeroArrival : ou un portail arrive dans le labyrinthe
@@ -80,16 +80,16 @@ ordre alphabétique dans chaque groupe (Checkstyle).
 - Aucune allocation ni concaténation de chaîne dans les méthodes tick/render.
 - Pas d'abstraction spéculative : interface, stage ou builder seulement avec un second usage réel.
 - Génération du Level 0 déterministe et verrouillée par `LevelZeroGoldenTest` ; sels de `StageRandom` figés ;
-  toute évolution voulue régénère les empreintes **et** passe par `docs/CHANGELOG.md`.
-- Toute modification touchant `backrooms/level0/` relit d'abord `docs/ARCHITECTURE.md` (section pipeline)
-  et, pour une évolution de spec, `docs/backrooms/backrooms-level0-pipeline-v6.md`.
-- Toute modification touchant `core/portal/` lit d'abord `docs/PORTALS.md`.
+  toute évolution voulue régénère les empreintes **et** passe par `CHANGELOG.md`.
+- Toute modification touchant `backrooms/level0/` relit d'abord `docs/systemes/LEVEL0.md` (pipeline de génération)
+  et, pour une évolution de spec, les specs de l'auteur dans `docs/backrooms/`.
+- Toute modification touchant `core/portal/` lit d'abord `docs/systemes/PORTAILS.md`.
 - Textures des blocs du Level 0 en 32x32 ; loot tables dans `data/<modid>/loot_table/blocks/`.
 - Les murs du Level 0 sont fixes ; les colonnes enfouies restent en `minecraft:bedrock`.
 
 ## Après chaque ajout
 
 - `lang/en_us.json` et `lang/fr_fr.json`
-- `docs/CHANGELOG.md` et la doc métier (`BLOCKS.md`, `ITEMS.md`, `DIMENSIONS.md`, `ENTITIES.md`)
+- `CHANGELOG.md` et la doc du contenu (`docs/reference/CONTENU.md`, `docs/reference/OPTIONS.md`, `docs/systemes/` pour un niveau)
 - un test de comportement dans `src/test/` ou `src/gametest/` (pas de test par réflexion)
 - `./gradlew build --warning-mode all` vert : Checkstyle, tests unitaires, tests en jeu, couverture (100 % des instructions et des branches), contenu du JAR

@@ -75,7 +75,7 @@ public final class GameTestServerWorlds {
         }
     }
 
-    /** Genere d'avance les chunks d'une arrivee du Nether (9 x 9 chunks autour d'elle). */
+    /** Genere d'avance les chunks d'une arrivee du Nether (11 x 11 chunks autour d'elle). */
     public static void pregenerateArrival(ServerWorld nether, Vec3d arrival) {
         pregenerate(nether, arrival, ARRIVAL_RADIUS);
     }

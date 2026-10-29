@@ -85,6 +85,6 @@ ItemGroupEvents.modifyEntriesEvent(ItemGroups.TOOLS).register(entries -> entries
 - [ ] Champs `ModItems.*` utilisés **sans** `.get()`
 - [ ] Clé de langue EN + FR (nouvel onglet)
 - [ ] `ModRegistriesTest` et `ModCreativeTabTest` verts
-- [ ] `docs/ITEMS.md` et `docs/CHANGELOG.md` mis à jour
+- [ ] `docs/reference/CONTENU.md` et `CHANGELOG.md` mis à jour
 - [ ] `./gradlew build --warning-mode all` passe
 - [ ] Vérifié en jeu (onglet visible en mode créatif)

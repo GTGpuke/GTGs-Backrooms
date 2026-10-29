@@ -5,7 +5,7 @@ Lis ces fichiers dans l'ordre avant de toucher au code.
 ## 1. Règles et vue d'ensemble
 - `CLAUDE.md` (racine) — règles obligatoires, commandes, pièges.
 - `README.md` — contenu du mod, structure, qualité.
-- `docs/AUDIT.md` — état du projet après l'audit d'octobre 2026 : ce qui a été décidé et pourquoi.
+- `docs/DECISIONS.md` — les décisions de l'auteur, datées, et leur raison.
 
 ## 2. Build
 - `gradle.properties` — toutes les versions (MC 1.21.1, Loader 0.19.5, API 0.116.17, Loom 1.17.21, Java 21, JUnit 5.11.4).
@@ -19,14 +19,16 @@ Lis ces fichiers dans l'ordre avant de toucher au code.
   `layout/LevelZeroCellEvaluator.java`, `write/LevelZeroBlockWriter.java`.
 
 ## 4. Architecture et tests
-- `docs/ARCHITECTURE.md` — packages, pipeline de génération, rendu client, conventions.
-- `docs/TESTING.md` — familles de tests, `MinecraftTestBootstrap`, empreintes, GameTest, benchmark.
+- `docs/systemes/ARCHITECTURE.md` — paquets, où ranger quoi, cycle de vie, conventions.
+- `docs/systemes/LEVEL0.md` — la dimension et son pipeline de génération.
+- `docs/dev/TESTS.md` — familles de tests, `MinecraftTestBootstrap`, empreintes, GameTest, benchmark.
 
 ## 5. Guide et specs Backrooms
-- `docs/GUIDE.md` — guide de conception et de développement du projet (règles d'or, état réel, architecture cible du
-  rendu et de l'audio, feuille de route) : à lire au début de chaque session, il complète `CLAUDE.md`.
-- `docs/backrooms/backrooms-level0-pipeline-v6.md` (spec du générateur du Level 0) et `backrooms-level0-roadmap.md`.
-- `docs/PORTALS.md` pour le système de portails tel qu'implémenté (lecture obligatoire avant de toucher `core/portal/`).
+- `docs/GUIDE.md` — vision, règles d'or, principes, glossaire, définition de « terminé », suite du travail : à lire
+  au début de chaque session, il complète `CLAUDE.md`.
+- Les specs de l'auteur dans `docs/backrooms/` et `docs/BACKROOMS_CONTENT_RULES.md`.
+- `docs/systemes/PORTAILS.md` pour le système de portails tel qu'implémenté (lecture obligatoire avant de toucher
+  `core/portal/`), puis `docs/systemes/RENDU.md` et `docs/systemes/AUDIO.md` pour les deux moteurs.
 
 ## Pièges à mémoriser
 

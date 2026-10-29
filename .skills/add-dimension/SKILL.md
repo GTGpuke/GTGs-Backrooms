@@ -99,7 +99,7 @@ Le système de portails (`core/portal/`) mène aujourd'hui du monde normal au Le
 aiguillée par `core/portal/block/PortalTargets`, et c'est le Level 0 qui sait où l'on arrive chez lui
 (`backrooms/level0/LevelZeroArrival`). Mener à un nouveau niveau : sa propre classe d'arrivée dans son paquet
 (`backrooms/<niveau>/`), et une branche de plus dans l'aiguillage de `PortalTargets`, sans réécrire sa logique (règle
-d'or de `docs/GUIDE.md`), après avoir lu `docs/PORTALS.md`. En attendant, `/execute in gtgs_backrooms:backrooms_level_1 run teleport @s 0 64 0` suffit pour
+d'or de `docs/GUIDE.md`), après avoir lu `docs/systemes/PORTAILS.md`. En attendant, `/execute in gtgs_backrooms:backrooms_level_1 run teleport @s 0 64 0` suffit pour
 tester.
 
 ---
@@ -129,8 +129,8 @@ Le générateur d'un niveau et ses aides vivent dans `backrooms/<niveau>/generat
 - [ ] `data/gtgs_backrooms/dimension_type/my_dim_type.json`
 - [ ] `data/gtgs_backrooms/dimension/my_dim.json`
 - [ ] Biome custom si nécessaire
-- [ ] Accès par les portails si souhaité : classe d'arrivée du niveau et branche dans `PortalTargets`, après lecture de `docs/PORTALS.md`
+- [ ] Accès par les portails si souhaité : classe d'arrivée du niveau et branche dans `PortalTargets`, après lecture de `docs/systemes/PORTAILS.md`
 - [ ] Chunk generator custom enregistré dans `core/registry/ModChunkGenerators.java` si nécessaire
 - [ ] Lang key pour le nom de la dimension
-- [ ] `docs/DIMENSIONS.md` + `CHANGELOG.md` mis à jour
+- [ ] Document du niveau dans `docs/systemes/` (sur le modèle de `LEVEL0.md`) + `CHANGELOG.md` mis à jour
 - [ ] Testé en jeu : `/execute in gtgs_backrooms:my_dim run teleport @s 0 64 0`

@@ -27,7 +27,7 @@ description: "Ajouter un bloc au mod GTG's Backrooms (Fabric 1.21.1). Déclenche
 
 ### 2. Créer la classe bloc si un comportement custom est nécessaire
 
-Sa classe va dans le paquet de son domaine (tableau « Où ranger quoi » de `docs/ARCHITECTURE.md`) :
+Sa classe va dans le paquet de son domaine (tableau « Où ranger quoi » de `docs/systemes/ARCHITECTURE.md`) :
 `backrooms/<niveau>/block/` pour un bloc d'un niveau (comme `backrooms/level0/block/LevelZeroWallpaperBlock`),
 `core/<système>/block/` pour un bloc d'un système du socle (comme `core/portal/block/BackroomsPortalBlock`).
 
@@ -88,7 +88,7 @@ L'item du bloc lit les clés de langue du bloc (`block.*`) : pas de clé `item.*
 
 - Ajouter la clé `block.gtgs_backrooms.<id>` en EN et FR.
 - Ajouter l'item à la liste `ENTRIES` de `core/registry/ModCreativeTab.java`.
-- Mettre à jour `docs/BLOCKS.md` et `docs/CHANGELOG.md`.
+- Mettre à jour `docs/reference/CONTENU.md` et `CHANGELOG.md`.
 - Tester le comportement propre au bloc dans le paquet miroir de `src/test/java/` (ou en jeu).
 
 ## Checklist finale
@@ -98,5 +98,5 @@ L'item du bloc lit les clés de langue du bloc (`block.*`) : pas de clé `item.*
 - [ ] BlockItem enregistré dans `core/registry/ModItems.java`, ajouté à `ModCreativeTab.ENTRIES`
 - [ ] Blockstate, modèle, item model, texture et loot table présents (`ModRegistriesTest` les vérifie)
 - [ ] Traductions EN et FR présentes
-- [ ] `docs/BLOCKS.md` et `docs/CHANGELOG.md` mis à jour
+- [ ] `docs/reference/CONTENU.md` et `CHANGELOG.md` mis à jour
 - [ ] `./gradlew build --warning-mode all` passe

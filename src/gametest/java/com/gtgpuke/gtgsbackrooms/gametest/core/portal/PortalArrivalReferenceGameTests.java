@@ -28,7 +28,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestArrivals;
 
 /**
- * Arrivees de reference (garde-fou G3 de {@code docs/revue/BILAN-CORRECTIONS.md}) : sur le terrain naturel du serveur de
+ * Arrivees de reference (garde-fou des remaniements de la recherche d'arrivee) : sur le terrain naturel du serveur de
  * test (graine 0), des cas fixes en coordonnees absolues, dont l'arrivee attendue a ete relevee sur le code de la 0.10.0 et
  * ne doit plus bouger. Un remaniement de la recherche d'arrivee (resolution asynchrone, point d'acces des destinations)
  * qui change l'un de ces resultats a change ce que voit le joueur.

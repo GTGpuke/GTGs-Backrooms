@@ -23,7 +23,7 @@ cd GTGs-Backrooms
 ./gradlew build          # JAR dans build/libs/ (après Checkstyle, tests, tests en jeu, couverture, contrôle du JAR)
 ```
 
-Détails d'installation : [docs/SETUP.md](docs/SETUP.md).
+Détails d'installation : [docs/dev/INSTALLATION.md](docs/dev/INSTALLATION.md).
 
 ---
 
@@ -32,7 +32,7 @@ Détails d'installation : [docs/SETUP.md](docs/SETUP.md).
 | Élément | Description |
 |---------|-------------|
 | **Backrooms Level 0** | Dimension `gtgs_backrooms:backrooms_level_0` : cinq layers de labyrinthe empilés, générés de façon déterministe par chunk (mini-labyrinthes superposés + salles tamponnées), moquette, papier peint adaptatif, néons en quinconce, deux biomes cosmétiques, plinthes et petits éléments muraux rendus côté client. |
-| **Portails Backrooms** | **Baguette de portail** (onglet créatif du mod) : son écran règle chaque paramètre (taille, lumière, faces, retour, sens de sortie, arrivée au hasard, plan au milieu ou au bord du bloc, arrivée tête en bas), puis elle pose des portails sans s'user : portail double face, visible et traversable dans les deux sens vers le Level 0, cadres debout, au sol ou au plafond (changement de gravité), posés contre un mur ou sur un sol plein qu'on traverse comme un trou (un cadre au sol est une trappe, l'arrivée au sol garde qui en sort), montures et véhicules emmenés avec leurs passagers, portail de retour, monde distant rendu à travers le cadre avec ses entités et ses propres portails, interaction à travers le cadre (chunks et entités synchronisés serveur → client). Détail : [docs/PORTALS.md](docs/PORTALS.md). |
+| **Portails Backrooms** | **Baguette de portail** (onglet créatif du mod) : son écran règle chaque paramètre (taille, lumière, faces, retour, sens de sortie, arrivée au hasard, plan au milieu ou au bord du bloc, arrivée tête en bas), puis elle pose des portails sans s'user : portail double face, visible et traversable dans les deux sens vers le Level 0, cadres debout, au sol ou au plafond (changement de gravité), posés contre un mur ou sur un sol plein qu'on traverse comme un trou (un cadre au sol est une trappe, l'arrivée au sol garde qui en sort), montures et véhicules emmenés avec leurs passagers, portail de retour, monde distant rendu à travers le cadre avec ses entités et ses propres portails, interaction à travers le cadre (chunks et entités synchronisés serveur → client). Détail : [docs/systemes/PORTAILS.md](docs/systemes/PORTAILS.md). |
 
 Accès au Level 0 en jeu :
 
@@ -75,10 +75,10 @@ src/main/java/com/gtgpuke/gtgsbackrooms/
 
 src/test/java/...                         ← ~500 tests JUnit 5 (logique pure + registres réels via fabric-loader-junit)
 src/gametest/java/...                     ← tests en jeu (mod séparé, runGameTest ; jamais dans le JAR)
-docs/                                     ← documentation technique, specs Backrooms, audit
+docs/                                     ← documentation (systèmes, développement, référence) et specs de l'auteur
 ```
 
-Architecture détaillée : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Index complet : [docs/INDEX.md](docs/INDEX.md).
+Architecture détaillée : [docs/systemes/ARCHITECTURE.md](docs/systemes/ARCHITECTURE.md). Index complet : [docs/INDEX.md](docs/INDEX.md).
 
 ---
 
@@ -93,7 +93,7 @@ Architecture détaillée : [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Index c
 - `./gradlew benchmarkLevelZeroGeneration` : benchmark déterministe de la génération.
 - `LevelZeroGoldenTest` verrouille les empreintes de génération : toute évolution de la génération est explicite.
 
-Dernier audit complet du projet : [docs/AUDIT.md](docs/AUDIT.md).
+Tests et couverture : [docs/dev/TESTS.md](docs/dev/TESTS.md).
 
 ---
 

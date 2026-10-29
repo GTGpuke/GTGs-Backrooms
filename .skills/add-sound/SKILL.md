@@ -11,7 +11,7 @@ description: "Ajouter un son au mod GTG's Backrooms (Fabric 1.21.1). Déclenche 
 - "Crée un son custom [description]"
 - "Le [item/bloc] doit faire un bruit [description]"
 
-Un son joué dans un monde traverse déjà les portails (relais serveur, rejeu au cadre : `docs/PORTALS.md`) : rien à
+Un son joué dans un monde traverse déjà les portails (relais serveur, rejeu au cadre : `docs/systemes/PORTAILS.md`) : rien à
 faire pour qu'on l'entende de l'autre côté. Le traitement avancé (environnements, occlusion) relève du futur système
 audio (`docs/GUIDE.md`), pas d'un son isolé.
 
@@ -107,5 +107,5 @@ world.playSound(null, pos, ModSounds.LEVEL_ZERO_FLUORESCENT_HUM, SoundCategory.B
 - [ ] `core/registry/ModSounds.java` — champ `static final` ajouté
 - [ ] Son joué depuis le code approprié avec `world.playSound()`, couvert par un test
 - [ ] Sous-titres ajoutés en EN + FR
-- [ ] `docs/CHANGELOG.md` mis à jour
+- [ ] `CHANGELOG.md` mis à jour
 - [ ] Testé en jeu (sous-titres visibles si activés, son entendu à travers un portail)

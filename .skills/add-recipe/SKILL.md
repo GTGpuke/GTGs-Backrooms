@@ -130,5 +130,5 @@ data/gtgs_backrooms/recipe/
 - [ ] Ingrédients corrects (vérifier les item IDs)
 - [ ] Résultat correct (vérifier l'item ID)
 - [ ] Testé en jeu : `/recipe give @p gtgs_backrooms:my_item`
-- [ ] `docs/ITEMS.md` mis à jour (mentionner la recette)
-- [ ] `docs/CHANGELOG.md` mis à jour
+- [ ] `docs/reference/CONTENU.md` mis à jour (mentionner la recette)
+- [ ] `CHANGELOG.md` mis à jour

@@ -76,8 +76,8 @@ public final class PortalViewTracker {
     /**
      * Ticks sans aucun portail a portee vers une dimension avant de demander au client d'en liberer le monde distant
      * (chunks, entites, renderer), jamais moins que le delai de grace qui decharge sa fenetre. Un retour apres ce delai
-     * voit la vue se reconstruire, le temps de renvoyer la fenetre (decision de l'auteur du 25 octobre 2026, C63 du bilan
-     * de {@code docs/revue/}).
+     * voit la vue se reconstruire, le temps de renvoyer la fenetre (decision de l'auteur du 25 octobre 2026,
+     * {@code docs/DECISIONS.md}).
      */
     static final int RELEASE_DELAY_TICKS =
             Math.max(UNLOAD_GRACE_TICKS, ModConfig.PORTAL_REMOTE_WORLD_RELEASE_SECONDS * SharedConstants.TICKS_PER_SECOND);

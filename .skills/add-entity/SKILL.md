@@ -30,7 +30,7 @@ description: "Ajouter une entité/mob au mod GTG's Backrooms (Fabric 1.21.1). D�
 
 ### 2. Créer la classe entité
 
-Sa classe va dans le paquet de son domaine (tableau « Où ranger quoi » de `docs/ARCHITECTURE.md`) :
+Sa classe va dans le paquet de son domaine (tableau « Où ranger quoi » de `docs/systemes/ARCHITECTURE.md`) :
 `backrooms/<niveau>/entity/` pour une créature d'un niveau, `core/<système>/entity/` pour une entité d'un système du
 socle (comme `core/portal/entity/BackroomsPortalEntity`).
 
@@ -132,7 +132,7 @@ EntityRendererRegistry.register(ModEntities.SMILER, SmilerEntityRenderer::new);
 ```
 
 Le code client (renderer, modèle) est exclu de la couverture : l'ajouter à `coverageExcludes` dans `build.gradle` et à
-la table des exclusions de `docs/TESTING.md`. Tout le reste (attributs, objectifs, comportement) se teste.
+la liste `coverageExcludes` de `build.gradle` (`docs/dev/TESTS.md`). Tout le reste (attributs, objectifs, comportement) se teste.
 
 ---
 
@@ -151,6 +151,6 @@ la table des exclusions de `docs/TESTING.md`. Tout le reste (attributs, objectif
 - [ ] `backrooms/<niveau>/client/entity/SmilerEntityRenderer.java`, enregistré dans `onInitializeClient()`
 - [ ] `textures/entity/smiler.png`
 - [ ] Clés EN + FR
-- [ ] `docs/ENTITIES.md` + `docs/CHANGELOG.md` mis à jour
+- [ ] `docs/reference/CONTENU.md` + `CHANGELOG.md` mis à jour
 - [ ] Tests de comportement (unitaires ou en jeu) ; exclusion de couverture du seul code client
 - [ ] `./gradlew build --warning-mode all` passe

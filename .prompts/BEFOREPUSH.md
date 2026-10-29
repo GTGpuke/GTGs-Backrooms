@@ -57,12 +57,13 @@ grep -rn "TODO\|FIXME" src/main/java --include=*.java
 ```bash
 ./gradlew benchmarkLevelZeroGeneration
 ```
-- [ ] Les trois chiffres restent dans l'ordre de grandeur de `docs/AUDIT.md` ; expliquer tout écart.
+- [ ] Les trois chiffres restent dans l'ordre de grandeur de `docs/systemes/LEVEL0.md` (performance) ; expliquer tout écart.
 
 ## 6. Documentation
 
-- [ ] `docs/CHANGELOG.md` à jour (section `[Unreleased]` ou version).
-- [ ] Doc métier concernée à jour : `BLOCKS.md`, `ITEMS.md`, `DIMENSIONS.md`, `ENTITIES.md`, `PORTALS.md`, `ARCHITECTURE.md`, `TESTING.md`.
+- [ ] `CHANGELOG.md` à jour (section `[Unreleased]` ou version).
+- [ ] Doc concernée à jour : `docs/systemes/` (portails, rendu, audio, Level 0, architecture), `docs/reference/CONTENU.md`,
+      `docs/reference/OPTIONS.md`, `docs/dev/TESTS.md`.
 - [ ] `README.md` si la structure ou les commandes ont changé.
 
 ## 7. Nettoyage

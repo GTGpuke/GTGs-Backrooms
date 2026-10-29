@@ -78,9 +78,9 @@ jobs:
       - name: Extraire les notes de version
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" docs/CHANGELOG.md)
+          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
           if [ -z "$NOTES" ]; then
-            NOTES="Voir docs/CHANGELOG.md."
+            NOTES="Voir CHANGELOG.md."
           fi
           echo "$NOTES" > release_notes.md
 

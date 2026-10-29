@@ -65,8 +65,9 @@ public final class ModConfig {
             booleanProperty("gtgsbackrooms.portal.occlusion", true);
 
     /**
-     * Allege la vue d'un cadre lointain et petit a l'ecran ({@code ViewDetail}) : ni meteo ni particules, entites figees.
-     * De pres, ou un cadre qui couvre un dixieme de l'ecran, la vue reste en pleine qualite. Se coupe pour comparer.
+     * Allege la vue d'un cadre lointain ({@code ViewDetail}) selon la taille a l'ecran d'un bloc juste derriere lui : vue
+     * allegee (ni meteo ni particules, entites figees), terrain simplifie, puis image figee. Tant qu'un bloc y fait au
+     * moins 24 pixels, la vue reste en pleine qualite. Se coupe pour comparer.
      */
     public static final boolean ENABLE_PORTAL_LOD =
             booleanProperty("gtgsbackrooms.portal.lod", true);
@@ -98,7 +99,7 @@ public final class ModConfig {
             booleanProperty("gtgsbackrooms.look.replaceShaderPack", true);
 
     /**
-     * Moteur audio ({@code docs/AUDIO.md}) : chaque son emis dans une dimension a profil audio
+     * Moteur audio ({@code docs/systemes/AUDIO.md}) : chaque son emis dans une dimension a profil audio
      * ({@code audio_profiles/*.json}) recoit sa reverb, son occlusion et son absorption de l'air, et ses neons bourdonnent.
      * Coupe, aucun profil n'est charge : tous les sons restent vanilla.
      */

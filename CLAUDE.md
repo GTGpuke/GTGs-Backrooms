@@ -1,8 +1,8 @@
 # CLAUDE.md — GTG's Backrooms
 
 > Lu automatiquement à chaque session. Règles obligatoires du projet.
-> Guide du projet : `docs/GUIDE.md` (règles d'or, état réel, feuille de route) — Onboarding complet : `docs/prompt/NOKNOWLEDGE.md` — Audit pré-push : `docs/prompt/BEFOREPUSH.md` — Vérification finale avant commit : `docs/prompt/FINALCHECK.md`
-> Dernier audit complet : `docs/AUDIT.md`
+> Index de la doc : `docs/INDEX.md` — Guide du projet : `docs/GUIDE.md` (règles d'or, principes, suite du travail) — Décisions de l'auteur : `docs/DECISIONS.md`
+> Onboarding complet : `.prompts/NOKNOWLEDGE.md` — Audit pré-push : `.prompts/BEFOREPUSH.md` — Vérification finale avant commit : `.prompts/FINALCHECK.md`
 
 ## Stack
 
@@ -25,18 +25,18 @@ Minecraft **1.21.1** / Yarn `1.21.1+build.3` / Fabric Loader **0.19.5** / Fabric
 
 Un seul JDK suffit : Java 21. Si `JAVA_HOME` pointe sur un autre JDK, Gradle détecte le 21 installé (toolchain).
 
-## Structure (voir docs/ARCHITECTURE.md)
+## Structure (voir docs/systemes/ARCHITECTURE.md)
 
 Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (le socle), `backrooms/` (le contenu),
-`compat/`, `mixin/`. Où ranger un nouvel objet, un son, un payload : tableau « Où ranger quoi » de `docs/ARCHITECTURE.md`.
+`compat/`, `mixin/`. Où ranger un nouvel objet, un son, un payload : tableau « Où ranger quoi » de `docs/systemes/ARCHITECTURE.md`.
 
 - `core/` : `ModConstants`, `ModConfig` (options lues en `-D`) et `registry/` : registres (`Registry.register` dans des
   champs `static final`), un par type (blocs, items, block entities, entities, composants, sons, onglet créatif,
   payloads). Le bloc portail n'a pas d'item : la baguette le pose.
-- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), garde d'une arrivée au sol, arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/PORTALS.md` avant d'y toucher.
+- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), garde d'une arrivée au sol, arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/systemes/PORTAILS.md` avant d'y toucher.
 - `core/perf/` : moniteur de performance opt-in.
-- `core/audio/` : moteur audio maison (`docs/AUDIO.md`, spec `docs/backrooms/MOTEUR_AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
-- `core/render/` : moteur de shaders maison (`docs/RENDERING.md`, spec `docs/backrooms/MOTEUR_SHADERS.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
+- `core/audio/` : moteur audio maison (`docs/systemes/AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
+- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
 - `backrooms/level0/generation/` : `coord` → `noise` → `sector` → `layout` → `write`, orchestrés par `LevelZeroChunkGenerator`.
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
@@ -67,16 +67,15 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 
 ## Guide et nouveaux systèmes (rendu, audio)
 
-- Lire `docs/GUIDE.md` au début de chaque session ; ses règles d'or (section 0) s'appliquent, et un écart entre le guide et
-  le code se consigne dans sa section 2.4 au lieu de forcer le code à suivre le guide.
+- Lire `docs/GUIDE.md` au début de chaque session ; ses règles d'or s'appliquent, et un écart entre le guide et le code
+  se consigne dans `docs/DECISIONS.md` au lieu de forcer le code à suivre le guide.
 - Le système de portails (`core/portal/`) est la base : l'étendre par des points d'accès (méthodes publiques,
   évènements), pas par des couches d'abstraction, et ne pas en réécrire la logique. Toute refonte est proposée et validée
   avant.
 - Un profil par monde, donnée, pas interface (`LookProfile` pour le rendu, `AudioProfile` pour l'audio, deux fichiers
   liés par la dimension) : aucun test sur la dimension du joueur pour décider d'un comportement de rendu ou d'audio ;
   le rendu d'un pixel dépend de la dimension qu'il montre, le traitement d'un son de la dimension où il est émis.
-- Les deux moteurs suivent `docs/backrooms/MOTEUR_SHADERS.md` et `docs/backrooms/MOTEUR_AUDIO.md` (specs de l'auteur,
-  qui font foi sur `backrooms-mod-plan.md` ; décisions du 27 octobre 2026 dans `docs/GUIDE.md`, section 2.4). Le rendu
+- Les deux moteurs suivent les specs de l'auteur (`docs/backrooms/`) et ses décisions (`docs/DECISIONS.md`). Le rendu
   tient en deux étages dans le stencil existant (`PortalStencilRenderer`) : injection par fragment dans les shaders
   vanilla (`core/render/patch/`, même famille que `ShaderClipInjector`) et post masqué par les bits de look du stencil ;
   pas de G-buffer ni de rendu différé. Pas de framebuffer de vue séparé hors du chemin sous pack de shaders
@@ -89,20 +88,20 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
   n'est permis que pour écrire un module `compat/`.
 - Si tu te souviens d'une implémentation existante d'une fonctionnalité, n'en reprends que le principe ; réécris à partir
   de notre architecture (profils par monde, passes par niveau de stencil, routage par source).
-- Chaque fonctionnalité a une définition de « terminé » (`docs/GUIDE.md`, section 5) et n'est livrée qu'une fois vérifiée
+- Chaque fonctionnalité a une définition de « terminé » (`docs/GUIDE.md`, section « Définition de « terminé » ») et n'est livrée qu'une fois vérifiée
   en jeu et le build complet vert.
-- Nommage : vocabulaire du glossaire (`docs/GUIDE.md`, section 4.4) pour les concepts nouveaux ; les termes déjà en place
+- Nommage : vocabulaire du glossaire (`docs/GUIDE.md`, section « Glossaire ») pour les concepts nouveaux ; les termes déjà en place
   dans `portal/` sont conservés.
-- Colle OpenGL et OpenAL : minimale, isolée dans `*/client/`, nommée dans `docs/TESTING.md` ; tout le reste est couvert à
+- Colle OpenGL et OpenAL : minimale, isolée dans `*/client/`, nommée dans `docs/dev/TESTS.md` ; tout le reste est couvert à
   100 %.
-- Chaque système a son document : `docs/RENDERING.md`, `docs/AUDIO.md`, sur le modèle de `docs/PORTALS.md` (en jeu,
-  architecture, protocole, limites connues, tests).
+- Chaque système a son document dans `docs/systemes/` (`PORTAILS.md`, `RENDU.md`, `AUDIO.md`, `LEVEL0.md`) : en jeu,
+  fonctionnement, réglages (`docs/reference/OPTIONS.md`), limites, tests.
 
 ## Génération du Level 0 : règle d'or
 
 La génération est **déterministe et verrouillée** par `LevelZeroGoldenTest` (empreintes par seed et layer).
 Toute modification qui change ces empreintes modifie les mondes existants : elle doit être voulue,
-annoncée dans `docs/CHANGELOG.md`, et les empreintes doivent être régénérées (relancer le test, copier les valeurs).
+annoncée dans `CHANGELOG.md`, et les empreintes doivent être régénérées (relancer le test, copier les valeurs).
 Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne se modifient jamais à la légère.
 
 ## Pièges Fabric / Yarn 1.21.1
@@ -495,7 +494,7 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 
 ## Avant de push
 
-Suivre `docs/prompt/BEFOREPUSH.md` : `./gradlew clean build --warning-mode all` sans warning (il enchaîne Checkstyle,
+Suivre `.prompts/BEFOREPUSH.md` : `./gradlew clean build --warning-mode all` sans warning (il enchaîne Checkstyle,
 tests unitaires, tests en jeu, verrou de couverture à 100 % des instructions et des branches, contrôle du contenu
 du JAR), CHANGELOG et docs à jour. Toute instruction nouvelle hors colle OpenGL
-client doit être couverte par un test unitaire ou un test en jeu, sinon le build échoue (`docs/TESTING.md`, section Couverture).
+client doit être couverte par un test unitaire ou un test en jeu, sinon le build échoue (`docs/dev/TESTS.md`, section Couverture).

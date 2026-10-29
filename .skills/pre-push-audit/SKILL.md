@@ -32,11 +32,10 @@ description: "Audit pré-push obligatoire avant tout commit final, push ou décl
   - `./gradlew compileTestJava --stacktrace`
   - `./gradlew test --stacktrace`
   - `./gradlew runClient`
-- Pour tout audit touchant `backrooms/level0/`, relire avant l'audit :
-  - `docs/backrooms/backrooms-level0-roadmap.md`
-  - `docs/backrooms/backrooms-level0-pipeline-v6.md`
+- Pour tout audit touchant `backrooms/level0/`, relire avant l'audit `docs/systemes/LEVEL0.md` et les specs de
+  l'auteur dans `docs/backrooms/`.
 - Toute suppression ou réorganisation réellement effectuée pendant l'audit doit
-  être journalisée dans `docs/CHANGELOG.md`.
+  être journalisée dans `CHANGELOG.md`.
 
 ### Workflow :
 ```
@@ -341,16 +340,15 @@ git diff --name-only HEAD 2>/dev/null || find . -newer build.gradle -name "*.jav
 Détermine quels docs doivent être mis à jour :
 | Fichier modifié | Doc à mettre à jour |
 |---|---|
-| Nouvel item | `docs/ITEMS.md` |
-| Nouveau block | `docs/BLOCKS.md` |
-| Nouvelle entité | `docs/ENTITIES.md` |
-| Nouvelle dimension | `docs/DIMENSIONS.md` |
-| Changement build.gradle | `docs/ARCHITECTURE.md` + `docs/SETUP.md` |
-| Changement de test | `docs/TESTING.md` |
-| Changement CI/CD | `docs/CICD.md` |
-| **TOUT changement** | `docs/CHANGELOG.md` |
+| Nouvel item, bloc ou entité | `docs/reference/CONTENU.md` |
+| Nouvelle option `-D` | `docs/reference/OPTIONS.md` |
+| Nouvelle dimension | `docs/systemes/` (un document par niveau, sur le modèle de `LEVEL0.md`) |
+| Changement build.gradle | `docs/systemes/ARCHITECTURE.md` + `docs/dev/INSTALLATION.md` |
+| Changement de test | `docs/dev/TESTS.md` |
+| Changement CI/CD | `docs/dev/CI.md` |
+| **TOUT changement** | `CHANGELOG.md` |
 
-- ✅/❌ `docs/CHANGELOG.md` est mis à jour ?
+- ✅/❌ `CHANGELOG.md` est mis à jour ?
 - ✅/❌ Les docs pertinentes sont à jour ?
 
 ### Vérification du README

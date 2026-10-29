@@ -11,7 +11,7 @@ import com.gtgpuke.gtgsbackrooms.core.ModConfig;
  *
  * <p>A portee ({@link #isInRange}), quelle que soit la direction du regard : le serveur precharge l'arrivee et
  * synchronise la fenetre de tout portail a portee de rendu, meme dans le dos, pour que le regard qui revient trouve
- * l'autre cote au lieu du brouillard (decision de l'auteur du 25 octobre 2026, C60 du bilan de {@code docs/revue/}).
+ * l'autre cote au lieu du brouillard (decision de l'auteur du 25 octobre 2026, {@code docs/DECISIONS.md}).
  * A portee et devant ({@link #isRelevant}) : le rendu, ou un portail dans le dos ne coute rien ; a portee
  * d'activation, la direction du regard ne compte pas non plus, on peut s'engager dans un portail a reculons ou de cote.
  */

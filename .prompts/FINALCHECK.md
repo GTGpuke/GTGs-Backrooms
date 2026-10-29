@@ -14,7 +14,7 @@ de mémoire.
 - Ne jamais accepter l'EULA Mojang (donc jamais `runServer`).
 - Ne pas toucher à la génération du Level 0 sans demande explicite.
 - Ne pas modifier mes specs : `docs/BACKROOMS_CONTENT_RULES.md`, `docs/backrooms/**`, `INDEX.md`. Une
-  incohérence s'y signale, elle ne s'y corrige pas. `docs/GUIDE.md` se corrige, écart consigné (sa règle d'or 11).
+  incohérence s'y signale, elle ne s'y corrige pas. `docs/GUIDE.md` se corrige, écart consigné dans `docs/DECISIONS.md` (règle d'or 11).
 - Un autre mod ne se nomme que dans son module de compatibilité (`compat/<mod>/`), ses messages (clés `compat.*`) et la
   doc qui décrit ce module (décision du 29 octobre 2026) ; nulle part ailleurs dans le code, les tests ou la doc, et
   aucun nom ou structure de code calqué sur un autre mod. Les noms à chercher sont dans la mémoire de l'assistant
@@ -33,8 +33,8 @@ de mémoire.
 
 ## 1. Préparer
 
-- [ ] Lire `CLAUDE.md` (règles **et** section « Pièges »), puis `docs/TESTING.md`, puis `docs/PORTALS.md` si les portails
-      sont touchés, puis `docs/AUDIT.md`, qui sert de référence de performance.
+- [ ] Lire `CLAUDE.md` (règles **et** section « Pièges »), puis `docs/dev/TESTS.md`, puis `docs/systemes/PORTAILS.md` si les portails
+      sont touchés, puis `docs/systemes/LEVEL0.md`, qui sert de référence de performance.
 - [ ] Lister le périmètre avec `git status --short`, `git diff --stat` et `git diff --cached --stat`.
 - [ ] Pour chaque fichier du périmètre : le relire en entier, puis suivre ses appelants et ses appelés touchés par le
       changement.
@@ -107,7 +107,7 @@ de mémoire.
   - la taille des listes est plafonnée dans le codec ;
   - le mode de jeu est autorisé (spectateur refusé).
 - [ ] Un nouveau payload est enregistré dans `ModNetworking`, a un test d'aller-retour de son codec dans
-      `PortalPayloadsTest` et une ligne dans le tableau de `PORTALS.md`.
+      `PortalPayloadsTest` et une ligne dans le tableau de `docs/systemes/PORTAILS.md`.
 
 ### 2.8 Mixins
 - [ ] `@Shadow` ne vise que des membres déclarés dans la classe cible (pas les membres hérités).
@@ -168,7 +168,7 @@ de mémoire.
 ```bash
 ./gradlew benchmarkLevelZeroGeneration
 ```
-- [ ] Les trois chiffres restent dans l'ordre de grandeur de `docs/AUDIT.md` (layout et écriture : 0,129 ms par chunk) ;
+- [ ] Les trois chiffres restent dans l'ordre de grandeur de `docs/systemes/LEVEL0.md` (layout et écriture : 0,129 ms par chunk) ;
       un écart s'explique.
 
 ```bash
@@ -214,11 +214,11 @@ find src -type d -empty; find src -name ".gitkeep"
 
 ## 8. Documentation
 
-- [ ] `docs/CHANGELOG.md`, section `[Unreleased]` : une entrée par changement visible, correction ou retrait (Added,
+- [ ] `CHANGELOG.md`, section `[Unreleased]` : une entrée par changement visible, correction ou retrait (Added,
       Changed, Removed, Fixed).
-- [ ] `docs/PORTALS.md` : comportement, tableaux des classes, tableau des payloads, limites connues et listes de tests.
-- [ ] `docs/TESTING.md` : listes des tests et exclusions de couverture, à jour des classes ajoutées.
-- [ ] `BLOCKS.md`, `ITEMS.md`, `ENTITIES.md`, `DIMENSIONS.md`, `ARCHITECTURE.md` et `README.md` si la structure, le
+- [ ] `docs/systemes/PORTAILS.md` : comportement, tableaux des classes, tableau des payloads, limites connues et listes de tests.
+- [ ] `docs/dev/TESTS.md` : listes des tests et exclusions de couverture, à jour des classes ajoutées.
+- [ ] `docs/reference/CONTENU.md`, `docs/reference/OPTIONS.md`, `docs/systemes/` et `README.md` si la structure, le
       contenu ou les commandes changent.
 - [ ] `CLAUDE.md` : structure, commandes, et un piège par leçon nouvelle apprise pendant la passe.
 - [ ] Les nombres et constantes cités dans la doc (payloads, réglages, intervalles, distances) sont ceux du
