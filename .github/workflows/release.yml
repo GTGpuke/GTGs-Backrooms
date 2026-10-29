@@ -85,7 +85,7 @@ jobs:
           echo "$NOTES" > release_notes.md
 
       - name: Creer la release GitHub
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           name: "GTG's Backrooms v${{ steps.version.outputs.VERSION }}"
