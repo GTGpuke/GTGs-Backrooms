@@ -106,7 +106,7 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
 
 ## 27 octobre 2026
 
-- Les specs de l'auteur pour le rendu et l'audio (`docs/backrooms/`) font foi sur le plan général du mod.
+- Les specs de l'auteur pour le rendu et l'audio font foi sur le plan général du mod.
 - Le rendu tient en deux étages dans le stencil existant : look injecté par fragment, puis post-traitement masqué. Pas de
   G-buffer, ni d'éclairage différé, ni d'ombres, ni de reflets. Remplace la question du G-buffer, laissée ouverte le
   20 octobre ([rendu](systemes/RENDU.md)).
@@ -171,3 +171,13 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   L'audit du 15 octobre et le bilan de la revue sont retirés, ce qui en reste valable est ici.
 - Les specs des deux moteurs, le plan général et les specs du générateur du Level 0 sont retirés de `docs/backrooms/`,
   en attendant leur nouvelle version.
+
+## 30 octobre 2026
+
+- Les nouveaux documents de conception de l'auteur font foi : moteur de shaders, moteur audio, qualité et presets,
+  gameplay, production des assets, concurrents. Ils sont rangés dans `docs/interne/`.
+- Aucun fichier suivi ne nomme un projet de référence, hors des modules de compatibilité.
+- Là où ces documents reprennent un texte plus ancien que les décisions du 26 au 29 octobre (les sections 1 à 15 du
+  moteur de shaders, une partie du moteur audio), ces décisions priment. Leur nouveau contenu fait foi : paliers de
+  qualité, LOD, presets, gameplay, production.
+- Les anciennes règles de contenu quittent la documentation publiée. La vision de jeu de l'auteur les remplace.

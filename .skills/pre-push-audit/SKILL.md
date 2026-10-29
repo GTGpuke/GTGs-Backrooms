@@ -33,7 +33,7 @@ description: "Audit pré-push obligatoire avant tout commit final, push ou décl
   - `./gradlew test --stacktrace`
   - `./gradlew runClient`
 - Pour tout audit touchant `backrooms/level0/`, relire avant l'audit `docs/systemes/LEVEL0.md` et les specs de
-  l'auteur dans `docs/backrooms/`.
+  l'auteur dans `docs/interne/` (non versionnés).
 - Toute suppression ou réorganisation réellement effectuée pendant l'audit doit
   être journalisée dans `CHANGELOG.md`.
 

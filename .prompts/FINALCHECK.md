@@ -13,7 +13,8 @@ de mémoire.
 - Ne jamais commiter ni pousser. À la fin : `git add -A`, c'est moi qui commite.
 - Ne jamais accepter l'EULA Mojang (donc jamais `runServer`).
 - Ne pas toucher à la génération du Level 0 sans demande explicite.
-- Ne pas modifier mes specs : `docs/BACKROOMS_CONTENT_RULES.md`, `docs/backrooms/**`, `INDEX.md`. Une
+- Ne pas modifier mes specs : `docs/interne/**`, `docs/backrooms/**`, `INDEX.md`.
+  `docs/interne/` ne s'indexe qu'avec mon accord. Une
   incohérence s'y signale, elle ne s'y corrige pas. `docs/GUIDE.md` se corrige, écart consigné dans `docs/DECISIONS.md` (règle d'or 11).
 - Un autre mod ne se nomme que dans son module de compatibilité (`compat/<mod>/`), ses messages (clés `compat.*`) et la
   doc qui décrit ce module (décision du 29 octobre 2026) ; nulle part ailleurs dans le code, les tests ou la doc, et
@@ -179,9 +180,9 @@ grep -rn "import net.minecraft.client" src/main/java --include=*.java | grep -v 
 grep -rniE "<noms de la mémoire « Pas d'autre mod »>" src docs CLAUDE.md README.md
 find src -type d -empty; find src -name ".gitkeep"
 ```
-- [ ] Toutes ces commandes ne renvoient rien. Exceptions : les specs de GTGpuke (`BACKROOMS_CONTENT_RULES.md`,
-      `INDEX.md`, `docs/backrooms/**`), et les modules de compatibilité (`compat/<mod>/`, leurs clés `compat.*`, leur
-      dépendance de compilation et la doc qui les décrit).
+- [ ] Toutes ces commandes ne renvoient rien. Exceptions : les specs de GTGpuke (`INDEX.md`,
+      `docs/backrooms/**`, `docs/interne/**`), et les modules de compatibilité (`compat/<mod>/`, leurs clés `compat.*`,
+      leur dépendance de compilation et la doc qui les décrit).
 
 ## 5. Vérification en jeu (dès qu'un mixin, du code client ou le rendu est touché)
 
@@ -229,7 +230,8 @@ find src -type d -empty; find src -name ".gitkeep"
 
 - [ ] `git status --short` ne montre aucun fichier temporaire (`.bak`, `.tmp`, `golden_*.txt`, scripts ponctuels) ni dossier
       vide. Le dossier `run/` est tel qu'il était (options, captures).
-- [ ] Faire `git add -A`, puis vérifier avec `git status --short`. **Pas de commit.**
+- [ ] Faire `git add -A`, puis vérifier avec `git status --short`. **Pas de commit.** `docs/interne/` n'est indexé
+      qu'avec mon accord.
 
 ## 10. Rapport final
 

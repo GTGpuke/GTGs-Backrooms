@@ -82,7 +82,8 @@ ordre alphabétique dans chaque groupe (Checkstyle).
 - Génération du Level 0 déterministe et verrouillée par `LevelZeroGoldenTest` ; sels de `StageRandom` figés ;
   toute évolution voulue régénère les empreintes **et** passe par `CHANGELOG.md`.
 - Toute modification touchant `backrooms/level0/` relit d'abord `docs/systemes/LEVEL0.md` (pipeline de génération)
-  et, pour une évolution de spec, les specs de l'auteur dans `docs/backrooms/`.
+  et, pour une évolution de spec, les documents de conception de l'auteur dans `docs/interne/`
+  (non versionnés).
 - Toute modification touchant `core/portal/` lit d'abord `docs/systemes/PORTAILS.md`.
 - Textures des blocs du Level 0 en 32x32 ; loot tables dans `data/<modid>/loot_table/blocks/`.
 - Les murs du Level 0 sont fixes ; les colonnes enfouies restent en `minecraft:bedrock`.

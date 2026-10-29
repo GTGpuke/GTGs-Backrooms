@@ -20,7 +20,7 @@ Dans les Backrooms, le rendu du mod remplace alors le pack
 ([compatibilité avec les packs de shaders](systemes/RENDU.md#packs-de-shaders)).
 
 Hors périmètre : le contenu des niveaux, le lore, les entités et le gameplay. Ils suivent les
-[règles de contenu](BACKROOMS_CONTENT_RULES.md) et les specs de l'auteur (`docs/backrooms/`).
+documents de conception de l'auteur, qui font foi et ne sont pas publiés.
 
 ## Règles d'or
 
@@ -100,9 +100,9 @@ au lieu d'en ouvrir un second. Un son rejoué garde la dimension de sa vraie sou
 Le code est neuf, en structure comme en implémentation. Les principes sont libres, l'implémentation appartient au mod.
 
 - L'étude et l'implémentation se font dans des sessions séparées. Une session d'étude lit une référence et écrit des
-  notes de conception en prose dans `docs/design/`, sans extrait de code ni nom de classe, de méthode ou de champ.
+  notes de conception en prose dans `docs/interne/`, sans extrait de code ni nom de classe, de méthode ou de champ.
 - Une session d'implémentation n'a aucun code source d'un autre mod dans son contexte. Ses sources sont les notes de
-  `docs/design/`, l'architecture et les conventions du dépôt.
+  `docs/interne/`, l'architecture et les conventions du dépôt.
 - Le souvenir d'une implémentation existante ne donne que son principe. On réécrit à partir de notre architecture :
   profils par monde, passes par niveau de stencil, routage par source.
 - Pour un module de compatibilité, on lit les signatures de l'autre mod, jamais son code source. Le module compile

@@ -75,7 +75,12 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - Un profil par monde, donnée, pas interface (`LookProfile` pour le rendu, `AudioProfile` pour l'audio, deux fichiers
   liés par la dimension) : aucun test sur la dimension du joueur pour décider d'un comportement de rendu ou d'audio ;
   le rendu d'un pixel dépend de la dimension qu'il montre, le traitement d'un son de la dimension où il est émis.
-- Les deux moteurs suivent les specs de l'auteur (`docs/backrooms/`) et ses décisions (`docs/DECISIONS.md`). Le rendu
+- `docs/interne/` : documents de conception de l'auteur (moteurs, qualité et presets, gameplay, production), source de
+  vérité, sauf là où ils reprennent un texte plus ancien qu'une décision de `docs/DECISIONS.md`, qui prime alors. Ils
+  ne s'indexent jamais sans l'accord de l'auteur, et aucun autre fichier ne cite les projets de référence
+  qu'ils nomment (code, commentaires, JAR, interface, crédits, doc publique), modules `compat/` mis à part.
+- Les deux moteurs suivent `docs/interne/MOTEUR_SHADERS.md`, `docs/interne/MOTEUR_AUDIO.md` et
+  `docs/interne/QUALITE_ET_PRESETS.md`, et les décisions de l'auteur (`docs/DECISIONS.md`). Le rendu
   tient en deux étages dans le stencil existant (`PortalStencilRenderer`) : injection par fragment dans les shaders
   vanilla (`core/render/patch/`, même famille que `ShaderClipInjector`) et post masqué par les bits de look du stencil ;
   pas de G-buffer ni de rendu différé. Pas de framebuffer de vue séparé hors du chemin sous pack de shaders
@@ -84,7 +89,7 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
   (`compat/iris`, livré le 29 octobre 2026).
 - L'audio étend `FrameSoundPlayer`, `PortalSound` et le relais serveur existants.
 - Sessions d'implémentation : aucun code source d'un autre mod dans le contexte ; les notes de conception
-  `docs/design/*.md` sont la seule source autorisée. Lire l'API d'un mod tiers (ses signatures, jamais son code source)
+  `docs/interne/` sont la seule source autorisée. Lire l'API d'un mod tiers (ses signatures, jamais son code source)
   n'est permis que pour écrire un module `compat/`.
 - Si tu te souviens d'une implémentation existante d'une fonctionnalité, n'en reprends que le principe ; réécris à partir
   de notre architecture (profils par monde, passes par niveau de stencil, routage par source).

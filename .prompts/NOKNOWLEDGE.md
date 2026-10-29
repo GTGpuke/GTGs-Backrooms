@@ -26,7 +26,8 @@ Lis ces fichiers dans l'ordre avant de toucher au code.
 ## 5. Guide et specs Backrooms
 - `docs/GUIDE.md` — vision, règles d'or, principes, glossaire, définition de « terminé », suite du travail : à lire
   au début de chaque session, il complète `CLAUDE.md`.
-- Les specs de l'auteur dans `docs/backrooms/` et `docs/BACKROOMS_CONTENT_RULES.md`.
+- Les documents de conception de l'auteur dans `docs/interne/` (non versionnés, source de vérité : moteurs, qualité et
+  presets, gameplay, production).
 - `docs/systemes/PORTAILS.md` pour le système de portails tel qu'implémenté (lecture obligatoire avant de toucher
   `core/portal/`), puis `docs/systemes/RENDU.md` et `docs/systemes/AUDIO.md` pour les deux moteurs.
 

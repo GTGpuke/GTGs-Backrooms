@@ -38,10 +38,12 @@ traverse sans coupure, et deux moteurs maison pour l'image et le son.
 | [reference/CONTENU.md](reference/CONTENU.md) | Blocs, items et entités du mod |
 | [reference/OPTIONS.md](reference/OPTIONS.md) | Toutes les options `-D` et leurs équivalents Gradle |
 
-## Specs de l'auteur
+## Documents de conception
 
-Ces documents décrivent ce que le mod doit devenir. Ils ne se modifient qu'à la demande de l'auteur.
+Les documents de conception de l'auteur décrivent ce que le mod doit devenir et font foi, sauf là où une décision
+plus récente de [DECISIONS.md](DECISIONS.md) les remplace. Ils ne font pas partie de la documentation publiée.
 
-- [BACKROOMS_CONTENT_RULES.md](BACKROOMS_CONTENT_RULES.md) : règles de contenu et direction artistique des Backrooms.
-- [backrooms/](backrooms/) : specs des niveaux et gabarit des structures manuelles du Level 0.
+## Données de référence du Level 0
+
+- [backrooms/](backrooms/) : gabarit des structures manuelles du Level 0.
 - [dimensions/](dimensions/) : type de dimension multicouche du Level 0, en JSON de référence.
