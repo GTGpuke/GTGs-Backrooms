@@ -65,6 +65,7 @@ class UtilityClassesTest {
                 "com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.write.LevelZeroDebugPalette",
                 "com.gtgpuke.gtgsbackrooms.core.portal.block.PortalArea",
                 "com.gtgpuke.gtgsbackrooms.core.portal.block.PortalTargets",
+                "com.gtgpuke.gtgsbackrooms.core.portal.client.world.BuildBuffers",
                 "com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalLight",
                 "com.gtgpuke.gtgsbackrooms.core.portal.client.sound.PortalSound",
                 "com.gtgpuke.gtgsbackrooms.core.portal.client.view.LazyVertexBuffers",

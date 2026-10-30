@@ -19,6 +19,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.CloudRenderMode;
 import net.minecraft.client.render.BackgroundRenderer;
 import net.minecraft.client.render.BufferBuilderStorage;
@@ -36,10 +37,12 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRenderDispatcher;
 import net.minecraft.client.render.chunk.ChunkBuilder;
+import net.minecraft.client.render.chunk.ChunkRendererRegionBuilder;
 import net.minecraft.client.render.entity.EntityRenderDispatcher;
 import net.minecraft.client.render.model.ModelLoader;
 import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.world.ClientChunkManager;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.BlockBreakingInfo;
@@ -64,6 +67,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewCone;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewRenderStart;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
+import com.gtgpuke.gtgsbackrooms.mixin.client.BuiltChunkStorageAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.CameraAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.FrustumAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
@@ -90,6 +94,19 @@ public final class RemoteViewRenderer {
     private static final int FRUSTUM_COVER_BOX = 8;
     /** Cote, en blocs, de la cellule de camera dont le changement fait repartir le graphe de culling vanilla (comme vanilla). */
     private static final double CAMERA_CELL = 8.0;
+    /**
+     * Distance du joueur au cadre d'un portail de son monde sous laquelle il peut passer bientot : les sections autour de
+     * l'arrivee se construisent alors d'avance ({@link #prebuildArrival}).
+     */
+    public static final double PREBUILD_DISTANCE = 8.0;
+    /** Sections construites d'avance autour de l'arrivee : rayon horizontal, en sections. */
+    private static final int PREBUILD_RADIUS = 4;
+    /** Sections construites d'avance autour de l'arrivee : de part et d'autre de celle de l'arrivee, en hauteur. */
+    private static final int PREBUILD_HEIGHT = 2;
+    /** Constructions demandees d'avance au plus par image : la file du chunk builder reste courte. */
+    private static final int PREBUILD_PER_FRAME = 8;
+    /** Position de la section examinee par la construction d'avance (fil de rendu seulement). */
+    private static final BlockPos.Mutable PREBUILD_CURSOR = new BlockPos.Mutable();
     /**
      * La grille de sections d'un renderer ne se recentre que si l'ancrage s'eloigne de plus de ce nombre de chunks de
      * son centre : deux portails voisins vers la meme dimension, ou le retour juste apres une traversee, la partagent
@@ -438,6 +455,7 @@ public final class RemoteViewRenderer {
             } else {
                 placeTerrainOnce(client, accessor, camera, cameraPos, portal.destinationPos());
                 accessor.backrooms$updateChunks(camera);
+                prebuildArrival(client, accessor, portal);
             }
         }
     }
@@ -473,6 +491,7 @@ public final class RemoteViewRenderer {
             } else {
                 setupTerrain(client, accessor, camera, cameraPos, portal.destinationPos(), projection);
                 accessor.backrooms$updateChunks(camera);
+                prebuildArrival(client, accessor, portal);
             }
         }
         // Ciel de la vue avec son brouillard de ciel, puis brouillard du terrain, comme le rendu principal. Le dome du ciel se
@@ -708,6 +727,64 @@ public final class RemoteViewRenderer {
             accessor.backrooms$setLastCameraPitch(pitch);
             accessor.backrooms$setLastCameraYaw(yaw);
         }
+    }
+
+    /**
+     * Le joueur approche du cadre d'un portail vers une autre dimension : il peut passer, et ce renderer deviendrait le
+     * sien. La vue ne construit que les sections que montre le cadre ; celles qui entourent l'arrivee, dans tous les sens,
+     * se construisent ici d'avance, les plus proches d'abord, quelques-unes par image. Sans cela, ce qui entoure le joueur
+     * apres la traversee apparaitrait section par section, et derriere lui s'il se retourne. Une section ne se construit
+     * que dans un chunk charge entoure de ses quatre voisins : les chunks d'un monde distant arrivent avec leur lumiere
+     * ({@link RemoteWorld#loadChunk}). Le tampon de regions du chunk builder ne s'alloue que s'il y a une section a
+     * construire, comme a chaque {@code updateChunks} de vanilla.
+     */
+    private void prebuildArrival(MinecraftClient client, WorldRendererAccessor accessor, BackroomsPortalEntity portal) {
+        ClientPlayerEntity player = client.player;
+        BuiltChunkStorage chunks = accessor.backrooms$getChunks();
+        ChunkBuilder builder = this.renderer.getChunkBuilder();
+        if (player == null || chunks == null || builder == null || portal.getWorld() != player.getWorld()
+                || portal.destinationDim().equals(player.getWorld().getRegistryKey())
+                || portal.squaredDistanceToFrame(player.getX(), player.getEyeY(), player.getZ()) > PREBUILD_DISTANCE * PREBUILD_DISTANCE) {
+            return;
+        }
+        Vec3d arrival = portal.destinationPos();
+        int centerX = ChunkSectionPos.getSectionCoord(arrival.x);
+        int centerY = ChunkSectionPos.getSectionCoord(arrival.y);
+        int centerZ = ChunkSectionPos.getSectionCoord(arrival.z);
+        ChunkRendererRegionBuilder regions = null;
+        int budget = PREBUILD_PER_FRAME;
+        for (int ring = 0; ring <= PREBUILD_RADIUS && budget > 0; ring++) {
+            for (int dx = -ring; dx <= ring && budget > 0; dx++) {
+                for (int dz = -ring; dz <= ring && budget > 0; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != ring || !columnReady(centerX + dx, centerZ + dz)) {
+                        continue;
+                    }
+                    for (int dy = -PREBUILD_HEIGHT; dy <= PREBUILD_HEIGHT && budget > 0; dy++) {
+                        PREBUILD_CURSOR.set(ChunkSectionPos.getBlockCoord(centerX + dx), ChunkSectionPos.getBlockCoord(centerY + dy),
+                                ChunkSectionPos.getBlockCoord(centerZ + dz));
+                        ChunkBuilder.BuiltChunk section = ((BuiltChunkStorageAccessor) chunks).backrooms$getRenderedChunk(PREBUILD_CURSOR);
+                        // La grille boucle : la section rangee a cette place peut en couvrir une autre.
+                        if (section == null || !section.needsRebuild() || !section.getOrigin().equals(PREBUILD_CURSOR)) {
+                            continue;
+                        }
+                        if (regions == null) {
+                            regions = new ChunkRendererRegionBuilder();
+                        }
+                        section.scheduleRebuild(builder, regions);
+                        section.cancelRebuild();
+                        budget--;
+                    }
+                }
+            }
+        }
+    }
+
+    /** {@code true} si le chunk de cette colonne et ses quatre voisins sont charges : ses sections peuvent se construire. */
+    private boolean columnReady(int chunkX, int chunkZ) {
+        ClientChunkManager manager = this.world.getChunkManager();
+        return manager.getWorldChunk(chunkX, chunkZ) != null && manager.getWorldChunk(chunkX - 1, chunkZ) != null
+                && manager.getWorldChunk(chunkX + 1, chunkZ) != null && manager.getWorldChunk(chunkX, chunkZ - 1) != null
+                && manager.getWorldChunk(chunkX, chunkZ + 1) != null;
     }
 
     /**

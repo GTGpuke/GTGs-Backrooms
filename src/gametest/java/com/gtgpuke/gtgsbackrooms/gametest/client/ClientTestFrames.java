@@ -1,14 +1,25 @@
 package com.gtgpuke.gtgsbackrooms.gametest.client;
 
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.chunk.WorldChunk;
+
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
+
+import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
 
 /**
  * Images rendues par le client de test : leur compte, la capture du tampon principal a la fin d'une image (apres le rendu
@@ -18,19 +29,53 @@ import net.minecraft.util.Identifier;
 public final class ClientTestFrames {
 
     private static final List<FrameStep> RECORDED = new ArrayList<>();
+    /** Distance sous laquelle une section non construite compte comme un trou proche (le brouillard du Level 0). */
+    private static final double NEAR_HOLE_DISTANCE = 48.0;
     private static int count;
     private static boolean captureRequested;
     private static @Nullable NativeImage captured;
     private static boolean recording;
     private static @Nullable NativeImage previous;
+    private static long lastFrameNanos;
+    private static int chunkLoads;
+    private static int chunkUnloads;
+    private static int remoteChunkLoads;
+    private static long lastCollections;
 
     private ClientTestFrames() {
         throw new UnsupportedOperationException("Classe utilitaire.");
     }
 
+    /** Compte les chunks charges et decharges par le client, image par image (appele a l'initialisation du mod de test). */
+    static void registerChunkCounters() {
+        ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
+            if (world == MinecraftClient.getInstance().world) {
+                chunkLoads++;
+            } else {
+                remoteChunkLoads++;
+            }
+        });
+        ClientChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> chunkUnloads++);
+    }
+
     /** A la fin de chaque image du client (mixin du mod de test). */
     public static void onFrameEnd(MinecraftClient client) {
         count++;
+        long now = Util.getMeasuringTimeNano();
+        double frameMillis = lastFrameNanos == 0L ? 0.0 : (now - lastFrameNanos) / 1.0e6;
+        lastFrameNanos = now;
+        int loads = chunkLoads;
+        int unloads = chunkUnloads;
+        int remoteLoads = remoteChunkLoads;
+        long collections = 0L;
+        for (GarbageCollectorMXBean collector : ManagementFactory.getGarbageCollectorMXBeans()) {
+            collections += Math.max(0L, collector.getCollectionCount());
+        }
+        int collected = (int) (collections - lastCollections);
+        lastCollections = collections;
+        chunkLoads = 0;
+        chunkUnloads = 0;
+        remoteChunkLoads = 0;
         if (client.world == null) {
             return;
         }
@@ -42,13 +87,40 @@ public final class ClientTestFrames {
             captured = ScreenshotRecorder.takeScreenshot(client.getFramebuffer());
         }
         if (recording) {
-            NativeImage now = ScreenshotRecorder.takeScreenshot(client.getFramebuffer());
+            NativeImage image = ScreenshotRecorder.takeScreenshot(client.getFramebuffer());
             if (previous != null) {
-                RECORDED.add(new FrameStep(Images.meanDifference(previous, now), client.world.getRegistryKey().getValue()));
+                int[] holes = holes(client);
+                RECORDED.add(new FrameStep(Images.meanDifference(previous, image), client.world.getRegistryKey().getValue(), frameMillis,
+                        client.worldRenderer.getCompletedChunkCount(), holes[0], holes[1], client.world.getChunkManager().getLoadedChunkCount(), loads,
+                        unloads, remoteLoads, collected));
                 previous.close();
             }
-            previous = now;
+            previous = image;
         }
+    }
+
+    /**
+     * Sections que le renderer du joueur doit dessiner (graphe et frustum) sans les avoir encore construites, et qui ont des
+     * blocs (une section d'air n'a rien a montrer) : des trous, tous, puis ceux a moins de {@link #NEAR_HOLE_DISTANCE}
+     * blocs de la camera.
+     */
+    private static int[] holes(MinecraftClient client) {
+        int unbuilt = 0;
+        int near = 0;
+        Vec3d camera = client.gameRenderer.getCamera().getPos();
+        for (ChunkBuilder.BuiltChunk section : ((WorldRendererAccessor) client.worldRenderer).backrooms$getBuiltChunks()) {
+            BlockPos origin = section.getOrigin();
+            WorldChunk chunk = client.world.getChunkManager().getWorldChunk(origin.getX() >> 4, origin.getZ() >> 4);
+            int index = chunk == null ? -1 : chunk.getSectionIndex(origin.getY());
+            boolean hasBlocks = index >= 0 && index < chunk.getSectionArray().length && !chunk.getSectionArray()[index].isEmpty();
+            if (hasBlocks && section.getData() == ChunkBuilder.ChunkData.EMPTY) {
+                unbuilt++;
+                if (section.getBoundingBox().squaredMagnitude(camera) < NEAR_HOLE_DISTANCE * NEAR_HOLE_DISTANCE) {
+                    near++;
+                }
+            }
+        }
+        return new int[] {unbuilt, near};
     }
 
     /** Nombre d'images rendues depuis le lancement. */
@@ -84,11 +156,21 @@ public final class ClientTestFrames {
     }
 
     /**
-     * Ecart d'une image a la precedente.
+     * Ecart d'une image a la precedente, et ce qui l'accompagne.
      *
      * @param difference ecart moyen absolu par canal, de 0 a 255
      * @param world monde du joueur pendant cette image
+     * @param frameMillis temps ecoule depuis la fin de l'image precedente
+     * @param builtSections sections que le renderer du joueur a construites et dessine
+     * @param holes sections a dessiner que le renderer du joueur n'a pas encore construites
+     * @param nearHoles celles de ces sections a moins de 48 blocs de la camera
+     * @param loadedChunks chunks charges dans le monde du joueur
+     * @param chunkLoads chunks charges dans le monde du joueur pendant cette image (nouveaux ou remplaces)
+     * @param chunkUnloads chunks decharges par le client pendant cette image, tous mondes confondus
+     * @param remoteChunkLoads chunks charges dans les mondes distants pendant cette image
+     * @param collections passages du ramasse-miettes pendant cette image
      */
-    public record FrameStep(double difference, Identifier world) {
+    public record FrameStep(double difference, Identifier world, double frameMillis, int builtSections, int holes, int nearHoles, int loadedChunks,
+            int chunkLoads, int chunkUnloads, int remoteChunkLoads, int collections) {
     }
 }

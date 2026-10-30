@@ -104,9 +104,11 @@ est dans un fluide ou la neige poudreuse, sous cécité ou obscurité, ou sous u
 
 ### Néons
 
-Chaque monde client tient l'index de ses néons (`NeonIndex`, `NeonMap`). Il se remplit à l'arrivée de chaque chunk, en
-ne parcourant que les sections dont la palette contient le bloc de néon. Il suit ensuite chaque `setBlockState` du monde
-client et oublie les colonnes déchargées.
+Chaque monde client tient l'index de ses néons (`NeonIndex`, `NeonMap`). Il se remplit des chunks reçus, en ne
+parcourant que les sections dont la palette contient le bloc de néon. Le relevé se fait en fin de tick, dans l'ordre
+d'arrivée, 1,5 ms par tick au plus : une fenêtre de portail reçue d'un coup ne coûte pas une image longue (9 ms pour
+153 chunks du Level 0 en un seul relevé). Il suit ensuite chaque `setBlockState` du monde client et oublie les colonnes
+déchargées.
 
 Pour chaque vue, `NeonLights` retient les néons les plus proches de sa caméra, huit ou trente-deux selon la qualité. Il
 les envoie dans un bloc d'uniformes `std140`, `gtgs_NeonBlock`, avec leur position, leur portée, leur couleur et leur
@@ -171,7 +173,9 @@ Le stencil des portails porte le niveau d'imbrication et le look de chaque pixel
 
 Tout test de niveau masque avec `StencilLookMask.LEVEL_MASK`. Une vue n'écrit ses bits de look que sur les pixels
 qu'elle prend, ceux qui passent du niveau n à n+1, et le retour de niveau les laisse. En fin d'image, les bits de look
-d'un pixel valent donc le look de la vue la plus profonde qui y est visible.
+d'un pixel valent donc le look de la vue la plus profonde qui y est visible. La main du joueur, dessinée après les vues
+et par-dessus tout, écrit sur ses pixels les bits de look du monde du joueur (`HandMask`) : elle est de son monde, même
+devant un cadre, et le post du look que montre le cadre ne dessine pas la silhouette du cadre sur elle.
 
 L'effacement n'écrit que les bits du masque courant, d'où un masque `0xFF`. Il a lieu au début du rendu du monde, même
 sans portail visible, puis au début de la passe des portails. L'option `debugStencil` affiche le stencil à la place de
@@ -187,7 +191,8 @@ l'image.
 5. Pour chaque portail visible, la zone du cadre passe au niveau n+1 et prend le look de la dimension vue.
    `LookState.push` et `NeonLights.push` posent le look et les néons de la vue, qui se dessine avec sa lightmap et son
    brouillard. Le niveau revient ensuite à n, et les bits de look restent.
-6. Les translucides, les particules, les nuages et la météo se dessinent, puis la main.
+6. Les translucides, les particules, les nuages et la météo se dessinent, puis la main, qui reprend dans le stencil le
+   look du monde du joueur.
 7. `LookPost` copie l'écran, calcule le bloom et dessine un triangle par look visible.
 8. `LookState.endWorld` remet le look vanilla pour l'interface.
 
@@ -311,8 +316,9 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
   alloue environ 0,3 Kio par appel, d'origine non élucidée.
 - Un pack se détecte au milieu du rendu du joueur. Ce qui se décide avant lit donc l'état de l'image précédente, d'où
   une image de retard à l'activation ou à la coupure d'un pack.
-- L'index des néons relève les chunks à leur arrivée. Un profil rechargé qui change de bloc de néon ne vaut que pour les
-  chunks reçus ensuite.
+- L'index des néons relève les chunks après leur arrivée, en quelques ticks pour une rafale. Un tube d'un chunk tout
+  juste reçu n'éclaire qu'une fois relevé. Un profil rechargé qui change de bloc de néon ne vaut que pour les chunks
+  reçus ensuite.
 - Au-delà des néons retenus pour une vue, un tube brille sans éclairer autour de lui. La portée 8 et la force 0,6 du
   Level 0 sont un réglage de départ, à ajuster à l'œil.
 - Le bloom n'est masqué qu'à la composition. Au bord d'un cadre, le halo d'un tube peut déborder de quelques pixels vers

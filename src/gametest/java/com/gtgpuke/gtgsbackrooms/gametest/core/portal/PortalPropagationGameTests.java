@@ -161,7 +161,8 @@ public final class PortalPropagationGameTests implements FabricGameTest {
                 .completeIfSuccessful();
     }
 
-    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 1200, batchId = "portal_pursuit")
+    // L'attente de l'arrivee, puis la poursuite (le husk traverse en quelques centaines de ticks).
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 3000, batchId = "portal_pursuit")
     public void mobsChaseThroughOpenPortals(TestContext context) {
         ServerWorld world = context.getWorld();
         ServerWorld nether = GameTestServerWorlds.nether(context);
@@ -173,20 +174,36 @@ public final class PortalPropagationGameTests implements FabricGameTest {
         prey.teleport(nether, PURSUIT_EXIT.x, PURSUIT_EXIT.y - 1.0, PURSUIT_EXIT.z + 3.0, 180.0f, 0.0f);
         ServerPlayerEntity builder = GameTestPlayers.connect(context, GameMode.CREATIVE, context.getAbsolute(new Vec3d(22.5, 0.0, 20.5)), 0.0f, 0.0f);
         builder.teleport(nether, PURSUIT_EXIT.x, PURSUIT_EXIT.y - 1.0, PURSUIT_EXIT.z + 1.5, 180.0f, 0.0f);
-        // Un husk ne brule pas au soleil : il a tout le temps de voir la proie par le cadre, de marcher et de traverser.
-        HuskEntity husk = context.spawnEntity(EntityType.HUSK, new Vec3d(1.5, 0.0, 2.5));
-        husk.setPersistent();
+        HuskEntity[] spawned = new HuskEntity[1];
         boolean[] threatening = {false};
+        // Le chunk force du Nether ne suit ses entities qu'une fois actif, des milliers de ticks plus tard parfois (le serveur
+        // de test tique sans attendre) : la poursuite ne commence qu'ensuite, sinon elle courrait contre le chargement.
+        BlockPos arrival = BlockPos.ofFloored(PURSUIT_EXIT);
         context.createTimedTaskRunner()
                 .createAndAdd(() -> {
+                    if (!nether.shouldTickEntity(arrival)) {
+                        throw new GameTestException("Le chunk d'arrivee du Nether n'est pas encore actif.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    // Un husk ne brule pas au soleil : il a tout le temps de voir la proie par le cadre, de marcher et de traverser.
+                    spawned[0] = context.spawnEntity(EntityType.HUSK, new Vec3d(1.5, 0.0, 2.5));
+                    spawned[0].setPersistent();
+                })
+                .createAndAdd(() -> {
+                    HuskEntity husk = spawned[0];
                     // En chemin, avant le cadre : posture d'attaque, sans cible de ce cote.
                     threatening[0] |= !husk.isRemoved() && husk.isAttacking() && husk.getTarget() == null;
                     // Vanilla garde l'identifiant de l'entity qui change de monde : c'est par lui qu'on la retrouve.
                     if (!(nether.getEntity(husk.getUuid()) instanceof HuskEntity)) {
-                        throw new GameTestException("Le husk n'a pas encore traverse le portail.");
+                        // Ce qu'il fait, si l'attente expire : ou il est, ce qu'il cible, ou il va.
+                        throw new GameTestException("Le husk n'a pas encore traverse le portail : en " + husk.getPos() + (husk.isRemoved() ? ", retire" : "")
+                                + ", cible " + husk.getTarget() + ", en marche " + husk.getNavigation().isFollowingPath() + ", proie en " + prey.getPos()
+                                + " dans " + prey.getWorld().getRegistryKey().getValue() + ".");
                     }
                 })
                 .createAndAddReported(() -> {
+                    HuskEntity husk = spawned[0];
                     try {
                         HuskEntity arrived = (HuskEntity) nether.getEntity(husk.getUuid());
                         context.assertTrue(threatening[0], "En marchant vers le portail, le husk avait deja la posture d'attaque.");

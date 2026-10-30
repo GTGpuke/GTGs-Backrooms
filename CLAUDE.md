@@ -281,7 +281,17 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   est déjà celui de la vue pendant qu'elle se dessine.
 - Renderers : `WorldRenderer.close()` ne libère que ses post-effets ; les tampons de son `BufferBuilderStorage` (une
   trentaine de Mio hors du tas Java) ne sont jamais rendus. Un renderer de vue jeté passe par `RemoteWorld.release`, qui
-  garde ses tampons pour le suivant.
+  garde ses tampons pour le suivant, au bout de cinq secondes. Celui du joueur a un tampon de construction par cœur
+  (`BlockBufferBuilderPool.allocate(availableProcessors)`, borné par la mémoire, une dizaine de Mio chacun), une vue deux :
+  `BuildBuffers` ajuste chaque tick la réserve de chacun. La réserve d'un `ChunkBuilder` (`buffersPool`, une
+  `ArrayDeque`) ne se touche que dans sa file (`mailbox`, sur les fils de travail, pas le fil de rendu), où une tâche en
+  cours rend son tampon à la réserve que le champ désigne quand elle finit : y créer des tampons et fermer des tampons
+  libres est sûr ; changer le champ vide une réserve pour de bon et le renderer ne reconstruit plus aucune section (blocs
+  figés à travers un portail, bogue du 30 octobre 2026), déplacer des tampons depuis le fil de rendu est une course, et une
+  réserve reprise par un autre chunk builder aussitôt l'arrêt reçoit encore les tampons des tâches de l'ancien. Un chunk
+  builder ne lance qu'une tâche par appel de `scheduleRunTasks` (un envoi, une fin de tâche) : des tampons ajoutés restent
+  inutilisés sans un appel par tampon. Une section au-delà de 24 blocs ne se construit qu'avec ses quatre chunks voisins
+  chargés (`BuiltChunk.shouldBuild`).
 - Spectateur : `ServerPlayerEntity.attack` d'un spectateur appelle `setCameraEntity`, qui le téléporte vers la cible,
   dans son monde ; toute action d'un spectateur à travers un portail est refusée. Vanilla ne suit un joueur spectateur
   que pour les spectateurs (`canBeSpectated`) : une vue de portail fait de même, et un spectateur ne compte pas pour une
@@ -294,7 +304,17 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   dont les changements passent par `MixinWorld`.
 - Envoi des chunks : tant qu'un chunk attend son tour dans le `ChunkDataSender` d'un joueur, vanilla ne lui envoie aucun
   changement de bloc (`isTracked` exclut `isInNextBatch`), comptant l'envoyer entier : un chunk qu'on lui épargne (tenu
-  après une traversée, `MixinChunkDataSender`) et qui change doit partir quand même.
+  après une traversée, `MixinChunkDataSender`) et qui change doit partir quand même. Vanilla propose un même chunk deux
+  fois : au suivi du joueur, puis quand un ticket le rend actif (`makeChunkTickable` → `sendToPlayers`, sans regarder
+  s'il est déjà envoyé) ; un chunk tenu le reste donc pour chaque proposition, et cesse de l'être quand vanilla le
+  retire au client (`ChunkDataSender.unload`). Le filtre du joueur est un cylindre bordé d'un anneau : jusqu'à la
+  distance de vue plus un sur les axes (`ChunkFilter.isWithinDistance`, `includeEdge`). En solo, le `ChunkDataSender`
+  local envoie tout en un lot, et le client charge des centaines de chunks dans une image. Vanilla n'envoie qu'un chunk
+  post-traité (`getPostProcessedChunk`) : le filtre du joueur en compte qu'il n'a jamais reçus. Les changements de blocs
+  et de lumière d'un tick partent en fin de tick (`ChunkHolder.flushUpdates`), aux joueurs qui suivent encore le chunk :
+  un joueur qui change de monde dans le tick les perd. Les lots partent en fin de
+  tick serveur (`MinecraftServer.tickWorlds`), pas au tick du gestionnaire réseau : un test en jeu qui veut un lot tout
+  de suite appelle `sendChunkBatches`.
 - `ChunkBuilder$BuiltChunk$RebuildTask` reçoit une région nulle pour une section vide (`ChunkRendererRegionBuilder.build`
   rend `null` quand tout est vide) ; et un mod de rendu du terrain ne passe pas par elle. Ce qui doit connaître les
   blocs d'un monde client (index des néons) se relève sur les chunks eux-mêmes : `ClientChunkEvents.CHUNK_LOAD` de
@@ -340,10 +360,15 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   la portée de vue par défaut d'un client, deux chunks (`SyncedClientOptions.createDefault`) : moins que la fenêtre
   d'un portail (`DestinationLoader.syncRadius`).
 - Tests du client : le serveur envoie un son aussitôt, les blocs changés seulement en fin de tick ; un test qui pose des
-  blocs puis joue un son attend que le client ait les blocs. Le délai de libération d'un monde distant y vaut 5 s
+  blocs puis joue un son attend que le client ait les blocs. Une image capturée attend le processeur graphique : les
+  temps d'image d'un relevé avec captures ne valent que pour comparer. Pour le vrai temps, un relevé sans captures ; JFR
+  y nomme `main` le fil de rendu (renommé après son départ), et son échantillonnage ne suffit pas à expliquer une image
+  longue isolée. Le délai de libération d'un monde distant y vaut 5 s
   (`remoteWorldReleaseSeconds`), et après le dernier test le client quitte le monde : la fin de partie est un test
   (`end_of_game`). Une règle de rendu ou d'audio qu'aucune image ne montre se lit dans l'état (uniforme, sampler,
-  `alGetSourcef`, diagnostic `AcousticRouter.describe`), jamais à l'œil.
+  `alGetSourcef`, diagnostic `AcousticRouter.describe`), jamais à l'œil. Le secours du serveur compare la position d'un
+  joueur d'un tick à l'autre (`TeleportExecutor.processPlayer`) : une téléportation de moins de 8 blocs qui coupe un
+  cadre est une traversée. Un joueur neuf apparaît au hasard dans `spawnRadius` : le monde des tests du client le met à 0.
 - Tests en jeu : `GameTestPlayers.sent` consomme ce qu'il rend. Une attente puis une vérification qui lisent le même
   type doivent accumuler ce qu'elles lisent, sinon la vérification ne voit plus ce que l'attente a déjà lu (et un envoi
   fautif passe inaperçu).
@@ -371,6 +396,10 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   cadre qui balance (`ShaderPackPortalRenderer.VIEW_EXTRA` lui reporte l'écart).
 - Pack de shaders et main : le pack dessine la main à sa vraie profondeur, et le plan d'un cadre à moins d'un demi-bloc
   de la caméra la bat ; une vue dessinée après l'image la recouvrait (`HandMask` marque ses pixels dans le stencil).
+  Sans pack, la main se dessine après les vues mais ses pixels gardaient les bits de look du cadre derrière elle, et le
+  post de ce look y dessinait la silhouette du cadre : `HandMask` y écrit les bits de look du monde du joueur. Les tests
+  du client cachent l'interface, main comprise (`hudHidden`) : un test qui veut la main l'affiche le temps de sa mesure,
+  et relit le stencil entre deux images (`ClientTestStencil`).
 - Code commun mesuré : pas de branche sur `world.isClient()` (le serveur de test n'a pas de client, la branche client
   ne serait jamais prise) ; le côté se choisit par `PortalCollision.Worlds.side`, que le client implémente
   (`ClientPortalIndex`). JaCoCo affiche un ratio sous le minimum tronqué à la précision du minimum (« 0.9 » pour 0,998) :

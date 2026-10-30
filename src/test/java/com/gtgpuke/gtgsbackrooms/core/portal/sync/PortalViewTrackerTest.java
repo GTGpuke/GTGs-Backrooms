@@ -1,5 +1,6 @@
 package com.gtgpuke.gtgsbackrooms.core.portal.sync;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,7 @@ import net.minecraft.world.WorldEvents;
 import com.gtgpuke.gtgsbackrooms.MinecraftTestBootstrap;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
+import com.gtgpuke.gtgsbackrooms.core.portal.transition.DestinationLoader;
 
 @DisplayName("Paquets relayes aux joueurs qui regardent une dimension")
 class PortalViewTrackerTest {
@@ -72,6 +74,18 @@ class PortalViewTrackerTest {
         assertFalse(PortalViewTracker.seenThroughAnother(portal(position, World.END, false), World.OVERWORLD, window), "Invisible.");
         assertFalse(PortalViewTracker.seenThroughAnother(portal(position, World.OVERWORLD, true), World.OVERWORLD, window),
                 "Vers le monde du joueur : le client le tient deja.");
+    }
+
+    @Test
+    @DisplayName("Pres d'un cadre, la fenetre couvre ce que vanilla enverrait au joueur, dans la carte du client")
+    void windowNearAFrame() {
+        int near = DestinationLoader.syncRadius(true);
+        assertEquals(9, PortalViewTracker.nearRadius(8, 10, 0), "La distance de vue du joueur et l'anneau qui la borde.");
+        assertEquals(7, PortalViewTracker.nearRadius(12, 6, 0), "Bornee par la distance de vue du serveur.");
+        assertEquals(near, PortalViewTracker.nearRadius(2, 10, 0), "Jamais moins que la fenetre pres du portail.");
+        int fitting = (RemoteChunkWindow.MAP_RADIUS - 4) / 2;
+        assertEquals(fitting, PortalViewTracker.nearRadius(32, 32, 4), "Dans la carte du client autour du foyer.");
+        assertTrue(RemoteChunkWindow.fitsAround(0, 0, 4, 0, fitting), "Une fenetre a ce rayon tient autour du foyer.");
     }
 
     private static BackroomsPortalEntity portal(Vec3d position, RegistryKey<World> destination, boolean visible) {

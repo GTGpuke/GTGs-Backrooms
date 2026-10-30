@@ -12,7 +12,8 @@ import net.minecraft.world.level.LevelInfo;
 
 /**
  * Le monde des tests du client : un monde plat neuf (graine fixe, creatif, commandes permises), sans cycle du jour ni
- * meteo, sans apparition de creatures ni tick aleatoire, pour des images qui ne dependent que du test. Le Level 0 y est,
+ * meteo, sans apparition de creatures ni tick aleatoire, joueur toujours au meme point d'apparition, pour des images qui
+ * ne dependent que du test. Le Level 0 y est,
  * comme dans tout monde avec le mod (dimension du datapack du mod).
  */
 final class ClientTestWorld {
@@ -33,6 +34,9 @@ final class ClientTestWorld {
         rules.get(GameRules.DO_MOB_SPAWNING).set(false, null);
         rules.get(GameRules.DO_FIRE_TICK).set(false, null);
         rules.get(GameRules.RANDOM_TICK_SPEED).set(0, null);
+        // Le joueur, neuf a chaque lancement, apparait au point d'apparition, pas au hasard autour : venu de derriere un
+        // cadre a moins de 8 blocs, sa premiere mise en place devant lui serait une traversee.
+        rules.get(GameRules.SPAWN_RADIUS).set(0, null);
         LevelInfo info = new LevelInfo(NAME, GameMode.CREATIVE, false, Difficulty.PEACEFUL, true, rules, DataConfiguration.SAFE_MODE);
         client.createIntegratedServerLoader().createAndStart(NAME, info, new GeneratorOptions(SEED, false, false),
                 registries -> registries.get(RegistryKeys.WORLD_PRESET).entryOf(WorldPresets.FLAT).value().createDimensionsRegistryHolder(), null);

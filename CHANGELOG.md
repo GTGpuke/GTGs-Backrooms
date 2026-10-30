@@ -119,6 +119,20 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ### Fixed
+- **Traversée vers une autre dimension sans chunks qui se rechargent** : l'arrivée se reconstruisait sous les yeux du
+  joueur. Vanilla lui renvoyait des centaines de chunks qu'il avait déjà, une seconde fois quand ils devenaient actifs
+  dans un monde déjà visité, et l'anneau au bord de sa vue manquait. Près d'un cadre, l'arrivée part maintenant jusqu'à
+  la distance de vue, à chaque tick, et aucun chunk ne repart après la bascule. Le monde quitté reste chez le client et
+  ne se renvoie pas au retour ([portails](docs/systemes/PORTAILS.md)).
+- **Plus d'à-coup à la traversée** : ce qui entoure l'arrivée se construit d'avance, pas seulement ce que montre le
+  cadre, même pour un cadre qu'on passe sans le regarder. Le monde d'arrivée se construit ensuite avec autant de
+  tampons que vanilla, et non les deux d'une vue. L'index des néons relève une rafale de chunks en plusieurs ticks au lieu
+  d'une image de 9 ms.
+- **Silhouette d'un cadre sur la main** : en première personne, devant un portail, la partie de la main qui couvrait
+  le cadre prenait le post-traitement du monde qu'il montre (vignette, bloom). La main garde maintenant le look de son
+  monde.
+- **Tampons d'un renderer de vue libéré** : repris aussitôt par le renderer suivant, ils pouvaient servir à deux
+  constructions à la fois. Ils attendent désormais cinq secondes.
 - **Shaders vanilla jamais patchés en production** : les patchs arrivaient après le chargement des shaders. Teinte,
   grain, vacillement et lumière des néons s'appliquent maintenant.
 - **Post-traitement limité à la main sans portail visible** : le stencil reçoit désormais le look du monde du joueur au

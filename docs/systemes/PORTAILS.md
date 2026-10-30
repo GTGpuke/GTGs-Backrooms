@@ -186,7 +186,7 @@ Vanilla n'envoie au client que la dimension où il se trouve. `PortalViewTracker
 | Payload | Sens | Contenu | Quand |
 |---|---|---|---|
 | `portal_remote_dimension` | S → C | dimension, type, index | Une fois par dimension et par vue du joueur. L'index désigne ensuite la dimension sur un octet. |
-| `portal_remote_chunk` | S → C | dimension, `ChunkData`, `LightData` | Chunk entré dans la fenêtre, au plus 8 par joueur toutes les 5 ticks. |
+| `portal_remote_chunk` | S → C | dimension, `ChunkData`, `LightData` | Chunk entré dans la fenêtre, au plus 8 par joueur et par passage : toutes les 5 ticks, à chaque tick près d'un cadre tant que sa fenêtre n'est pas toute envoyée. |
 | `portal_remote_chunk_unload` | S → C | index, chunk | Chunk sorti de la fenêtre. |
 | `portal_remote_dimension_release` | S → C | index | Dimension que plus aucun portail ne montre depuis `remoteWorldReleaseSeconds`. Le client jette son monde distant. |
 | `portal_remote_block_update` | S → C | index, position, `BlockState` | Bloc changé dans un chunk déjà envoyé, dédupliqué par tick. |
@@ -203,7 +203,9 @@ Les annonces de dimension d'un joueur repartent de zéro à chaque changement de
 
 #### Fenêtre synchronisée
 
-Toutes les 5 ticks, le serveur relève pour chaque joueur les portails à portée qui mènent ailleurs. Pour chaque dimension, il garde un foyer, le portail le plus proche, et une fenêtre de chunks autour de son arrivée. Le rayon vaut `preloadRadiusChunks`, 3 par défaut soit 7 × 7 chunks, plus 2 à moins de 8 blocs du portail. Les fenêtres des autres portails s'ajoutent si elles tiennent dans la carte du client.
+Toutes les 5 ticks, le serveur relève pour chaque joueur les portails à portée qui mènent ailleurs. Pour chaque dimension, il garde un foyer, le portail le plus proche, et une fenêtre de chunks autour de son arrivée. Le rayon vaut `preloadRadiusChunks`, 3 par défaut soit 7 × 7 chunks. Les fenêtres des autres portails s'ajoutent si elles tiennent dans la carte du client.
+
+À moins de 8 blocs d'un portail, la traversée est imminente. La fenêtre couvre alors ce que vanilla enverrait au joueur en sortant : sa distance de vue, bornée par celle du serveur, et l'anneau qui la borde, sans lequel les dernières sections visibles ne se construisent pas (`nearRadius`). À 8 chunks de vue, cela fait 19 × 19 chunks, jamais moins que le rayon de préchargement plus 2, et jamais plus que ce que la carte du client tient autour du foyer. Tant que des chunks de la fenêtre attendent leur envoi, la vue du joueur se met alors à jour à chaque tick : la fenêtre part par petits paquets et elle est chez lui avant qu'il passe. Ensuite, elle revient à un passage toutes les 5 ticks.
 
 À plus de 8 blocs d'un cadre d'arrivée debout, la fenêtre garde ce compte de chunks mais suit l'axe de ce que montre le cadre (`RemoteChunkWindow.collectCone`). Elle prend le carré de 3 × 3 de l'arrivée, puis, anneau par anneau, les chunks du coin de vue au-delà du cadre. Chacun vient avec ses quatre voisins, sans lesquels le client ne construit pas ses sections. Un joueur loin à côté d'une face, ou derrière elle, n'a pas de fenêtre pour elle, et une arrivée couchée garde le carré.
 
@@ -221,7 +223,9 @@ Un changement de bloc est relayé dans un chunk actif par `MixinServerChunkManag
 
 #### Traversée et réception
 
-À la traversée, vanilla ne renvoie pas les chunks que le client tient déjà, pendant 100 ticks (`MixinChunkDataSender`). Un chunk tenu qui change part quand même. Tant qu'un chunk attend son tour chez vanilla, aucun changement de bloc ne lui est envoyé, car vanilla compte l'envoyer entier. Après tout changement de monde, la vue du joueur repart au tick suivant.
+À la traversée, vanilla ne renvoie pas les chunks que le client tient déjà, pendant 100 ticks (`MixinChunkDataSender`). Vanilla propose un même chunk deux fois : quand il suit le joueur, puis quand le ticket du joueur rend le chunk actif, dans un monde déjà visité dont les chunks sont restés chargés. Un chunk tenu l'est pour chaque proposition. Un chunk tenu qui change part quand même, et un chunk que vanilla retire au client (le joueur s'éloigne) n'est plus tenu. Tant qu'un chunk attend son tour chez vanilla, aucun changement de bloc ne lui est envoyé, car vanilla compte l'envoyer entier. Après tout changement de monde, la vue du joueur repart au tick suivant.
+
+Le client garde le monde quitté. La vue suivante du joueur tient pour envoyés les chunks que vanilla lui en avait donnés (`recordDeparture`) : ceux déjà post-traités qui n'attendent plus leur tour, les seuls que vanilla envoie. Les changements de blocs et de lumière du tick de la traversée, que vanilla n'envoie qu'en fin de tick, partent avec elle, avant l'annonce de la bascule : ils s'appliquent encore au monde quitté. Ensuite, leurs changements lui sont relayés, ils restent voulus tant qu'un portail montre encore ce monde (ceux que la carte du client tient autour du foyer de ce monde, qu'il recentre au besoin), et un retour ne les renvoie pas. Un bloc qui y change avant cette vue fait repartir son chunk. Sans portail vers ce monde, ils se déchargent chez le client après le délai de grâce, et le monde y est libéré après `remoteWorldReleaseSeconds`, comme toute dimension que plus rien ne montre.
 
 Les récepteurs du client s'exécutent tels que Fabric les appelle, sur le thread de rendu et dans l'ordre des paquets. Les différer par `client.execute` les placerait derrière les paquets vanilla déjà en file. `portal_teleport` arriverait alors après les premiers chunks du nouveau monde.
 
@@ -324,6 +328,12 @@ Un changement de dimension vanilla recrée le `ClientWorld`, affiche l'écran de
 #### Prédiction par le client
 
 À chaque image, `ClientPortalCrossing` regarde si les yeux du joueur ont franchi le plan d'un portail, à la position affichée. Si oui, le client transpose lui-même position, regard et vitesse. Il échange le monde principal avec le monde distant déjà chargé (`RemoteWorldRegistry.swapMainWorld`), puis envoie `portal_cross`. L'image suivante est déjà celle de l'autre côté, avec la lightmap de sa dimension. L'ancien monde devient un monde distant, et le portail de retour le montre sans rien recharger.
+
+#### Arrivée déjà construite
+
+Une vue ne construit que les sections que montre le cadre. À moins de 8 blocs d'un cadre vers une autre dimension, son renderer construit d'avance celles qui entourent l'arrivée dans tous les sens, sur 4 sections (64 blocs) et 2 sections en hauteur, les plus proches d'abord (`RemoteViewRenderer.prebuildArrival`) : ce que le joueur voit en sortant, et derrière lui s'il se retourne. Huit sections par image au plus, dans un chunk chargé entouré de ses quatre voisins. Plus loin, le reste se construit après la bascule : dans le Level 0, le brouillard le cache. Un tel cadre hors du champ, dans le dos, sous les pieds ou sur le côté, ne se dessine pas, mais sa vue s'entretient et se construit de même, après les vues dessinées : on le passe sans l'avoir regardé. Rendu vanilla seulement : sous un pack de shaders, le pack dessine chaque vue en entier.
+
+Un renderer de vue n'a que deux tampons de construction, quand vanilla en donne un par cœur à celui du joueur. À chaque tick, la réserve du renderer du joueur s'ajuste au compte de vanilla, et celle de chaque vue à deux (`BuildBuffers`) : le renderer d'une vue promu par une traversée construit ensuite au rythme de vanilla, et l'ancien, devenu une vue, rend les siens. Une réserve ne se touche que dans la file de son chunk builder, sur les fils de travail, où ses tâches en cours lui rendent leurs tampons : des tampons s'y créent, des tampons libres s'y ferment, et aucune réserve ne change de chunk builder. Changer la réserve d'un chunk builder en pleine tâche, ou déplacer des tampons d'une réserve à l'autre depuis le fil de rendu, en viderait une pour de bon : ce renderer ne reconstruirait plus rien, pas même un bloc changé de l'autre côté d'un cadre. Les tampons d'un renderer de vue libéré ne servent au suivant qu'au bout de cinq secondes, le temps que ses dernières constructions rendent les leurs.
 
 #### Confirmation par le serveur
 
@@ -429,6 +439,9 @@ Les options des portails, en `gtgsbackrooms.portal.*`, sont décrites dans la [r
 
 - La prédiction n'a lieu que si le monde distant est déjà chargé. En sprintant vers un portail qu'on vient de poser, c'est le serveur qui bascule, avec un tick de latence.
 - En selle, c'est toujours le serveur qui bascule. Le client affiche un instant l'aide pour descendre, comme à une montée.
+- L'arrivée n'est complète et construite d'avance que si le joueur s'approche du cadre. Arrivé en quelques ticks à moins de 8 blocs, en sprint ou téléporté, il passe avant elle, et le reste arrive après la bascule, comme dans un monde vanilla.
+- Près d'un cadre, la fenêtre suit la distance de vue du joueur : 361 chunks à 8 de vue, plus de mille à 16. Le monde quitté reste chez le client tant qu'un portail le montre, et ses chunks restent chargés sur le serveur, sans être actifs.
+- Ce qui est à plus de 64 blocs de l'arrivée se construit après la bascule, au rythme de vanilla : dans un monde sans brouillard, des sections lointaines peuvent apparaître un instant après le passage.
 - Les blocs cachés derrière le plan ne le sont que pour les collisions, l'étouffement et le voile de mur. Un fluide reste, et on y nage. Les effets de contact d'un cactus, d'une toile, d'un buisson de baies ou du feu restent aussi.
 - Un mod qui calcule les collisions sans le parcours de blocs vanilla ne voit pas les blocs cachés.
 - Le serveur ne vérifie pas que le corps d'un joueur engagé reste hors des blocs de l'autre côté. Il fait confiance au client.

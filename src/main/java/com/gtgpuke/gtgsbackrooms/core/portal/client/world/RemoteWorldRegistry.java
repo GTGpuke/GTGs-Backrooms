@@ -367,6 +367,15 @@ public final class RemoteWorldRegistry {
                 remote.syncEnvironment(client.world);
                 remote.tick(client);
             }
+            // Tampons de construction : ceux du jeu au renderer du joueur, celui d'une vue promu par une traversee compris,
+            // deux a chaque vue, l'ancien renderer du joueur compris.
+            BuildBuffers.balance(client, client.worldRenderer, BuildBuffers.PLAYER_COUNT);
+            for (int i = 0; i < MIRRORS.size(); i++) {
+                BuildBuffers.balance(client, MIRRORS.get(i).renderer(), RemoteWorld.RENDER_BUFFER_COUNT);
+            }
+            for (int i = 0; i < WORLD_LIST.size(); i++) {
+                BuildBuffers.balance(client, WORLD_LIST.get(i).renderer(), RemoteWorld.RENDER_BUFFER_COUNT);
+            }
         }
     }
 

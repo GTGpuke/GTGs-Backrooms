@@ -29,7 +29,9 @@ import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ChunkDataSender;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerChunkLoadingManager;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
@@ -54,6 +56,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.transition.DestinationLoader;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalRelevance;
 import com.gtgpuke.gtgsbackrooms.mixin.EntityTrackerAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.EntityTrackerEntryAccessor;
+import com.gtgpuke.gtgsbackrooms.mixin.ServerChunkLoadingManagerAccessor;
 
 /**
  * Envoie a chaque joueur ce qu'il voit a travers ses portails, et le tient a jour : chunks, blocs et entities.
@@ -115,6 +118,11 @@ public final class PortalViewTracker {
      * retour juste derriere le joueur clignoterait.
      */
     private static final List<UUID> CHANGED_WORLD = new ArrayList<>();
+    /**
+     * Chunks que le client d'un joueur garde du monde qu'il vient de quitter par un portail, en attente de sa vue suivante.
+     * Une liste parcourue par index : chaque changement de bloc la parcourt tant qu'elle n'est pas vide.
+     */
+    private static final List<Departure> DEPARTURES = new ArrayList<>();
     /** Nombre total de chunks distants presents chez les clients ; zero = rien a faire sur les changements de blocs. */
     private static int watchedChunkCount;
     private static boolean initialized;
@@ -134,6 +142,15 @@ public final class PortalViewTracker {
         /** Dernier tick ou chaque dimension etait voulue (zero si jamais). */
         final Object2LongMap<RegistryKey<World>> lastWantedTick = new Object2LongOpenHashMap<>();
         boolean hasPendingBlockUpdates;
+        /** Chunks du monde quitte que le client garde, tant qu'un portail montre encore ce monde ; {@code null} sinon. */
+        @Nullable Departure departure;
+        /**
+         * Pres du cadre d'un portail, des chunks voulus attendaient encore leur envoi a la derniere mise a jour : la vue se
+         * met a jour a chaque tick jusqu'a les avoir tous envoyes, puis revient a un passage tous les {@link #UPDATE_INTERVAL_TICKS}.
+         */
+        boolean catchingUp;
+        /** Tick serveur de la derniere mise a jour de cette vue. */
+        long updatedAt = -1L;
 
         PlayerView(ServerPlayerEntity player) {
             this.player = player;
@@ -142,6 +159,10 @@ public final class PortalViewTracker {
 
     /** Chunks tenus par le client d'un joueur apres une traversee, leur dimension, et tick serveur jusqu'auquel ils valent. */
     private record HeldChunks(UUID player, RegistryKey<World> dimension, LongSet chunks, long expiresAt) {
+    }
+
+    /** Chunks du monde quitte par un portail que le client d'un joueur garde : ce monde et leurs positions. */
+    private record Departure(UUID player, ServerWorld world, LongSet chunks) {
     }
 
     private PortalViewTracker() {
@@ -166,6 +187,7 @@ public final class PortalViewTracker {
             VIEW_LIST.clear();
             HELD_AFTER_CROSSING.clear();
             CHANGED_WORLD.clear();
+            DEPARTURES.clear();
             RELEVANT_SCRATCH.clear();
             ANCHOR_SCRATCH.clear();
             NESTED_SCRATCH.clear();
@@ -186,6 +208,9 @@ public final class PortalViewTracker {
      * @param pos position du bloc
      */
     public static void onBlockChanged(ServerWorld world, BlockPos pos) {
+        if (!DEPARTURES.isEmpty()) {
+            forgetChangedDeparture(world, ChunkPos.toLong(pos));
+        }
         if (watchedChunkCount == 0 && HELD_AFTER_CROSSING.isEmpty()) {
             return;
         }
@@ -220,6 +245,7 @@ public final class PortalViewTracker {
     /** Changement de monde vanilla ou respawn : le client recree son monde, et ne tient plus aucun chunk. */
     private static void onVanillaWorldChange(ServerPlayerEntity player) {
         releaseHeldChunks(player.getUuid());
+        removeDeparture(player.getUuid());
         onPlayerChangedWorld(player);
     }
 
@@ -251,22 +277,121 @@ public final class PortalViewTracker {
     }
 
     /**
-     * {@code true} si vanilla peut se dispenser d'envoyer ce chunk au joueur : son client le tient deja, depuis une
-     * traversee recente. Consomme l'entree ; passe {@link #HELD_CHUNKS_TTL_TICKS}, plus rien n'est tenu.
+     * Le joueur quitte {@code origin} par un portail : son client garde le monde quitte, avec tous les chunks que vanilla
+     * lui en avait envoyes. Sa vue suivante les tient pour envoyes : leurs changements lui sont relayes, ils ne repartent
+     * pas s'il revient ({@link #keepHeldChunks}), et ne se dechargent chez lui qu'une fois que plus aucun portail ne
+     * montre ce monde. Sans cela, vanilla lui renverrait au retour chaque chunk qu'il tient deja, et chacun se
+     * reconstruirait sous ses yeux.
+     *
+     * <p>Vanilla n'envoie qu'un chunk post-traite, et un chunk qui attend son tour n'est pas encore chez le client : ni
+     * l'un ni l'autre n'est garde. Les changements de blocs et de lumiere de ce tick ne partent qu'avec le passage des
+     * chunks, en fin de tick, quand le joueur ne suivra plus ce monde : ils partent ici. A appeler avant d'annoncer la
+     * bascule au client (ce qui la precede s'applique encore au monde quitte) et avant que vanilla ne retire le joueur de
+     * {@code origin}. Evenement rare : les positions s'allouent.
      */
-    public static boolean consumeHeldChunk(ServerPlayerEntity player, ChunkPos pos) {
+    public static void recordDeparture(ServerPlayerEntity player, ServerWorld origin) {
+        LongSet chunks = new LongOpenHashSet();
+        ServerChunkLoadingManager manager = origin.getChunkManager().chunkLoadingManager;
+        ChunkDataSender sender = player.networkHandler.chunkDataSender;
+        player.getChunkFilter().forEach(pos -> {
+            long key = pos.toLong();
+            WorldChunk chunk = manager.getPostProcessedChunk(key);
+            if (chunk != null && !sender.isInNextBatch(key)) {
+                ((ServerChunkLoadingManagerAccessor) manager).backrooms$getChunkHolder(key).flushUpdates(chunk);
+                chunks.add(key);
+            }
+        });
+        removeDeparture(player.getUuid());
+        DEPARTURES.add(new Departure(player.getUuid(), origin, chunks));
+    }
+
+    /** Depart en attente de ce joueur, retire de la liste, ou {@code null} s'il n'en a pas. */
+    private static @Nullable Departure removeDeparture(UUID player) {
+        int index = departureIndex(player);
+        return index >= 0 ? DEPARTURES.remove(index) : null;
+    }
+
+    private static int departureIndex(UUID player) {
+        for (int i = 0; i < DEPARTURES.size(); i++) {
+            if (DEPARTURES.get(i).player().equals(player)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Inscrit dans la vue le depart en attente (dimension annoncee, chunks tenus pour envoyes). Tant qu'un portail montre
+     * encore le monde quitte, ses chunks restent voulus, ceux que la carte du client tient autour du foyer de ce monde (il
+     * oublie les autres en la recentrant) ; sinon le depart est oublie, et ils se dechargent avec la dimension, apres le
+     * delai de grace.
+     */
+    private static void keepDeparture(MinecraftServer server, ServerPlayerEntity player, PlayerView view) {
+        Departure pending = removeDeparture(player.getUuid());
+        if (pending != null) {
+            RegistryKey<World> dimension = pending.world().getRegistryKey();
+            announceDimension(player, view, pending.world());
+            LongSet sent = view.sentChunks.computeIfAbsent(dimension, key -> new LongOpenHashSet());
+            int before = sent.size();
+            sent.addAll(pending.chunks());
+            watchedChunkCount += sent.size() - before;
+            // Le delai de grace part d'ici : sans portail vers ce monde, ses chunks se dechargeront ensuite chez le client.
+            wantedFor(dimension);
+            view.lastWantedTick.put(dimension, server.getTicks());
+            view.departure = pending;
+        }
+        Departure departure = view.departure;
+        if (departure != null) {
+            RegistryKey<World> dimension = departure.world().getRegistryKey();
+            LongSet wanted = wantedFor(dimension);
+            if (wanted.isEmpty()) {
+                view.departure = null;
+                return;
+            }
+            // Une fenetre voulue a son foyer.
+            Vec3d anchor = ANCHOR_SCRATCH.get(dimension).destinationPos();
+            int anchorX = ChunkSectionPos.getSectionCoord(anchor.x);
+            int anchorZ = ChunkSectionPos.getSectionCoord(anchor.z);
+            LongIterator kept = departure.chunks().iterator();
+            while (kept.hasNext()) {
+                long key = kept.nextLong();
+                if (RemoteChunkWindow.fitsAround(anchorX, anchorZ, ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key), 0)) {
+                    wanted.add(key);
+                }
+            }
+        }
+    }
+
+    /**
+     * Un bloc change avant la vue suivante d'un joueur qui vient de passer : dans le monde qu'il a quitte, ce chunk n'est
+     * plus a jour chez lui. Il n'est plus tenu pour envoye ; la synchronisation l'enverra s'il le faut.
+     */
+    private static void forgetChangedDeparture(ServerWorld world, long chunk) {
+        for (int i = 0; i < DEPARTURES.size(); i++) {
+            Departure departure = DEPARTURES.get(i);
+            if (departure.world() == world) {
+                departure.chunks().remove(chunk);
+            }
+        }
+    }
+
+    /**
+     * {@code true} si vanilla peut se dispenser d'envoyer ce chunk au joueur : son client le tient deja, depuis une
+     * traversee recente. Vanilla propose un meme chunk deux fois, a l'arrivee du joueur puis quand son ticket le rend actif
+     * (un monde deja visite, dont les chunks sont restes charges) : l'entree vaut pour chaque proposition, jusqu'a
+     * {@link #HELD_CHUNKS_TTL_TICKS}, tant que le chunk ne change pas et que vanilla ne le retire pas au client.
+     */
+    public static boolean holdsChunk(ServerPlayerEntity player, ChunkPos pos) {
         int index = heldIndex(player.getUuid());
-        if (index < 0) {
-            return false;
+        return index >= 0 && HELD_AFTER_CROSSING.get(index).chunks().contains(pos.toLong());
+    }
+
+    /** Vanilla retire ce chunk au client du joueur, qui l'oublie : s'il le lui repropose, il doit partir. */
+    public static void releaseHeldChunk(ServerPlayerEntity player, ChunkPos pos) {
+        int index = heldIndex(player.getUuid());
+        if (index >= 0) {
+            HELD_AFTER_CROSSING.get(index).chunks().remove(pos.toLong());
         }
-        HeldChunks held = HELD_AFTER_CROSSING.get(index);
-        if (!held.chunks().remove(pos.toLong())) {
-            return false;
-        }
-        if (held.chunks().isEmpty()) {
-            HELD_AFTER_CROSSING.remove(index);
-        }
-        return true;
     }
 
     private static int heldIndex(UUID player) {
@@ -407,6 +532,15 @@ public final class PortalViewTracker {
                         update(server, player);
                     }
                 }
+                // Pres d'un cadre, la fenetre s'envoie a chaque tick, par petits paquets : elle est chez le client avant qu'il
+                // passe, sans qu'une image en recoive beaucoup d'un coup.
+                int views = VIEW_LIST.size();
+                for (int i = 0; i < views; i++) {
+                    PlayerView view = VIEW_LIST.get(i);
+                    if (view.catchingUp && view.updatedAt != server.getTicks()) {
+                        update(server, view.player);
+                    }
+                }
             }
             CHANGED_WORLD.clear();
             // Perimes, des chunks tenus ne valent plus rien : retires, ils ne coutent plus rien aux changements de blocs.
@@ -423,8 +557,9 @@ public final class PortalViewTracker {
         ServerWorld world = player.getServerWorld();
         collectRelevantPortals(player, world);
         PlayerView view = VIEWS.get(player.getUuid());
-        // Une vue existante a toujours au moins une dimension inscrite : elle reste a decharger meme sans portail regarde.
-        if (RELEVANT_SCRATCH.isEmpty() && view == null) {
+        // Une vue existante a toujours au moins une dimension inscrite : elle reste a decharger meme sans portail regarde. Un
+        // depart en attente en cree une : le monde quitte, garde par le client, sera decharge chez lui le moment venu.
+        if (RELEVANT_SCRATCH.isEmpty() && view == null && !hasDeparture(player.getUuid())) {
             return;
         }
         if (view == null) {
@@ -434,7 +569,9 @@ public final class PortalViewTracker {
         }
         computeWantedWindows(player);
         addNestedWindows(player);
+        keepDeparture(server, player, view);
         long tick = server.getTicks();
+        view.updatedAt = tick;
         for (int i = 0; i < DIMENSION_SCRATCH.size(); i++) {
             view.lastWantedTick.put(DIMENSION_SCRATCH.get(i), tick);
         }
@@ -449,10 +586,27 @@ public final class PortalViewTracker {
                 release(server, player, view, entry.getKey(), entry.getValue());
             }
         }
+        boolean pending = false;
         for (int i = 0; i < DIMENSION_SCRATCH.size(); i++) {
             RegistryKey<World> dimension = DIMENSION_SCRATCH.get(i);
-            syncDimension(server, player, view, dimension, WANTED_SCRATCH.get(dimension));
+            pending |= syncDimension(server, player, view, dimension, WANTED_SCRATCH.get(dimension));
         }
+        view.catchingUp = pending && nearAnyPortal(player);
+    }
+
+    /** {@code true} si ce joueur a un depart en attente. */
+    private static boolean hasDeparture(UUID player) {
+        return departureIndex(player) >= 0;
+    }
+
+    /** {@code true} si le joueur est pres du cadre d'un des portails releves pour lui. */
+    private static boolean nearAnyPortal(ServerPlayerEntity player) {
+        for (int i = 0; i < RELEVANT_SCRATCH.size(); i++) {
+            if (DestinationLoader.isNear(player, RELEVANT_SCRATCH.get(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Portails du monde du joueur a sa portee de rendu, devant comme dans son dos, qui menent dans une autre dimension. */
@@ -468,6 +622,20 @@ public final class PortalViewTracker {
                 RELEVANT_SCRATCH.add(portal);
             }
         }
+    }
+
+    /**
+     * Rayon de la fenetre pres d'un cadre : celui de {@link DestinationLoader#syncRadius} pres du portail, etendu a ce que
+     * vanilla envoie au joueur (sa distance de vue, bornee par celle du serveur, et l'anneau qui la borde : les dernieres
+     * sections visibles ne se construisent qu'avec leurs chunks voisins) tant que cela tient dans la carte du client
+     * autour du foyer.
+     *
+     * @param playerView distance de vue du joueur, en chunks
+     * @param serverView distance de vue du serveur, en chunks
+     * @param anchorDistance distance de l'arrivee au foyer de sa dimension, en chunks
+     */
+    static int nearRadius(int playerView, int serverView, int anchorDistance) {
+        return Math.max(DestinationLoader.syncRadius(true), Math.min(Math.min(playerView, serverView) + 1, (RemoteChunkWindow.MAP_RADIUS - anchorDistance) / 2));
     }
 
     /** Par dimension distante : foyer = portail le plus proche ; fenetres de tous les portails qui tiennent autour. */
@@ -486,9 +654,9 @@ public final class PortalViewTracker {
         }
         for (int i = 0; i < RELEVANT_SCRATCH.size(); i++) {
             BackroomsPortalEntity portal = RELEVANT_SCRATCH.get(i);
-            // Pres du portail, la traversee est imminente : fenetre plus large pour que l'arrivee soit deja construite.
+            // Pres du portail, la traversee est imminente : la fenetre couvre ce que le joueur verra en sortant, jusqu'a sa
+            // distance de vue. Ses chunks seront chez lui avant le passage, et vanilla ne les lui renverra pas d'un coup.
             boolean near = DestinationLoader.isNear(player, portal);
-            int radius = DestinationLoader.syncRadius(near);
             RegistryKey<World> dimension = portal.destinationDim();
             Vec3d anchorPos = ANCHOR_SCRATCH.get(dimension).destinationPos();
             Vec3d destinationPos = portal.destinationPos();
@@ -496,6 +664,8 @@ public final class PortalViewTracker {
             int anchorZ = ChunkSectionPos.getSectionCoord(anchorPos.z);
             int chunkX = ChunkSectionPos.getSectionCoord(destinationPos.x);
             int chunkZ = ChunkSectionPos.getSectionCoord(destinationPos.z);
+            int radius = near ? nearRadius(player.getViewDistance(), player.getServer().getPlayerManager().getViewDistance(),
+                    Math.max(Math.abs(chunkX - anchorX), Math.abs(chunkZ - anchorZ))) : DestinationLoader.syncRadius(false);
             if (!RemoteChunkWindow.fitsAround(anchorX, anchorZ, chunkX, chunkZ, radius)) {
                 continue;
             }
@@ -612,8 +782,9 @@ public final class PortalViewTracker {
         return true;
     }
 
+    /** Synchronise une dimension ; {@code true} si des chunks voulus attendent encore leur envoi, faute de budget. */
     @SuppressWarnings("try")
-    private static void syncDimension(
+    private static boolean syncDimension(
             MinecraftServer server,
             ServerPlayerEntity player,
             PlayerView view,
@@ -634,8 +805,9 @@ public final class PortalViewTracker {
         }
         ServerWorld destination = server.getWorld(dimension);
         if (destination == null) {
-            return;
+            return false;
         }
+        boolean pending = false;
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_SYNC_CHUNKS)) {
             int budget = MAX_CHUNKS_PER_UPDATE;
             LongIterator wantedKeys = wanted.iterator();
@@ -643,7 +815,11 @@ public final class PortalViewTracker {
                 long key = wantedKeys.nextLong();
                 // Chaque chunk voulu reste charge tant qu'il l'est : une fenetre en cone deborde du ticket de l'arrivee.
                 DestinationLoader.holdWindowChunk(destination, key);
-                if (budget == 0 || sent.contains(key)) {
+                if (sent.contains(key)) {
+                    continue;
+                }
+                if (budget == 0) {
+                    pending = true;
                     continue;
                 }
                 WorldChunk chunk = destination.getChunkManager().getWorldChunk(ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key));
@@ -669,6 +845,7 @@ public final class PortalViewTracker {
                 entities.syncWeather(destination);
             }
         }
+        return pending;
     }
 
     /**
@@ -752,6 +929,7 @@ public final class PortalViewTracker {
     private static void forget(MinecraftServer server, UUID playerUuid, boolean notifyClient) {
         if (!notifyClient) {
             releaseHeldChunks(playerUuid);
+            removeDeparture(playerUuid);
         }
         PlayerView view = VIEWS.remove(playerUuid);
         if (view == null) {

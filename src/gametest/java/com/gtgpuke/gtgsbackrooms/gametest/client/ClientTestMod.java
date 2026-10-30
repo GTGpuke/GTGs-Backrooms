@@ -22,6 +22,7 @@ public final class ClientTestMod implements ClientModInitializer {
         if (report == null) {
             return;
         }
+        ClientTestFrames.registerChunkCounters();
         List<ClientScenario> scenarios = new ArrayList<>();
         scenarios.addAll(LevelZeroClientTests.scenarios());
         scenarios.addAll(EngineRulesClientTests.scenarios());

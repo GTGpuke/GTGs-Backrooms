@@ -117,6 +117,13 @@ public final class PortalStencilRenderer {
     private static final int SECTION_MASK = ~15;
 
     private static final List<BackroomsPortalEntity> VISIBLE = new ArrayList<>();
+    /**
+     * Cadres proches hors du champ (dans le dos, sous les pieds, sur le cote) vers une autre dimension : le joueur peut les
+     * passer sans les regarder. Leur vue ne se dessine pas, mais son renderer s'entretient et construit d'avance ce que le
+     * joueur verra en sortant ({@link RemoteViewRenderer#PREBUILD_DISTANCE}). Rendu vanilla seulement : sous un pack de
+     * shaders, la liste est videe aussitot remplie.
+     */
+    private static final List<BackroomsPortalEntity> NEAR_UNSEEN = new ArrayList<>();
     /** Portails au-dela de la distance de rendu, jusqu'a {@link ViewDetail#FROZEN_DISTANCE} : leur derniere image figee. */
     private static final List<BackroomsPortalEntity> FAR_FROZEN = new ArrayList<>();
     /** Rectangle d'ecran d'un cadre a capturer, en pixels du framebuffer du jeu. */
@@ -245,7 +252,7 @@ public final class PortalStencilRenderer {
             return;
         }
         BackroomsPortalEntity behind = collect(client, camera, positionMatrix, projectionMatrix, tickDelta);
-        if (behind == null && VISIBLE.isEmpty() && FAR_FROZEN.isEmpty()) {
+        if (behind == null && VISIBLE.isEmpty() && FAR_FROZEN.isEmpty() && NEAR_UNSEEN.isEmpty()) {
             // Aucun cadre a l'ecran, mais une entity peut etre coupee par un portail vu de cote : vanilla ne la dessine pas.
             StraddlingEntityRenderer.renderMainWorldParts(client, camera, positionMatrix, projectionMatrix, tickDelta);
             return;
@@ -267,6 +274,7 @@ public final class PortalStencilRenderer {
             RenderSystem.applyModelViewMatrix();
             PortalRenderState.endFrame();
             VISIBLE.clear();
+            NEAR_UNSEEN.clear();
         }
     }
 
@@ -286,8 +294,10 @@ public final class PortalStencilRenderer {
             return;
         }
         BackroomsPortalEntity behind = collect(client, camera, positionMatrix, projectionMatrix, tickCounter.getTickDelta(false));
-        // Sous un pack, pas d'image figee : les portails lointains ne se dessinent pas, et ne restent pas retenus.
+        // Sous un pack, pas d'image figee : les portails lointains ne se dessinent pas, et ne restent pas retenus. Pas de
+        // construction d'avance non plus : le pack dessine chaque vue en entier.
         FAR_FROZEN.clear();
+        NEAR_UNSEEN.clear();
         if (behind == null && VISIBLE.isEmpty()) {
             return;
         }
@@ -516,6 +526,7 @@ public final class PortalStencilRenderer {
         Vec3d cameraPos = camera.getPos();
         double renderDistance = Math.max(1, ModConfig.PORTAL_RENDER_DISTANCE_BLOCKS);
         boolean frustumReady = false;
+        NEAR_UNSEEN.clear();
         // Sorties fugaces cachees au joueur comprises : dans le champ, il peut les voir de nouveau.
         List<BackroomsPortalEntity> portals = ClientPortalIndex.allPortals(world);
         for (int i = 0; i < portals.size(); i++) {
@@ -523,11 +534,17 @@ public final class PortalStencilRenderer {
             if (!portal.visible() || portal.signedDistance(cameraPos) <= 0.0) {
                 continue;
             }
+            boolean near = !portal.hiddenFromPlayer() && !portal.destinationDim().equals(world.getRegistryKey())
+                    && portal.squaredDistanceToFrame(cameraPos.x, cameraPos.y, cameraPos.z)
+                    <= RemoteViewRenderer.PREBUILD_DISTANCE * RemoteViewRenderer.PREBUILD_DISTANCE;
             if (!PortalRelevance.isRelevant(cameraPos, camera.getPitch(), camera.getYaw(), portal.getPos(), renderDistance)) {
                 // Au-dela de la distance de rendu, un portail garde l'image figee prise de plus pres, sans rien en reprendre.
                 if (FrozenViews.has(portal) && !portal.hiddenFromPlayer()
                         && PortalRelevance.isRelevant(cameraPos, camera.getPitch(), camera.getYaw(), portal.getPos(), ViewDetail.FROZEN_DISTANCE)) {
                     FAR_FROZEN.add(portal);
+                }
+                if (near) {
+                    NEAR_UNSEEN.add(portal);
                 }
                 continue;
             }
@@ -539,6 +556,8 @@ public final class PortalStencilRenderer {
             if (CULLING_FRUSTUM.isVisible(portal.detectionBox())
                     && (!portal.hiddenFromPlayer() || PortalSightReporter.revealed(world, cameraPos, portal))) {
                 VISIBLE.add(portal);
+            } else if (near) {
+                NEAR_UNSEEN.add(portal);
             }
         }
         sortByDistance(cameraPos);
@@ -585,6 +604,10 @@ public final class PortalStencilRenderer {
                 BackroomsPortalEntity portal = VISIBLE.get(i);
                 boolean draw = !hiddenBehindBlocks(client.world, client.worldRenderer, cameraPos, portal);
                 renderPortal(client, portal, camera, cameraPos, positionMatrix, projectionMatrix, lightmap, tickDelta, draw);
+            }
+            // Apres les cadres visibles : une vue dessinee de la meme dimension place le terrain de son renderer, pas eux.
+            for (int i = 0; i < NEAR_UNSEEN.size(); i++) {
+                renderPortal(client, NEAR_UNSEEN.get(i), camera, cameraPos, positionMatrix, projectionMatrix, lightmap, tickDelta, false);
             }
             drawFarFrozen(frustumFor(camera, positionMatrix, projectionMatrix), cameraPos, positionMatrix);
             FrozenViews.sweep();

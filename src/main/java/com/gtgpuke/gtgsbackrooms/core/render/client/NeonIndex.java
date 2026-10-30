@@ -1,17 +1,22 @@
 package com.gtgpuke.gtgsbackrooms.core.render.client;
 
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
 import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.registry.Registries;
+import net.minecraft.util.Util;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.ChunkSectionPos;
@@ -20,6 +25,7 @@ import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.render.light.NeonMap;
@@ -28,16 +34,23 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 
 /**
- * Ou sont les neons de chaque monde client (celui du joueur et les mondes distants des portails) : releves a l'arrivee
- * de chaque chunk, section par section (seules celles dont la palette contient le bloc sont parcourues), suivis a chaque
- * changement de bloc, oublies avec la colonne dechargee ou le monde libere. Independant du rendu du terrain : un mod qui
- * construit les sections a sa facon n'y change rien. Tout se passe sur le thread de rendu, ou arrivent les paquets.
+ * Ou sont les neons de chaque monde client (celui du joueur et les mondes distants des portails) : releves dans les ticks
+ * qui suivent l'arrivee de chaque chunk, section par section (seules celles dont la palette contient le bloc sont
+ * parcourues), suivis a chaque changement de bloc, oublies avec la colonne dechargee ou le monde libere. Independant du
+ * rendu du terrain : un mod qui construit les sections a sa facon n'y change rien. Tout se passe sur le thread de rendu,
+ * ou arrivent les paquets.
  */
 public final class NeonIndex {
 
     private static final int SECTION = 16;
     private static final long[] NONE = new long[0];
+    /** Temps de releve des chunks en attente par tick : une rafale s'etale sur quelques ticks au lieu de geler une image. */
+    private static final long SCAN_BUDGET_NANOS = 1_500_000L;
     private static final Map<World, NeonMap> WORLDS = new IdentityHashMap<>();
+    /** Chunks recus en attente de releve, par monde, dans leur ordre d'arrivee. */
+    private static final Map<World, LongLinkedOpenHashSet> PENDING = new IdentityHashMap<>();
+    /** Mondes qui ont une file, parcourus par index chaque tick (sans iterateur). */
+    private static final List<ClientWorld> PENDING_WORLDS = new ArrayList<>();
     private static final LongArrayList FOUND = new LongArrayList();
     private static final BlockMatch MATCH = new BlockMatch();
 
@@ -45,14 +58,55 @@ public final class NeonIndex {
         throw new UnsupportedOperationException("Classe utilitaire.");
     }
 
-    /** A appeler a l'initialisation du client : les chunks de chaque monde client sont releves a leur arrivee. */
+    /** A appeler a l'initialisation du client : les chunks de chaque monde client sont releves apres leur arrivee. */
     public static void register() {
-        ClientChunkEvents.CHUNK_LOAD.register(NeonIndex::scanChunk);
+        ClientChunkEvents.CHUNK_LOAD.register(NeonIndex::queueChunk);
         ClientChunkEvents.CHUNK_UNLOAD.register(NeonIndex::unloadChunk);
+        ClientTickEvents.END_CLIENT_TICK.register(NeonIndex::scanPending);
         RemoteWorldRegistry.WORLD_FORGOTTEN.register(NeonIndex::forget);
     }
 
-    /** Un chunk recu (ou remplace) : ses neons sont releves, section par section. */
+    /**
+     * Un chunk recu (ou remplace) attend son releve : les chunks arrivent en rafale (cent cinquante d'un coup apres une
+     * traversee, des centaines a l'entree dans un monde), et les relever tous dans l'image de leur arrivee la gelerait.
+     */
+    static void queueChunk(ClientWorld world, WorldChunk chunk) {
+        if (neonBlock(world) == null) {
+            return;
+        }
+        LongLinkedOpenHashSet pending = PENDING.get(world);
+        if (pending == null) {
+            // Premier chunk d'un monde : sa file, gardee jusqu'a ce qu'il soit oublie.
+            pending = new LongLinkedOpenHashSet();
+            PENDING.put(world, pending);
+            PENDING_WORLDS.add(world);
+        }
+        pending.add(chunk.getPos().toLong());
+    }
+
+    /**
+     * A chaque tick, les chunks en attente sont releves dans leur ordre d'arrivee (vanilla envoie les plus proches
+     * d'abord), le temps de {@link #SCAN_BUDGET_NANOS} : au moins un par tick tant qu'il en reste.
+     */
+    static void scanPending(MinecraftClient client) {
+        long deadline = Util.getMeasuringTimeNano() + SCAN_BUDGET_NANOS;
+        for (int i = 0; i < PENDING_WORLDS.size(); i++) {
+            ClientWorld world = PENDING_WORLDS.get(i);
+            LongLinkedOpenHashSet pending = PENDING.get(world);
+            while (!pending.isEmpty()) {
+                long key = pending.removeFirstLong();
+                WorldChunk chunk = world.getChunkManager().getWorldChunk(ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key));
+                if (chunk != null) {
+                    scanChunk(world, chunk);
+                }
+                if (Util.getMeasuringTimeNano() > deadline) {
+                    return;
+                }
+            }
+        }
+    }
+
+    /** Releve les neons d'un chunk, section par section. */
     static void scanChunk(ClientWorld world, WorldChunk chunk) {
         Block block = neonBlock(world);
         if (block == null) {
@@ -102,7 +156,7 @@ public final class NeonIndex {
         map.update(pos.asLong(), neon);
     }
 
-    /** Une colonne dechargee : ses neons sont oublies. */
+    /** Une colonne dechargee : ses neons sont oublies (si elle attendait son releve, il la sautera). */
     static void unloadChunk(ClientWorld world, WorldChunk chunk) {
         NeonMap map = WORLDS.get(world);
         if (map != null) {
@@ -130,19 +184,24 @@ public final class NeonIndex {
         map.collect(x, y, z, reach, selection);
     }
 
-    /** Monde oublie (libere, ou remplace par vanilla) : ses neons sont oublies, et le monde n'est plus retenu. */
+    /** Monde oublie (libere, ou remplace par vanilla) : ses neons et sa file sont oublies, et le monde n'est plus retenu. */
     public static void forget(World world) {
         WORLDS.remove(world);
+        if (PENDING.remove(world) != null) {
+            PENDING_WORLDS.remove(world);
+        }
     }
 
     /** Fin de partie. */
     public static void clear() {
         WORLDS.clear();
+        PENDING.clear();
+        PENDING_WORLDS.clear();
     }
 
-    /** Nombre de mondes clients tenus (diagnostic : un monde oublie n'y est plus). */
+    /** Nombre de mondes clients tenus, par l'index ou la file de releve (diagnostic : un monde oublie n'y est plus). */
     public static int trackedWorlds() {
-        return WORLDS.size();
+        return Math.max(WORLDS.size(), PENDING_WORLDS.size());
     }
 
     /** Le bloc des neons d'un monde, ou {@code null} si sa dimension n'en a pas ou si le bloc du profil n'existe pas. */

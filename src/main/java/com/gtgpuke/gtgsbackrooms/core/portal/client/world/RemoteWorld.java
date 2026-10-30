@@ -53,6 +53,7 @@ import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.util.Util;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.ChunkSectionPos;
@@ -90,7 +91,7 @@ import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
  */
 public final class RemoteWorld {
 
-    private static final int RENDER_BUFFER_COUNT = 2;
+    public static final int RENDER_BUFFER_COUNT = 2;
     private static final int SIMULATION_DISTANCE = 2;
     /**
      * Paquets vanilla qu'un monde distant applique avec le gestionnaire du client : ceux de ses entities et ses
@@ -128,8 +129,15 @@ public final class RemoteWorld {
 
     /** Tampons de dessin des renderers crees par le mod, par renderer : vanilla ne libere jamais ceux d'un renderer. */
     private static final Map<WorldRenderer, BufferBuilderStorage> OWN_BUFFERS = new IdentityHashMap<>();
-    /** Tampons d'un renderer libere, repris par le prochain renderer cree. */
-    private static final List<BufferBuilderStorage> SPARE_BUFFERS = new ArrayList<>();
+    /** Tampons d'un renderer libere, repris par un prochain renderer cree une fois {@link #SPARE_DELAY_MS} passe. */
+    private static final List<SpareBuffers> SPARE_BUFFERS = new ArrayList<>();
+    /**
+     * Delai avant de redonner les tampons d'un renderer libere. Sa reserve de tampons de construction ne se touche que dans
+     * la file de son chunk builder, sur les fils de travail, ou ses dernieres constructions en cours rendent les leurs
+     * apres son arret ; reprise aussitot, la file du nouveau chunk builder y toucherait en meme temps (une file de tampons
+     * non synchronisee : un tampon donne deux fois, ou perdu). Une construction dure quelques millisecondes.
+     */
+    private static final long SPARE_DELAY_MS = 5_000L;
     /** Section du moniteur de performance : chargement d'un chunk recu du serveur. */
     private static final String PERF_CHUNK_LOAD = "client.portal.chunk_load";
 
@@ -214,9 +222,10 @@ public final class RemoteWorld {
      * milliers de sections dont une vue n'en construit qu'une petite part.
      */
     private static WorldRenderer newRenderer(MinecraftClient client) {
-        BufferBuilderStorage buffers = SPARE_BUFFERS.isEmpty()
-                ? new BufferBuilderStorage(RENDER_BUFFER_COUNT)
-                : SPARE_BUFFERS.remove(SPARE_BUFFERS.size() - 1);
+        BufferBuilderStorage buffers = takeSpareBuffers();
+        if (buffers == null) {
+            buffers = new BufferBuilderStorage(RENDER_BUFFER_COUNT);
+        }
         LazyVertexBuffers.setActive(true);
         try {
             WorldRenderer renderer = new WorldRenderer(client, client.getEntityRenderDispatcher(), client.getBlockEntityRenderDispatcher(), buffers);
@@ -251,18 +260,32 @@ public final class RemoteWorld {
     }
 
     /**
-     * Libere un renderer : son chunk builder s'arrete et, s'il a ete cree ici, ses tampons de dessin serviront au prochain.
-     * Vanilla garde les siens toute la partie et ne les rend jamais : alloues hors du tas Java (une trentaine de Mio),
-     * ceux d'un renderer jete fuiraient a chaque changement de monde. Les taches de construction encore en cours rendent
-     * leurs tampons sur le fil de rendu, le seul qui touche a la reserve : la reprendre aussitot est sur.
+     * Libere un renderer : son chunk builder s'arrete et, s'il a ete cree ici, ses tampons de dessin serviront a un
+     * prochain, passe {@link #SPARE_DELAY_MS}. Vanilla garde les siens toute la partie et ne les rend jamais : alloues hors
+     * du tas Java (une trentaine de Mio), ceux d'un renderer jete fuiraient a chaque changement de monde.
      */
     static void release(WorldRenderer renderer) {
         renderer.setWorld(null);
         renderer.close();
         BufferBuilderStorage buffers = OWN_BUFFERS.remove(renderer);
         if (buffers != null) {
-            SPARE_BUFFERS.add(buffers);
+            SPARE_BUFFERS.add(new SpareBuffers(buffers, Util.getMeasuringTimeMs()));
         }
+    }
+
+    /** Tampons d'un renderer libere depuis {@link #SPARE_DELAY_MS} au moins, retires de la reserve ; {@code null} sinon. */
+    private static @Nullable BufferBuilderStorage takeSpareBuffers() {
+        long now = Util.getMeasuringTimeMs();
+        for (int i = 0; i < SPARE_BUFFERS.size(); i++) {
+            if (now - SPARE_BUFFERS.get(i).releasedAt() >= SPARE_DELAY_MS) {
+                return SPARE_BUFFERS.remove(i).buffers();
+            }
+        }
+        return null;
+    }
+
+    /** Tampons d'un renderer libere, et l'heure de sa liberation. */
+    private record SpareBuffers(BufferBuilderStorage buffers, long releasedAt) {
     }
 
     /** Monde client de cette dimension : le monde distant, ou le monde que la vue secondaire partage. */

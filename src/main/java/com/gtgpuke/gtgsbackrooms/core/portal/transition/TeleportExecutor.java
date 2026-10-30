@@ -695,6 +695,9 @@ public final class TeleportExecutor {
         ServerWorld origin = player.getServerWorld();
         PlayerManager playerManager = origin.getServer().getPlayerManager();
         WorldProperties properties = destination.getLevelProperties();
+        // Le client garde le monde quitte : ses chunks ne lui seront ni decharges trop tot, ni renvoyes s'il revient. Avant
+        // l'annonce de la bascule : les changements de ce tick, envoyes ici, s'appliquent encore au monde quitte.
+        PortalViewTracker.recordDeparture(player, origin);
         PortalNetwork.send(player, PortalTeleportPayload.of(destination, exit, yaw, pitch, velocity));
         player.networkHandler.sendPacket(new DifficultyS2CPacket(properties.getDifficulty(), properties.isDifficultyLocked()));
         playerManager.sendCommandTree(player);

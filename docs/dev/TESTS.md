@@ -45,6 +45,11 @@ La logique pure du client reste mesurée : `PortalViewTransform` pour la caméra
 visible, `ShaderClipInjector` pour le plan de découpe, `PortalSound` pour le son à travers le cadre. Côté audio,
 l'occlusion, la réverb, les rayons, les enveloppes et les perturbations sont mesurés.
 
+Dans le code hors mesure, une règle se garde par une mutation détectée : cassée exprès, elle doit faire échouer un test.
+Une seule ne l'est pas, faute d'effet qu'un test puisse voir sans dépendre du minutage : après l'ajout de tampons de
+construction à une réserve (`BuildBuffers`), une tâche en attente est relancée par tampon ajouté. Sans cela, une file
+déjà pleine se viderait au rythme de l'ancienne réserve.
+
 `./gradlew jacocoAllReport` mesure tout le code, exclusions comprises : 86,5 % des instructions et 77,8 % des branches.
 Les mixins y comptent pour zéro, car JaCoCo ne voit pas les classes tissées.
 
@@ -173,7 +178,7 @@ l'arène, le sol est en y = -1 relatif, et un plafond de barrières la ferme.
 | `core/portal/PortalLightGameTests` | Lumière des blocs transmise d'un niveau de moins par un portail ouvert, visible et réglé pour elle, puis éteinte avec lui |
 | `core/portal/PortalWandGameTests` | Réglages de la baguette, pose et refus, copie des réglages d'un portail visé, son et évènement de pose, plan au bord du bloc |
 | `core/portal/PortalGameTests` | Traversée d'un joueur et d'un objet, collision à travers le cadre, bords du cadre, payload de chunk |
-| `core/portal/PortalSyncGameTests` | Fenêtre de chunks et fenêtre en cône, entités, blocs et météo relayés, monde distant libéré, chunks tenus après une traversée, annonces de traversée du client, spectateurs, deux dimensions dans une même vue |
+| `core/portal/PortalSyncGameTests` | Fenêtre de chunks et fenêtre en cône, envoi à chaque tick près du cadre, entités, blocs et météo relayés, monde distant libéré, chunks tenus après une traversée (proposés deux fois, retirés au client), monde quitté ni déchargé ni renvoyé tant qu'un portail le montre, puis libéré sans portail de retour, bloc changé dans le tick de la traversée envoyé avant la bascule, monde quitté oublié quand le retour mène hors de la carte du client, annonces de traversée du client, spectateurs, deux dimensions dans une même vue |
 | `core/portal/PortalInteractionGameTests` | Coups, clics, pose et minage à travers le cadre, en créatif et en survie, avec chaque refus |
 | `core/portal/PortalPropagationGameTests` | Sons, évènements et particules relayés, mob qui voit, poursuit et suit sa cible à travers le cadre, chaque règle de la poursuite |
 | `core/portal/PortalRidingGameTests` | Bateaux, passagers et cavaliers qui traversent ensemble, vers un autre monde ou dans le même |
@@ -238,7 +243,9 @@ paquet `gametest/client/`. `./gradlew runClientTest` lance un vrai client dans `
   focus.
 - Le son passe par le périphérique nul d'OpenAL Soft (`ALSOFT_DRIVERS=null`). EFX y est complet et rien n'est audible.
 - Le monde (`ClientTestWorld`) est un monde plat neuf à chaque lancement : graine 0, créatif, paisible, sans cycle du
-  jour, météo, créatures ni tick aléatoire.
+  jour, météo, créatures ni tick aléatoire. Le joueur, neuf à chaque lancement, apparaît toujours au point d'apparition
+  (`spawnRadius` à 0), devant le cadre des tests : apparu au hasard derrière lui, à moins de 8 blocs, sa première mise
+  en place l'aurait fait traverser.
 - Le lancement pose `remoteWorldReleaseSeconds=5` et `verifyNeonShader`. Les autres options du mod passent comme au
   client de développement, par exemple `-PportalLod=false` (voir [OPTIONS.md](../reference/OPTIONS.md)).
 
@@ -279,12 +286,17 @@ pilote strict comme Mesa, celui de la CI, signale ce qu'un pilote tolérant lais
 |--------|-------|--------------------|
 | `LevelZeroClientTests` | `level_zero_look_neons_and_hum` | Look du Level 0 dans les shaders, néons envoyés, brouillard de la couleur du profil, jumeau GLSL vérifié sur le processeur graphique, graine du layout reçue, bourdonnement routé par le moteur audio, image teintée |
 | `EngineRulesClientTests` | `engine_rules_in_level_zero` | Règles qu'aucune image ne montre : seuil du bloom dans l'uniforme, framebuffer recréé avec son stencil, deux dessins plein écran sur deux textures, volume lu sur la source OpenAL, son rejoué traité sur sa nouvelle source |
-| `PortalViewClientTests` | `portal_view_and_seamless_crossings`, `remote_world_released_and_forgotten` | Vue du Level 0 dans un cadre de l'Overworld, aller et retour à pied sans couture, monde distant libéré puis oublié par les index, renderer fermé sans erreur OpenGL |
+| `PortalViewClientTests` | `portal_view_and_seamless_crossings`, `remote_world_released_and_forgotten`, `crossing_backwards_through_an_unseen_frame`, `hand_keeps_the_players_look` | Vue du Level 0 dans un cadre de l'Overworld, aller et retour à pied sans couture, sans chunk reçu ni section manquante après la bascule, rien de proche qui manque après un demi-tour, une section rendue à reconstruire l'est dans chaque renderer après chaque bascule, tampons de construction du jeu au renderer du joueur et deux à la vue qu'il remplace, monde distant libéré puis oublié par les index, renderer fermé sans erreur OpenGL, entrée à reculons dans un cadre jamais regardé sans section manquante ni chunk reçu, main au look du monde du joueur devant un cadre (bits de look du stencil relus, main affichée puis cachée) |
 | `PortalFeaturesClientTests` | neuf tests | Paliers de détail de 6 à 90 blocs, objet qui traverse, troisième personne, clics à travers le cadre, écran de la baguette, vue imbriquée vers l'End et `/backrooms_state`, cri qui perturbe les néons, son entendu et occlusion à travers le cadre |
 
 Une traversée est sans couture si l'écart entre deux images de la bascule reste sous 1,5 fois le médian des six
 images voisines de chaque côté, plus 1. La marche continue douze images après la bascule, et l'image doit encore
-changer : un rendu figé échoue.
+changer : un rendu figé échoue. Après la bascule, aucun chunk ne doit arriver dans le monde du joueur (le client les
+tient tous), et aucune section à dessiner ne doit manquer à moins de 48 blocs, la fin du brouillard du Level 0 : plus
+loin, le renderer d'une vue devenu celui du joueur finit sa file avec ses deux tampons de construction. Après l'aller, le joueur fait demi-tour vers le
+cadre d'où il vient : à moins de 48 blocs (le brouillard du Level 0), rien ne doit manquer pendant vingt images. Chaque image du relevé note aussi son temps, les
+chunks reçus et le passage du ramasse-miettes, journalisés autour de la bascule. Ces temps sont gonflés par la capture
+de chaque image, qui attend le processeur graphique : ils se lisent pour comparer, pas comme ceux d'une partie.
 
 ### Fin de partie
 
