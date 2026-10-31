@@ -74,6 +74,12 @@ public final class PortalViewTracker {
     static final int UPDATE_INTERVAL_TICKS = 5;
     /** Chunks complets envoyes au plus par joueur et par recalcul, pour lisser la bande passante. */
     static final int MAX_CHUNKS_PER_UPDATE = 8;
+    /**
+     * Chunks envoyes au plus par joueur et par tick pres d'un cadre, tant que la fenetre de l'arrivee n'est pas complete : la
+     * distance de vue et son anneau (361 chunks a 8 de vue) partent pendant les quelques secondes qu'il met a atteindre le
+     * plan en marchant, meme si le serveur tique moins vite. Vanilla en envoie jusqu'a 64 par tick a un client qui suit.
+     */
+    static final int NEAR_CHUNKS_PER_TICK = 24;
     /** Delai avant de decharger une dimension dont le joueur n'a plus aucun portail a portee : un pas au-dela ne doit pas tout renvoyer. */
     static final int UNLOAD_GRACE_TICKS = 100;
     /**
@@ -586,12 +592,14 @@ public final class PortalViewTracker {
                 release(server, player, view, entry.getKey(), entry.getValue());
             }
         }
+        boolean near = nearAnyPortal(player);
+        int budget = near ? NEAR_CHUNKS_PER_TICK : MAX_CHUNKS_PER_UPDATE;
         boolean pending = false;
         for (int i = 0; i < DIMENSION_SCRATCH.size(); i++) {
             RegistryKey<World> dimension = DIMENSION_SCRATCH.get(i);
-            pending |= syncDimension(server, player, view, dimension, WANTED_SCRATCH.get(dimension));
+            pending |= syncDimension(server, player, view, dimension, WANTED_SCRATCH.get(dimension), budget);
         }
-        view.catchingUp = pending && nearAnyPortal(player);
+        view.catchingUp = pending && near;
     }
 
     /** {@code true} si ce joueur a un depart en attente. */
@@ -782,14 +790,19 @@ public final class PortalViewTracker {
         return true;
     }
 
-    /** Synchronise une dimension ; {@code true} si des chunks voulus attendent encore leur envoi, faute de budget. */
+    /**
+     * Synchronise une dimension ; {@code true} si des chunks voulus attendent encore leur envoi, faute de budget.
+     *
+     * @param budget chunks envoyes au plus pour cette dimension
+     */
     @SuppressWarnings("try")
     private static boolean syncDimension(
             MinecraftServer server,
             ServerPlayerEntity player,
             PlayerView view,
             RegistryKey<World> dimension,
-            LongSet wanted) {
+            LongSet wanted,
+            int budget) {
         LongSet sent = view.sentChunks.computeIfAbsent(dimension, key -> new LongOpenHashSet());
         // Dechargements d'abord : si le foyer a saute, le client recentre sa carte sur le premier chunk suivant. Un chunk
         // envoye a eu son annonce : l'index de la dimension existe.
@@ -809,7 +822,7 @@ public final class PortalViewTracker {
         }
         boolean pending = false;
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_SYNC_CHUNKS)) {
-            int budget = MAX_CHUNKS_PER_UPDATE;
+            int left = budget;
             LongIterator wantedKeys = wanted.iterator();
             while (wantedKeys.hasNext()) {
                 long key = wantedKeys.nextLong();
@@ -818,7 +831,7 @@ public final class PortalViewTracker {
                 if (sent.contains(key)) {
                     continue;
                 }
-                if (budget == 0) {
+                if (left == 0) {
                     pending = true;
                     continue;
                 }
@@ -831,7 +844,7 @@ public final class PortalViewTracker {
                 PortalNetwork.send(player, RemoteChunkPayload.of(destination, chunk));
                 sent.add(key);
                 watchedChunkCount++;
-                budget--;
+                left--;
             }
         }
         if (!sent.isEmpty()) {

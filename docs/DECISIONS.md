@@ -48,7 +48,8 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   `upside_down`).
 - Les blocs derrière le plan d'un portail ouvert n'existent plus pour l'entité engagée dans le cadre. Un cadre se pose
   donc contre un mur ou sur un sol plein.
-- Un cadre au sol est une trappe, arrivées comprises. Qui sort d'une arrivée au sol en est gardé (`ArrivalGuard`).
+- Un cadre au sol est une trappe, arrivées comprises. Qui sort d'une arrivée au sol en est gardé (`ArrivalGuard`),
+  garde retirée le 30 octobre 2026.
 - La traversée d'un cadre couché se décide aux yeux, au sol comme au plafond.
 
 ## 23 octobre 2026
@@ -181,3 +182,12 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   moteur de shaders, une partie du moteur audio), ces décisions priment. Leur nouveau contenu fait foi : paliers de
   qualité, LOD, presets, gameplay, production.
 - Les anciennes règles de contenu quittent la documentation publiée. La vision de jeu de l'auteur les remplace.
+- Arrivée au sol : le joueur ne se pose plus sur le cadre d'où il sort. La garde d'arrivée est retirée : qui retombe sur
+  un cadre d'arrivée au sol y repasse aussitôt, même avec un bloc sous le cadre, et fait des allers-retours tant qu'il ne
+  s'en écarte pas ([portails](systemes/PORTAILS.md)).
+
+## 31 octobre 2026
+
+- Entré en marchant par un cadre debout et sorti d'un cadre au sol, le joueur est poussé dans le sens de son regard pour
+  retomber au-delà du bord du cadre devant lui, au lieu de retomber dedans. Un petit saut complète la poussée quand il
+  sort loin de ce bord ([portails](systemes/PORTAILS.md)).

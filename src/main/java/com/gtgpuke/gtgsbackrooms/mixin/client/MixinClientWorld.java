@@ -1,5 +1,7 @@
 package com.gtgpuke.gtgsbackrooms.mixin.client;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,13 +14,16 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.util.CubicSampler;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.entity.EntityLookup;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.audio.client.SolidityIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.sound.FrameSoundPlayer;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.transition.EntityHandover;
+import com.gtgpuke.gtgsbackrooms.core.render.client.BiomeColors;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 
 /**
@@ -35,6 +40,14 @@ public abstract class MixinClientWorld {
 
     @Shadow
     protected abstract EntityLookup<Entity> getEntityLookup();
+
+    /** Couleur du ciel des biomes autour de la camera sans un vecteur par point ({@link BiomeColors}), au bit pres la meme. */
+    @WrapOperation(method = "getSkyColor", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/util/CubicSampler;sampleColor(Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/CubicSampler$RgbFetcher;)Lnet/minecraft/util/math/Vec3d;"))
+    private Vec3d backrooms$skyBiomeColor(Vec3d pos, CubicSampler.RgbFetcher fetcher, Operation<Vec3d> original) {
+        Vec3d color = BiomeColors.skyColor((ClientWorld) (Object) this, pos);
+        return color != null ? color : original.call(pos, fetcher);
+    }
 
     /**
      * Avant l'index des identifiants uniques de vanilla, qui refuserait la nouvelle copie d'une entity deja presente sous

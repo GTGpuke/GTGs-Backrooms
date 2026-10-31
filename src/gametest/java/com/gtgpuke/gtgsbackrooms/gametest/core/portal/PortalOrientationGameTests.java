@@ -88,8 +88,17 @@ public final class PortalOrientationGameTests implements FabricGameTest {
         player.setVelocity(motion);
         player.fallDistance = FALL;
         context.assertTrue(TeleportExecutor.execute(player, portal), pair + " : la traversee a lieu.");
-        context.assertTrue(player.getVelocity().subtract(exit.normal.multiply(SPEED)).length() < EPSILON,
-                pair + " : on file hors du cadre d'arrivee : " + player.getVelocity() + ".");
+        Vec3d push = player.getVelocity().subtract(exit.normal.multiply(SPEED));
+        if (source.normal.y == 0.0 && exit.normal.y > 0.0) {
+            // D'un cadre debout a un cadre au sol, on est pousse dans le sens de son regard pour retomber devant le cadre ; a
+            // cette vitesse, sans saut ajoute (decision de l'auteur du 31 octobre 2026).
+            double heading = Math.toRadians(player.getYaw());
+            context.assertTrue(Math.abs(push.y) < EPSILON && push.length() > EPSILON && push.length() <= TeleportExecutor.MAX_EDGE_PUSH + EPSILON
+                    && (-Math.sin(heading) * push.x + Math.cos(heading) * push.z) / push.length() > 1.0 - EPSILON,
+                    pair + " : on file hors du cadre d'arrivee, pousse dans le sens du regard : " + player.getVelocity() + ".");
+        } else {
+            context.assertTrue(push.length() < EPSILON, pair + " : on file hors du cadre d'arrivee : " + player.getVelocity() + ".");
+        }
         context.assertTrue(player.getRotationVector().dotProduct(exit.normal) > 0.999, pair + " : on regarde ou l'on va.");
         // Debout vers debout, le bas reste le bas sauf si un seul des deux cadres est retourne ; couche vers couche oppose, la
         // chute continue le long de la normale, retourne ou non.

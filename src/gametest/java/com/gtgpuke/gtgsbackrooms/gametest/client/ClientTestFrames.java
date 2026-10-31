@@ -91,8 +91,8 @@ public final class ClientTestFrames {
             if (previous != null) {
                 int[] holes = holes(client);
                 RECORDED.add(new FrameStep(Images.meanDifference(previous, image), client.world.getRegistryKey().getValue(), frameMillis,
-                        client.worldRenderer.getCompletedChunkCount(), holes[0], holes[1], client.world.getChunkManager().getLoadedChunkCount(), loads,
-                        unloads, remoteLoads, collected));
+                        client.worldRenderer.getCompletedChunkCount(), holes[0], holes[1], holes[2], client.world.getChunkManager().getLoadedChunkCount(),
+                        loads, unloads, remoteLoads, collected));
                 previous.close();
             }
             previous = image;
@@ -107,6 +107,7 @@ public final class ClientTestFrames {
     private static int[] holes(MinecraftClient client) {
         int unbuilt = 0;
         int near = 0;
+        double nearest = Double.MAX_VALUE;
         Vec3d camera = client.gameRenderer.getCamera().getPos();
         for (ChunkBuilder.BuiltChunk section : ((WorldRendererAccessor) client.worldRenderer).backrooms$getBuiltChunks()) {
             BlockPos origin = section.getOrigin();
@@ -115,12 +116,14 @@ public final class ClientTestFrames {
             boolean hasBlocks = index >= 0 && index < chunk.getSectionArray().length && !chunk.getSectionArray()[index].isEmpty();
             if (hasBlocks && section.getData() == ChunkBuilder.ChunkData.EMPTY) {
                 unbuilt++;
-                if (section.getBoundingBox().squaredMagnitude(camera) < NEAR_HOLE_DISTANCE * NEAR_HOLE_DISTANCE) {
+                double squared = section.getBoundingBox().squaredMagnitude(camera);
+                nearest = Math.min(nearest, squared);
+                if (squared < NEAR_HOLE_DISTANCE * NEAR_HOLE_DISTANCE) {
                     near++;
                 }
             }
         }
-        return new int[] {unbuilt, near};
+        return new int[] {unbuilt, near, unbuilt == 0 ? -1 : (int) Math.sqrt(nearest)};
     }
 
     /** Nombre d'images rendues depuis le lancement. */
@@ -164,13 +167,14 @@ public final class ClientTestFrames {
      * @param builtSections sections que le renderer du joueur a construites et dessine
      * @param holes sections a dessiner que le renderer du joueur n'a pas encore construites
      * @param nearHoles celles de ces sections a moins de 48 blocs de la camera
+     * @param nearestHole distance a la camera, en blocs, de la plus proche de ces sections ; -1 s'il n'y en a pas
      * @param loadedChunks chunks charges dans le monde du joueur
      * @param chunkLoads chunks charges dans le monde du joueur pendant cette image (nouveaux ou remplaces)
      * @param chunkUnloads chunks decharges par le client pendant cette image, tous mondes confondus
      * @param remoteChunkLoads chunks charges dans les mondes distants pendant cette image
      * @param collections passages du ramasse-miettes pendant cette image
      */
-    public record FrameStep(double difference, Identifier world, double frameMillis, int builtSections, int holes, int nearHoles, int loadedChunks,
-            int chunkLoads, int chunkUnloads, int remoteChunkLoads, int collections) {
+    public record FrameStep(double difference, Identifier world, double frameMillis, int builtSections, int holes, int nearHoles, int nearestHole,
+            int loadedChunks, int chunkLoads, int chunkUnloads, int remoteChunkLoads, int collections) {
     }
 }

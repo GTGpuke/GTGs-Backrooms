@@ -28,8 +28,14 @@ public final class LookDimensionEffects extends DimensionEffects {
 
     @Override
     public Vec3d adjustFogColor(Vec3d color, float sunHeight) {
+        Vec3d fixed = fixedFogColor();
+        return fixed != null ? fixed : color;
+    }
+
+    /** Couleur que {@link #adjustFogColor} donne a tout point : celle du brouillard du profil ; {@code null} s'il n'en a pas. */
+    public @Nullable Vec3d fixedFogColor() {
         LookProfile.Fog fog = LookProfiles.of(this.dimension).fog();
-        return fog.enabled() ? fog.color() : color;
+        return fog.enabled() ? fog.color() : null;
     }
 
     @Override

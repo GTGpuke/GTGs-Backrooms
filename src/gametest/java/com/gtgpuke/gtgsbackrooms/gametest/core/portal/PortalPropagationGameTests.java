@@ -29,7 +29,9 @@ import net.minecraft.test.GameTest;
 import net.minecraft.test.GameTestException;
 import net.minecraft.test.TestContext;
 import net.minecraft.text.Text;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
@@ -43,6 +45,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.portal.propagation.PortalPursuer;
 import com.gtgpuke.gtgsbackrooms.core.portal.propagation.PortalPursuit;
 import com.gtgpuke.gtgsbackrooms.core.portal.propagation.PortalPursuitGoal;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalBlockActionPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalViewTracker;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
@@ -153,6 +156,21 @@ public final class PortalPropagationGameTests implements FabricGameTest {
                                         payload.packet() instanceof PlaySoundS2CPacket sound && sound.getSound().value() == ModSounds.HOWLER_SCREAM
                                                 && payload.dimension() == netherIndex),
                                 "Le cri lie du Nether arrive au joueur, enveloppe avec sa dimension.");
+                        // Il casse a travers le cadre une pierre du Nether, juste derriere la sortie : le son et les eclats lui
+                        // parviennent une fois, enveloppes par le relais, jamais comme un paquet de son propre monde.
+                        BlockPos stone = BlockPos.ofFloored(RELAY_EXIT).south();
+                        nether.setBlockState(stone, Blocks.STONE.getDefaultState());
+                        GameTestPlayers.sent(player, RemoteEntityPacketPayload.class);
+                        GameTestPlayers.sent(player, WorldEventS2CPacket.class);
+                        GameTestPlayers.receive(player, new PortalBlockActionPayload(portal.getUuid(), World.NETHER.getValue(),
+                                new BlockHitResult(Vec3d.ofCenter(stone).add(0.0, 0.0, -0.5), Direction.NORTH, stone, false),
+                                PortalBlockActionPayload.Action.START_MINING));
+                        context.assertTrue(nether.getBlockState(stone).isAir(), "La pierre du Nether est cassee a travers le cadre.");
+                        context.assertTrue(GameTestPlayers.sent(player, RemoteEntityPacketPayload.class).stream()
+                                .filter(payload -> payload.packet() instanceof WorldEventS2CPacket).count() == 1,
+                                "La casse lui parvient une fois, enveloppee par le relais.");
+                        context.assertTrue(GameTestPlayers.sent(player, WorldEventS2CPacket.class).isEmpty(),
+                                "Jamais comme un evenement de son propre monde.");
                     } finally {
                         GameTestPlayers.disconnect(player);
                         portal.discard();

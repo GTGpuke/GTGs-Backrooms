@@ -13,12 +13,13 @@ import net.minecraft.server.PlayerManager;
 import net.minecraft.world.World;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
+import com.gtgpuke.gtgsbackrooms.core.portal.interaction.RemoteInteractionHandler;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalViewTracker;
 
 /**
  * Sons et evenements de monde (bruit de pas, porte, bloc casse) d'une dimension : vanilla les envoie aux joueurs
- * proches dans cette dimension ; ils partent aussi a ceux qui la voient a travers un portail. Le client decide par
- * quel portail le son lui parvient.
+ * proches dans cette dimension ; ils partent aussi a ceux qui la voient a travers un portail, et a l'auteur d'une action
+ * a travers un cadre, que vanilla exclut. Le client decide par quel portail le son lui parvient.
  */
 @Mixin(PlayerManager.class)
 public abstract class MixinPlayerManager {
@@ -34,6 +35,7 @@ public abstract class MixinPlayerManager {
             Packet<?> packet,
             CallbackInfo ci) {
         if (ModConfig.ENABLE_PORTAL_FEATURE) {
+            RemoteInteractionHandler.sendWithheld(player, worldKey, packet);
             PortalViewTracker.relayToViewers(worldKey, x, z, packet);
         }
     }

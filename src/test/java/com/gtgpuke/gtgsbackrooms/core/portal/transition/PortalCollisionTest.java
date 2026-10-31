@@ -257,12 +257,11 @@ class PortalCollisionTest {
             assertSame(collisions, PortalCollision.withOtherSide(item, null, collisions, item.getBoundingBox()),
                     "Aucun portail branche : les collisions vanilla, telles quelles.");
             assertTrue(asked[0], "Les portails viennent des mondes branches.");
-            assertSame(PortalCollision.Side.CLIENT, PortalCollision.side(null), "Le cote aussi.");
         } finally {
             PortalCollision.setWorlds(PortalCollision.SERVER_WORLDS);
         }
         assertSame(BackroomsPortalEntityRegistry.all(), PortalCollision.SERVER_WORLDS.portals(null),
                 "Par defaut, le registre des portails du serveur, tous mondes confondus.");
-        assertSame(PortalCollision.Side.SERVER, PortalCollision.side(null), "Et le suivi du serveur.");
+        assertSame(PortalCollision.Side.SERVER, PortalCollision.SERVER_WORLDS.side(null), "Et le suivi du serveur.");
     }
 }

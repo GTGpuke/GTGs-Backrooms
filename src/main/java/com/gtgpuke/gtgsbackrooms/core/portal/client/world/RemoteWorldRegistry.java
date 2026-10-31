@@ -368,13 +368,16 @@ public final class RemoteWorldRegistry {
                 remote.tick(client);
             }
             // Tampons de construction : ceux du jeu au renderer du joueur, celui d'une vue promu par une traversee compris,
-            // deux a chaque vue, l'ancien renderer du joueur compris.
+            // deux a chaque vue, l'ancien renderer du joueur compris. La vue d'un cadre que le joueur peut passer construit
+            // l'arrivee d'avance avec autant de tampons que le sien : elle deviendra peut-etre son renderer.
             BuildBuffers.balance(client, client.worldRenderer, BuildBuffers.PLAYER_COUNT);
             for (int i = 0; i < MIRRORS.size(); i++) {
                 BuildBuffers.balance(client, MIRRORS.get(i).renderer(), RemoteWorld.RENDER_BUFFER_COUNT);
             }
             for (int i = 0; i < WORLD_LIST.size(); i++) {
-                BuildBuffers.balance(client, WORLD_LIST.get(i).renderer(), RemoteWorld.RENDER_BUFFER_COUNT);
+                RemoteWorld remote = WORLD_LIST.get(i);
+                BuildBuffers.balance(client, remote.renderer(),
+                        remote.viewRenderer().prebuilding() ? BuildBuffers.PLAYER_COUNT : RemoteWorld.RENDER_BUFFER_COUNT);
             }
         }
     }

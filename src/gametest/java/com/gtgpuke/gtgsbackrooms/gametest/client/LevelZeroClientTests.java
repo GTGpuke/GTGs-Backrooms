@@ -5,10 +5,14 @@ import java.util.Locale;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.CubicSampler;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.source.BiomeAccess;
 
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.LevelZeroArrival;
@@ -19,6 +23,7 @@ import com.gtgpuke.gtgsbackrooms.core.audio.client.SolidityIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalSettings;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalTargets;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
+import com.gtgpuke.gtgsbackrooms.core.render.client.BiomeColors;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonFaces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonShaderCheck;
@@ -35,13 +40,52 @@ final class LevelZeroClientTests {
     static final String HUM = "gtgs_backrooms:block.neon.hum";
     /** Ticks laisses a la generation et a l'envoi du Level 0 apres le changement de monde. */
     private static final int ARRIVAL_TICKS = 1200;
+    /** Points ou la couleur des biomes du mod est comparee a celle de vanilla, par monde. */
+    private static final int BIOME_COLOR_POINTS = 64;
 
     private LevelZeroClientTests() {
         throw new UnsupportedOperationException("Classe utilitaire.");
     }
 
     static List<ClientScenario> scenarios() {
-        return List.of(levelZeroLooksAndSoundsLikeItsProfile());
+        return List.of(levelZeroLooksAndSoundsLikeItsProfile(), biomeColorsMatchVanilla());
+    }
+
+    /**
+     * Couleurs du brouillard et du ciel des biomes : celles que le mod calcule sans un vecteur par point
+     * ({@link BiomeColors}) sont celles de vanilla au bit pres, dans l'Overworld (effets de vanilla) comme dans le Level 0
+     * (effets d'un monde a look), autour du joueur et loin de lui, a plusieurs heures de la journee.
+     */
+    private static ClientScenario biomeColorsMatchVanilla() {
+        return ClientScenario.named("biome_colors_match_vanilla")
+                .run("dans l'Overworld", LevelZeroClientTests::backToOverworld)
+                .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD, ARRIVAL_TICKS)
+                .ticks(20)
+                .check("brouillard et ciel de l'Overworld comme vanilla", LevelZeroClientTests::requireVanillaBiomeColors)
+                .run("entree dans le Level 0", LevelZeroClientTests::enterLevelZero)
+                .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, ARRIVAL_TICKS)
+                .ticks(20)
+                .check("brouillard et ciel du Level 0 comme vanilla", LevelZeroClientTests::requireVanillaBiomeColors)
+                .cleanup(LevelZeroClientTests::backToOverworld);
+    }
+
+    /** Compare, en des points autour du joueur et au loin, la couleur du mod a celle de {@code CubicSampler} de vanilla. */
+    private static void requireVanillaBiomeColors(ClientTestContext context) {
+        ClientWorld world = context.client().world;
+        BiomeAccess biomes = world.getBiomeAccess();
+        Vec3d around = context.player().getPos().subtract(2.0, 2.0, 2.0).multiply(0.25);
+        for (int i = 0; i < BIOME_COLOR_POINTS; i++) {
+            Vec3d pos = around.add(i * 0.37 - 3.0, (i % 5) * 0.21, i % 2 == 0 ? i * 41.3 : -i * 17.9);
+            float tickDelta = (i % 4) / 4.0f;
+            float sun = MathHelper.clamp(MathHelper.cos(world.getSkyAngle(tickDelta) * (float) (Math.PI * 2)) * 2.0F + 0.5F, 0.0F, 1.0F);
+            Vec3d fog = CubicSampler.sampleColor(pos, (x, y, z) -> world.getDimensionEffects().adjustFogColor(
+                    Vec3d.unpackRgb(biomes.getBiomeForNoiseGen(x, y, z).value().getFogColor()), sun));
+            Vec3d sky = CubicSampler.sampleColor(pos, (x, y, z) -> Vec3d.unpackRgb(biomes.getBiomeForNoiseGen(x, y, z).value().getSkyColor()));
+            ClientTestContext.require(fog.equals(BiomeColors.fogColor(world, pos, tickDelta)), "Brouillard different de vanilla en " + pos + " : " + fog
+                    + " / " + BiomeColors.fogColor(world, pos, tickDelta) + ".");
+            ClientTestContext.require(sky.equals(BiomeColors.skyColor(world, pos)), "Ciel different de vanilla en " + pos + " : " + sky + " / "
+                    + BiomeColors.skyColor(world, pos) + ".");
+        }
     }
 
     /** Le joueur dans le Level 0, a l'arrivee d'un portail pres de l'origine. */

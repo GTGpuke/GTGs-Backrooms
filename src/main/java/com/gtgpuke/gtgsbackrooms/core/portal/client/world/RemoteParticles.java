@@ -105,4 +105,15 @@ public final class RemoteParticles {
         this.fresh.clear();
         this.groups.clear();
     }
+
+    /** Particules de ce contenu, vivantes et en attente, qu'il soit installe dans le gestionnaire ou non (diagnostic). */
+    int count(ParticleManager manager) {
+        ParticleManagerAccessor accessor = (ParticleManagerAccessor) manager;
+        Map<ParticleTextureSheet, Queue<Particle>> living = active == this ? accessor.backrooms$getParticles() : this.particles;
+        int count = active == this ? accessor.backrooms$getNewParticles().size() : this.fresh.size();
+        for (Queue<Particle> sheet : living.values()) {
+            count += sheet.size();
+        }
+        return count;
+    }
 }

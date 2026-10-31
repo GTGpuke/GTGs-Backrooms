@@ -90,6 +90,19 @@ public final class TeleportExecutor {
     private static final Vec3d DOWN = new Vec3d(0.0, -1.0, 0.0);
     /** Jeu sur l'image du bas : en deca, le bas reste le bas de l'autre cote. */
     private static final double VERTICAL_KEPT = 1.0e-6;
+    /** Vitesse horizontale gardee d'un tick a l'autre par une entity vivante en l'air (vanilla). */
+    private static final double AIR_DRAG = 0.91;
+    /** Gravite d'une entity vivante, en blocs par tick au carre, et vitesse verticale gardee d'un tick a l'autre (vanilla). */
+    private static final double GRAVITY = 0.08;
+    private static final double VERTICAL_DRAG = 0.98;
+    /** Poussee horizontale au plus, en blocs par tick, a la sortie d'un cadre au sol : l'elan d'un sprint. */
+    public static final double MAX_EDGE_PUSH = 0.35;
+    /** Elan vertical au plus a la sortie d'un cadre au sol, en blocs par tick : celui d'un saut vanilla. */
+    public static final double MAX_EXIT_RISE = 0.42;
+    /** Pas de l'elan vertical ajoute quand la poussee la plus forte ne suffit pas. */
+    private static final double RISE_STEP = 0.01;
+    /** Marge au-dela du bord du cadre ou retombe le corps pousse a la sortie d'un cadre au sol. */
+    private static final double EDGE_CLEARANCE = 0.05;
     /** Vitesse annoncee la plus forte admise, en blocs par tick : bien au-dela d'un vol propulse a l'elytre. */
     private static final double MAX_ANNOUNCED_SPEED = 10.0;
     private static final float MAX_PITCH = 90.0f;
@@ -149,14 +162,12 @@ public final class TeleportExecutor {
             LAST_VEHICLE.clear();
             PENDING_CROSSINGS.clear();
             LAST_CROSSING_TICK.clear();
-            ArrivalGuard.clear(PortalCollision.Side.SERVER);
             PortalCollision.clear(PortalCollision.Side.SERVER);
         });
         initialized = true;
     }
 
     private static void tick(MinecraftServer server) {
-        ArrivalGuard.tick(PortalCollision.Side.SERVER);
         PortalCollision.tick(PortalCollision.Side.SERVER);
         processEntities();
         List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
@@ -221,8 +232,7 @@ public final class TeleportExecutor {
 
     /**
      * Portail du monde dont le plan est franchi par le trajet d'un corps, depuis le cote d'entree. Une sortie fugace
-     * que le joueur ne regarde pas n'existe pas pour lui : il la traverse comme de l'air ; le cadre d'arrivee au sol dont
-     * le corps est garde ({@link ArrivalGuard}) ne le fait pas repartir.
+     * que le joueur ne regarde pas n'existe pas pour lui : il la traverse comme de l'air.
      *
      * @param world monde du joueur
      * @param player joueur concerne, pour son regard sur les sorties fugaces
@@ -238,7 +248,7 @@ public final class TeleportExecutor {
             BackroomsPortalEntity portal = portals.get(i);
             if (portal.getWorld() == world && portal.teleportable()
                     && crossedPortalPlane(portal, mover, lastPos.x, lastPos.y, lastPos.z, currentPos.x, currentPos.y, currentPos.z)
-                    && (!portal.fleeting() || PortalSight.sees(player, portal)) && !ArrivalGuard.guards(mover, portal)) {
+                    && (!portal.fleeting() || PortalSight.sees(player, portal))) {
                 return portal;
             }
         }
@@ -292,13 +302,11 @@ public final class TeleportExecutor {
     /**
      * {@code true} si le deplacement du tick d'une entity passe le plan du portail. Une entity qui vient d'apparaitre n'a
      * pas encore de position precedente (l'origine du monde, avant son premier tick) : comme un saut de position, son
-     * trajet traverserait les plans sans les franchir, et elle serait teleportee sans avoir bouge. Le cadre d'arrivee au
-     * sol dont elle est gardee ne la fait pas repartir.
+     * trajet traverserait les plans sans les franchir, et elle serait teleportee sans avoir bouge.
      */
     static boolean crossedThisTick(BackroomsPortalEntity portal, Entity entity) {
         return entity.squaredDistanceTo(entity.prevX, entity.prevY, entity.prevZ) <= MAX_STEP_SQUARED
-                && crossedPortalPlane(portal, entity, entity.prevX, entity.prevY, entity.prevZ, entity.getX(), entity.getY(), entity.getZ())
-                && !ArrivalGuard.guards(entity, portal);
+                && crossedPortalPlane(portal, entity, entity.prevX, entity.prevY, entity.prevZ, entity.getX(), entity.getY(), entity.getZ());
     }
 
     /**
@@ -317,8 +325,7 @@ public final class TeleportExecutor {
                 && payload.position().squaredDistanceTo(player.getPos()) <= MAX_PREDICTION_DRIFT * MAX_PREDICTION_DRIFT
                 && portal.detectionBox().expand(ANNOUNCED_POSITION_TOLERANCE)
                         .contains(payload.position().add(0.0, portal.crossingHeight(player), 0.0))
-                && isSane(payload.velocity(), payload.yaw(), payload.pitch())
-                && !ArrivalGuard.guards(player, portal);
+                && isSane(payload.velocity(), payload.yaw(), payload.pitch());
         if (plausible && execute(player, portal, payload.position(), payload.velocity(), payload.yaw(), payload.pitch(), true)) {
             return;
         }
@@ -460,6 +467,73 @@ public final class TeleportExecutor {
     }
 
     /**
+     * Vitesse d'un joueur a la sortie d'un portail : celle du franchissement, transposee. Entre par un cadre debout et sorti
+     * d'un cadre couche au sol, il jaillit vers le haut de la vitesse de sa marche et retomberait aussitot dans le cadre : il
+     * recoit une poussee horizontale dans le sens de son regard a la sortie, juste ce qu'il faut pour que son corps retombe
+     * tout entier au-dela du bord du cadre devant lui (decision de l'auteur du 31 octobre 2026). Il sort souvent du cote
+     * oppose a ce bord (ses yeux, en haut du cadre debout, vont a l'arriere du cadre couche) : quand la poussee la plus forte
+     * ({@link #MAX_EDGE_PUSH}) ne suffit pas, un petit saut allonge son temps en l'air, au plus celui d'un saut vanilla
+     * ({@link #MAX_EXIT_RISE}). D'un cadre au sol a un autre, l'elan reste horizontal : rien ne s'ajoute. Le client la
+     * calcule pour sa prediction, le serveur pour la sienne, des memes valeurs.
+     *
+     * @param portal portail traverse
+     * @param exit pieds a la sortie ({@link #exitPoint})
+     * @param velocity vitesse du franchissement, transposee
+     * @param exitYaw lacet a la sortie, en degres
+     * @param width largeur du corps
+     * @return vitesse a la sortie
+     */
+    public static Vec3d playerExitVelocity(BackroomsPortalEntity portal, Vec3d exit, Vec3d velocity, float exitYaw, double width) {
+        PortalFacing arrival = portal.facingDestination();
+        if (arrival.normal.y <= 0.0 || portal.facingSource().normal.y != 0.0) {
+            return velocity;
+        }
+        double yaw = Math.toRadians(exitYaw);
+        double headingX = -Math.sin(yaw);
+        double headingZ = Math.cos(yaw);
+        double dx = exit.x - portal.destinationPos().x;
+        double dz = exit.z - portal.destinationPos().z;
+        // Distance de la sortie au bord de l'ouverture que vise le regard : le premier des bords de ses deux directions.
+        double toEdge = Math.min(
+                toEdge(dx * arrival.axisW.x + dz * arrival.axisW.z, headingX * arrival.axisW.x + headingZ * arrival.axisW.z, portal.width() / 2.0),
+                toEdge(dx * arrival.axisH.x + dz * arrival.axisH.z, headingX * arrival.axisH.x + headingZ * arrival.axisH.z, portal.height() / 2.0));
+        double distance = toEdge + width / 2.0 + EDGE_CLEARANCE;
+        double rise = velocity.y;
+        double push = pushOver(distance, rise);
+        // Trop loin pour la poussee la plus forte : un petit saut allonge le temps en l'air.
+        while (push > MAX_EDGE_PUSH && rise < MAX_EXIT_RISE) {
+            rise = Math.min(MAX_EXIT_RISE, rise + RISE_STEP);
+            push = pushOver(distance, rise);
+        }
+        push = Math.min(push, MAX_EDGE_PUSH);
+        return new Vec3d(velocity.x + headingX * push, rise, velocity.z + headingZ * push);
+    }
+
+    /**
+     * Vitesse horizontale qui, freinee par l'air, couvre {@code distance} avant que les pieds, partis du plan a {@code rise}
+     * vers le haut, le retrouvent.
+     */
+    private static double pushOver(double distance, double rise) {
+        int airborne = 0;
+        double height = 0.0;
+        double vertical = rise;
+        do {
+            height += vertical;
+            vertical = (vertical - GRAVITY) * VERTICAL_DRAG;
+            airborne++;
+        } while (height > 0.0);
+        return distance * (1.0 - AIR_DRAG) / (1.0 - Math.pow(AIR_DRAG, airborne));
+    }
+
+    /**
+     * Distance, le long d'une direction du cadre, du point {@code offset} au bord de l'ouverture vers lequel va
+     * {@code direction} (composante unitaire du regard sur cette direction) ; infinie si le regard lui est perpendiculaire.
+     */
+    private static double toEdge(double offset, double direction, double half) {
+        return (half - offset * Math.signum(direction)) / Math.abs(direction);
+    }
+
+    /**
      * Chute gardee a la traversee : celle d'avant si le bas reste le bas de l'autre cote (on continue de tomber), nulle
      * sinon. Tombe dans un sol et sorti d'un mur, on file a l'horizontale : la hauteur de chute devient de la vitesse, pas
      * des degats a l'atterrissage.
@@ -589,7 +663,6 @@ public final class TeleportExecutor {
         }
         arrived.setPortalCooldown(ENTITY_PORTAL_COOLDOWN_TICKS);
         arrived.fallDistance = fall;
-        ArrivalGuard.arrive(arrived, portal);
         // Seul un mob poursuit, et sa proie est dans le monde d'arrivee : de ce cote, il la reprend sans s'arreter.
         if (chased != null) {
             PortalPursuit.resumeAfterCrossing((MobEntity) arrived, chased);
@@ -650,9 +723,10 @@ public final class TeleportExecutor {
         }
         PortalFacing source = portal.facingSource();
         PortalFacing exitFacing = portal.facingDestination();
-        Vec3d exit = liftOutOfBlocks(player, destinationWorld, exitPoint(portal, position, player.getHeight(), portal.crossingHeight(player)));
-        Vec3d exitVelocity = PortalFacing.transformVector(source, exitFacing, velocity);
+        Vec3d exitPoint = exitPoint(portal, position, player.getHeight(), portal.crossingHeight(player));
+        Vec3d exit = liftOutOfBlocks(player, destinationWorld, exitPoint);
         Vec2f look = PortalFacing.transformLook(source, exitFacing, yaw, pitch);
+        Vec3d exitVelocity = playerExitVelocity(portal, exitPoint, PortalFacing.transformVector(source, exitFacing, velocity), look.x, player.getWidth());
 
         player.setCameraEntity(player);
         player.stopRiding();
@@ -671,7 +745,6 @@ public final class TeleportExecutor {
         player.fallDistance = fallAfterCrossing(source, exitFacing, player.fallDistance);
 
         markCrossed(player.getUuid(), destinationWorld.getTime());
-        ArrivalGuard.arrive(player, portal);
         PortalSight.onArrival(player, portal);
         // Un spectateur n'agit pas sur le monde : il ne rouvre pas une sortie fugace perdue de vue.
         if (!player.isSpectator()) {

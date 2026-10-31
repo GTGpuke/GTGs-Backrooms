@@ -41,7 +41,7 @@ Les portails sont la base des deux moteurs. Leurs sous-paquets se répartissent 
 | `block/` | Bloc portail et sa block entity, réglages `PortalSettings`, ciblage de l'arrivée par `PortalTargets` |
 | `item/` | Baguette de portail (`PortalWandItem`) |
 | `entity/` | Entité portail, registre serveur des portails chargés, orientations (`PortalFacing`) |
-| `transition/` | Téléportation, préchargement de l'arrivée, collision à travers le cadre, garde d'une arrivée au sol |
+| `transition/` | Téléportation, préchargement de l'arrivée, collision à travers le cadre |
 | `sync/` | Payloads et suivi, côté serveur, de ce que chaque joueur voit à travers les cadres |
 | `interaction/` | Coups, minage et pose à travers le cadre, côté serveur |
 | `propagation/` | Regard et poursuite des mobs à travers les portails |

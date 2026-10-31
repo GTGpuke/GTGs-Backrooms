@@ -74,11 +74,13 @@ Un cadre au sol devient ainsi une trappe. Il s'ouvre sous qui s'y tient, ou sous
 
 On ne sort jamais dans un mur, car engagé de biais, on bute sur ce qui est de l'autre côté. Sur un bord, le centre hors de l'ouverture, on bute sur le plan comme sur une paroi mince, même pour un cadre en l'air. On n'entre que si son centre passe dans la largeur du cadre, et de dos, rien n'arrête. Pour un cadre couché, qui arrive de côté n'entre qu'au-dessus de l'ouverture.
 
-### Garde d'arrivée au sol
+### Arrivée au sol
 
-Qui sort d'un cadre d'arrivée au sol en est gardé. Il s'y pose, même au-dessus du vide, au lieu de repartir aussitôt par le retour. La garde tombe dès qu'il en descend, s'accroupit ou change de monde. S'accroupir permet donc de reprendre une arrivée au sol.
+Qui sort d'un cadre d'arrivée au sol ne s'y pose pas, même avec un bloc sous le cadre. Il y retombe aussitôt et repart par le retour, tant qu'il ne s'en écarte pas.
 
-La garde tombe aussi une seconde après qu'il s'est posé sur le cadre, et qui y reste y retombe. Ce répit court à partir de la pose, si bien que qui jaillit du cadre avec son élan retombe dessus avant qu'il expire.
+Un joueur entré par un cadre debout jaillit du cadre au sol de toute la vitesse de sa marche, et retomberait aussitôt dedans. Il est poussé dans le sens de son regard à la sortie, juste assez pour que son corps retombe tout entier au-delà du bord du cadre devant lui (`TeleportExecutor.playerExitVelocity`). Ses yeux, en haut du cadre debout, sortent souvent à l'arrière du cadre couché, loin de ce bord : quand la poussée la plus forte, l'élan d'un sprint, ne suffit pas, un petit saut allonge son temps en l'air, au plus celui d'un saut vanilla. Le client calcule la même poussée que le serveur pour sa prédiction. D'un cadre au sol à un autre, l'élan reste horizontal et rien ne s'ajoute. Les mobs et les objets ne sont pas poussés.
+
+Une entité autre qu'un joueur attend dix ticks après une traversée avant de pouvoir repasser. Pendant ce délai, aucun cadre ne s'ouvre sous elle : retombée plus tôt sur son cadre d'arrivée, elle s'y tient jusqu'à la fin du délai, puis y tombe. Sans cela, elle passerait sous le plan sans traverser.
 
 ### Ce qui passe à travers
 
@@ -114,7 +116,7 @@ En environnement de développement, `/backrooms portal list` liste les portails 
 | `block/` | Bloc portail et sa block entity, réglages, cadre (`PortalArea`), destination (`PortalTargets`), retour (`PortalWayBack`). |
 | `item/`, `client/wand/` | Baguette et son écran. |
 | `light/` | Lumière transmise. |
-| `transition/` | Préchargement, téléportation, collision, garde d'arrivée. |
+| `transition/` | Préchargement, téléportation, collision. |
 | `interaction/`, `client/interaction/` | Actions à travers le cadre. |
 | `propagation/` | Regard et poursuite des mobs. |
 | `sync/` | Payloads et synchronisation côté serveur. |
@@ -171,7 +173,7 @@ Le client applique cette règle à son joueur, avec ses mondes distants, et le s
 
 L'engagement est retenu dix ticks après le passage du plan (`CROSSING_TICKS`). Pendant ce temps, la face arrière du cadre traversé ne compte pas, car elle cacherait le côté d'où l'on vient. Du côté d'entrée, une entité dont le point de traversée est hors de l'ouverture bute sur l'ouverture fermée (`closedOpening`). Un joueur dont les épaules dépassent bute sur les bords du cadre (`frameEdges`) et glisse le long jusqu'à s'aligner.
 
-`ArrivalGuard` garde l'entité sortie d'un cadre d'arrivée au sol. Ses portails ne la font alors ni traverser ni tomber, et un sol mince ferme leur ouverture sous elle. Après une bascule menée par le serveur, la garde se pose sur le cadre où le client se tient (`arriveOnFrame`). Elle se lève au tick suivant dans les cas décrits plus haut, ou après `GRACE_TICKS`.
+Une entité dont le cooldown de portail vanilla court (`hasPortalCooldown`) ne s'engage dans aucun cadre (`PortalCollision.engages`) : ses blocs cachés restent là, comme sa traversée est refusée.
 
 #### Lumière transmise
 
@@ -186,7 +188,7 @@ Vanilla n'envoie au client que la dimension où il se trouve. `PortalViewTracker
 | Payload | Sens | Contenu | Quand |
 |---|---|---|---|
 | `portal_remote_dimension` | S → C | dimension, type, index | Une fois par dimension et par vue du joueur. L'index désigne ensuite la dimension sur un octet. |
-| `portal_remote_chunk` | S → C | dimension, `ChunkData`, `LightData` | Chunk entré dans la fenêtre, au plus 8 par joueur et par passage : toutes les 5 ticks, à chaque tick près d'un cadre tant que sa fenêtre n'est pas toute envoyée. |
+| `portal_remote_chunk` | S → C | dimension, `ChunkData`, `LightData` | Chunk entré dans la fenêtre, au plus 8 par joueur et par passage toutes les 5 ticks ; près d'un cadre, au plus 24 à chaque tick tant que sa fenêtre n'est pas toute envoyée. |
 | `portal_remote_chunk_unload` | S → C | index, chunk | Chunk sorti de la fenêtre. |
 | `portal_remote_dimension_release` | S → C | index | Dimension que plus aucun portail ne montre depuis `remoteWorldReleaseSeconds`. Le client jette son monde distant. |
 | `portal_remote_block_update` | S → C | index, position, `BlockState` | Bloc changé dans un chunk déjà envoyé, dédupliqué par tick. |
@@ -205,7 +207,7 @@ Les annonces de dimension d'un joueur repartent de zéro à chaque changement de
 
 Toutes les 5 ticks, le serveur relève pour chaque joueur les portails à portée qui mènent ailleurs. Pour chaque dimension, il garde un foyer, le portail le plus proche, et une fenêtre de chunks autour de son arrivée. Le rayon vaut `preloadRadiusChunks`, 3 par défaut soit 7 × 7 chunks. Les fenêtres des autres portails s'ajoutent si elles tiennent dans la carte du client.
 
-À moins de 8 blocs d'un portail, la traversée est imminente. La fenêtre couvre alors ce que vanilla enverrait au joueur en sortant : sa distance de vue, bornée par celle du serveur, et l'anneau qui la borde, sans lequel les dernières sections visibles ne se construisent pas (`nearRadius`). À 8 chunks de vue, cela fait 19 × 19 chunks, jamais moins que le rayon de préchargement plus 2, et jamais plus que ce que la carte du client tient autour du foyer. Tant que des chunks de la fenêtre attendent leur envoi, la vue du joueur se met alors à jour à chaque tick : la fenêtre part par petits paquets et elle est chez lui avant qu'il passe. Ensuite, elle revient à un passage toutes les 5 ticks.
+À moins de 8 blocs d'un portail, la traversée est imminente. La fenêtre couvre alors ce que vanilla enverrait au joueur en sortant : sa distance de vue, bornée par celle du serveur, et l'anneau qui la borde, sans lequel les dernières sections visibles ne se construisent pas (`nearRadius`). À 8 chunks de vue, cela fait 19 × 19 chunks, jamais moins que le rayon de préchargement plus 2, et jamais plus que ce que la carte du client tient autour du foyer. Tant que des chunks de la fenêtre attendent leur envoi, la vue du joueur se met alors à jour à chaque tick, 24 chunks au plus par tick, les plus proches de l'arrivée d'abord (`NEAR_CHUNKS_PER_TICK`) : la fenêtre est chez lui avant qu'il passe, même en marchant droit vers le cadre sans s'arrêter, et même si le serveur tique moins vite. Ensuite, elle revient à un passage toutes les 5 ticks.
 
 À plus de 8 blocs d'un cadre d'arrivée debout, la fenêtre garde ce compte de chunks mais suit l'axe de ce que montre le cadre (`RemoteChunkWindow.collectCone`). Elle prend le carré de 3 × 3 de l'arrivée, puis, anneau par anneau, les chunks du coin de vue au-delà du cadre. Chacun vient avec ses quatre voisins, sans lesquels le client ne construit pas ses sections. Un joueur loin à côté d'une face, ou derrière elle, n'a pas de fenêtre pour elle, et une arrivée couchée garde le carré.
 
@@ -331,9 +333,9 @@ Un changement de dimension vanilla recrée le `ClientWorld`, affiche l'écran de
 
 #### Arrivée déjà construite
 
-Une vue ne construit que les sections que montre le cadre. À moins de 8 blocs d'un cadre vers une autre dimension, son renderer construit d'avance celles qui entourent l'arrivée dans tous les sens, sur 4 sections (64 blocs) et 2 sections en hauteur, les plus proches d'abord (`RemoteViewRenderer.prebuildArrival`) : ce que le joueur voit en sortant, et derrière lui s'il se retourne. Huit sections par image au plus, dans un chunk chargé entouré de ses quatre voisins. Plus loin, le reste se construit après la bascule : dans le Level 0, le brouillard le cache. Un tel cadre hors du champ, dans le dos, sous les pieds ou sur le côté, ne se dessine pas, mais sa vue s'entretient et se construit de même, après les vues dessinées : on le passe sans l'avoir regardé. Rendu vanilla seulement : sous un pack de shaders, le pack dessine chaque vue en entier.
+Une vue ne construit que les sections que montre le cadre. À moins de 8 blocs d'un cadre vers une autre dimension, son renderer construit d'avance, les plus proches d'abord (`RemoteViewRenderer.prebuildArrival`), celles qui entourent l'arrivée dans tous les sens sur 4 sections (64 blocs), ce que le joueur voit en se retournant, puis celles qui sont devant la sortie jusqu'à la distance de vue, ce qu'il voit en sortant. En hauteur, de 2 sections sous l'arrivée jusqu'à la plus haute section non vide de la colonne, une colline ou une montagne au loin. Une section vide ne dessine rien et ne se construit pas d'avance. Trente-deux sections par image au plus, dans un chunk chargé entouré de ses quatre voisins : un client à peu d'images par seconde, machine chargée ou rendu logiciel, prépare quand même l'arrivée pendant son approche. Un parcours qui ne trouve plus rien à construire se repose 100 ms : sans cela, il se referait à chaque image tant que le joueur reste près du cadre. Un tel cadre hors du champ, dans le dos, sous les pieds ou sur le côté, ne se dessine pas, mais sa vue s'entretient et se construit de même, après les vues dessinées : on le passe sans l'avoir regardé. Rendu vanilla seulement : sous un pack de shaders, le pack dessine chaque vue en entier.
 
-Un renderer de vue n'a que deux tampons de construction, quand vanilla en donne un par cœur à celui du joueur. À chaque tick, la réserve du renderer du joueur s'ajuste au compte de vanilla, et celle de chaque vue à deux (`BuildBuffers`) : le renderer d'une vue promu par une traversée construit ensuite au rythme de vanilla, et l'ancien, devenu une vue, rend les siens. Une réserve ne se touche que dans la file de son chunk builder, sur les fils de travail, où ses tâches en cours lui rendent leurs tampons : des tampons s'y créent, des tampons libres s'y ferment, et aucune réserve ne change de chunk builder. Changer la réserve d'un chunk builder en pleine tâche, ou déplacer des tampons d'une réserve à l'autre depuis le fil de rendu, en viderait une pour de bon : ce renderer ne reconstruirait plus rien, pas même un bloc changé de l'autre côté d'un cadre. Les tampons d'un renderer de vue libéré ne servent au suivant qu'au bout de cinq secondes, le temps que ses dernières constructions rendent les leurs.
+Un renderer de vue n'a que deux tampons de construction, quand vanilla en donne un par cœur à celui du joueur. À chaque tick, la réserve du renderer du joueur s'ajuste au compte de vanilla, et celle de chaque vue à deux (`BuildBuffers`) : le renderer d'une vue promu par une traversée construit ensuite au rythme de vanilla, et l'ancien, devenu une vue, rend les siens. La vue d'un cadre que le joueur peut passer, celle dont l'arrivée se construit d'avance, a le compte de vanilla, jusqu'à cinq secondes après qu'il s'en est éloigné (`prebuilding`) : elle prépare l'arrivée au rythme du renderer qu'elle deviendra, et l'ancien renderer du joueur, juste derrière lui après la traversée, garde ses tampons tant qu'il peut repasser. Une réserve ne se touche que dans la file de son chunk builder, sur les fils de travail, où ses tâches en cours lui rendent leurs tampons : des tampons s'y créent, des tampons libres s'y ferment, et aucune réserve ne change de chunk builder. Changer la réserve d'un chunk builder en pleine tâche, ou déplacer des tampons d'une réserve à l'autre depuis le fil de rendu, en viderait une pour de bon : ce renderer ne reconstruirait plus rien, pas même un bloc changé de l'autre côté d'un cadre. Les tampons d'un renderer de vue libéré ne servent au suivant qu'au bout de cinq secondes, le temps que ses dernières constructions rendent les leurs.
 
 #### Confirmation par le serveur
 
@@ -376,6 +378,8 @@ Après le raycast vanilla, `RemoteTargeting` regarde si le rayon du regard trave
 `RemoteInteractionHandler` vérifie que le portail est visible, devant le joueur et à portée. La cible doit être à portée du point où le regard ressort, et `canPlayerModifyAt` doit accepter un bloc. L'action vanilla s'exécute ensuite avec le joueur transposé dans la dimension d'arrivée, son écouteur de déplacement coupé. Recul, orientation de pose et portée se calculent ainsi comme s'il y était.
 
 L'utilisation d'une entité se limite aux créatures, sans monture ni véhicule. L'utilisation d'un bloc saute `onUse` pour un bloc à block entity, dont l'écran se fermerait aussitôt. `RemoteMiningTracker` compte le minage sur le serveur seul et envoie les fissures à tous ceux qui voient le bloc. Il abandonne si le client lâche, si le bloc disparaît, ou si le joueur s'éloigne ou meurt.
+
+Vanilla n'envoie pas à l'auteur d'une action le son et les éclats qu'elle produit (bloc posé, bloc cassé) : son client les a déjà joués en la prédisant. À travers un cadre, rien n'est prédit. Pendant une action à travers un cadre de son propre monde, ce que vanilla lui retient lui est donc envoyé (`RemoteInteractionHandler.sendWithheld`, appelé par `MixinPlayerManager`). Vers une autre dimension, le relais aux joueurs qui la voient le sert déjà, une seule fois.
 
 ### Son, particules et mobs
 
@@ -439,9 +443,10 @@ Les options des portails, en `gtgsbackrooms.portal.*`, sont décrites dans la [r
 
 - La prédiction n'a lieu que si le monde distant est déjà chargé. En sprintant vers un portail qu'on vient de poser, c'est le serveur qui bascule, avec un tick de latence.
 - En selle, c'est toujours le serveur qui bascule. Le client affiche un instant l'aide pour descendre, comme à une montée.
-- L'arrivée n'est complète et construite d'avance que si le joueur s'approche du cadre. Arrivé en quelques ticks à moins de 8 blocs, en sprint ou téléporté, il passe avant elle, et le reste arrive après la bascule, comme dans un monde vanilla.
+- L'arrivée n'est complète et construite d'avance que si le joueur s'approche du cadre. Arrivé en quelques ticks à moins de 8 blocs, téléporté ou bien plus vite qu'en sprint, il passe avant elle, et le reste arrive après la bascule, comme dans un monde vanilla.
 - Près d'un cadre, la fenêtre suit la distance de vue du joueur : 361 chunks à 8 de vue, plus de mille à 16. Le monde quitté reste chez le client tant qu'un portail le montre, et ses chunks restent chargés sur le serveur, sans être actifs.
-- Ce qui est à plus de 64 blocs de l'arrivée se construit après la bascule, au rythme de vanilla : dans un monde sans brouillard, des sections lointaines peuvent apparaître un instant après le passage.
+- Derrière la sortie, au-delà de 64 blocs, rien ne se construit d'avance : ce qui y est se construit au rythme de vanilla, quand le joueur se retourne. Devant, sur un client à très peu d'images par seconde (10, rendu logiciel), quelques sections au-delà de 70 blocs peuvent manquer un instant après le passage.
+- Près d'un cadre, l'approche coûte un peu plus : la fenêtre et sa construction d'avance arrivent avant la bascule au lieu d'après. Mesuré sous charge (18 cœurs sur 20 occupés), le 99e centile des images de l'approche passe d'environ 16 à 17-21 ms.
 - Les blocs cachés derrière le plan ne le sont que pour les collisions, l'étouffement et le voile de mur. Un fluide reste, et on y nage. Les effets de contact d'un cactus, d'une toile, d'un buisson de baies ou du feu restent aussi.
 - Un mod qui calcule les collisions sans le parcours de blocs vanilla ne voit pas les blocs cachés.
 - Le serveur ne vérifie pas que le corps d'un joueur engagé reste hors des blocs de l'autre côté. Il fait confiance au client.
@@ -539,15 +544,15 @@ Les tests en jeu prennent le Nether comme dimension distante, car le serveur de 
 |---|---|
 | `BackroomsPortalBlockGameTests` | Pose, faces, aller simple, sortie fugace, relecture des réglages, retours. |
 | `PortalWandGameTests` | Réglages reçus, pose, refus, copie, plan au bord du bloc. |
-| `PortalGameTests`, `PortalTunnelGameTests` | Traversée, collision à travers le cadre, blocs cachés, garde d'arrivée. |
+| `PortalGameTests`, `PortalTunnelGameTests` | Traversée, collision à travers le cadre, blocs cachés, arrivée au sol. |
 | `PortalOrientationGameTests`, `PortalLyingGameTests` | Les 144 paires d'orientations, cadres couchés, arrivée tête en bas. |
 | `PortalRidingGameTests` | Véhicules et passagers. |
 | `PortalDestinationGameTests`, `PortalArrivalReferenceGameTests` | Recherche d'arrivée, sortie fixée, huit arrivées de référence figées. |
 | `PortalSyncGameTests` | Fenêtre de chunks, entités, météo, chunks tenus, annonces de traversée. |
-| `PortalInteractionGameTests`, `PortalPropagationGameTests` | Actions à travers le cadre, sons et particules relayés, poursuite des mobs. |
+| `PortalInteractionGameTests`, `PortalPropagationGameTests` | Actions à travers le cadre, leur son et leurs éclats chez qui agit, sons et particules relayés, poursuite des mobs. |
 | `PortalLightGameTests` | Lumière transmise. |
 
-Les tests du client vérifient la vue du Level 0 dans un cadre et un aller-retour sans couture, mesuré d'image en image (`PortalViewClientTests`). `PortalFeaturesClientTests` vérifie les paliers de détail, la troisième personne, les clics, l'écran de la baguette, une vue imbriquée et le son à travers le cadre.
+Les tests du client vérifient la vue du Level 0 dans un cadre et un aller-retour sans couture, mesuré d'image en image (`PortalViewClientTests`). `PortalFeaturesClientTests` vérifie les paliers de détail, la troisième personne, les clics, l'écran de la baguette, une vue imbriquée, le son à travers le cadre, le son et les particules de l'autre côté dans les deux sens d'une traversée, le son et les éclats d'un bloc cassé ou posé à travers un cadre vers le même monde, et l'arrivée au sol, où le joueur ne se pose jamais.
 
 ### Diagnostic
 

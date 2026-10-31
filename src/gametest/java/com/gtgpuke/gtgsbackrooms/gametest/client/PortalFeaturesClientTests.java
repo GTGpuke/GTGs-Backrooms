@@ -2,6 +2,7 @@ package com.gtgpuke.gtgsbackrooms.gametest.client;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.UUID;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -12,18 +13,25 @@ import net.minecraft.block.Blocks;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.option.Perspective;
+import net.minecraft.client.particle.Particle;
+import net.minecraft.client.sound.SoundInstance;
+import net.minecraft.client.sound.SoundSystem;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.screen.ScreenTexts;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
@@ -37,18 +45,25 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
 import com.gtgpuke.gtgsbackrooms.core.audio.client.AcousticRouter;
 import com.gtgpuke.gtgsbackrooms.core.audio.client.CueTracker;
+import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalExit;
+import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalMark;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalSettings;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalWayBack;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.interaction.RemoteTargeting;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewDetail;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.wand.PortalWandScreen;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.FrozenViews;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorld;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntityRegistry;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModDataComponents;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModSounds;
+import com.gtgpuke.gtgsbackrooms.mixin.client.ParticleManagerAccessor;
+import com.gtgpuke.gtgsbackrooms.mixin.client.SoundManagerAccessor;
+import com.gtgpuke.gtgsbackrooms.mixin.client.SoundSystemAccessor;
 
 /**
  * Les fonctions des portails vues par un vrai client : paliers de detail de loin (vue allegee, image figee), entite qui
@@ -60,6 +75,8 @@ final class PortalFeaturesClientTests {
     private static final PortalSettings LARGE = new PortalSettings(4, 4, true);
     /** Identifiant du disque joue dans le Level 0, tel que le diagnostic du moteur audio l'ecrit. */
     private static final String RECORD = "minecraft:music_disc.13";
+    /** Sortie fixee d'un portail vers l'Overworld, plus loin dans le meme monde : hors de portee du son d'un bloc casse au cadre. */
+    private static final BlockPos SAME_WORLD_EXIT = new BlockPos(0, -60, 60);
 
     private PortalFeaturesClientTests() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -67,7 +84,8 @@ final class PortalFeaturesClientTests {
 
     static List<ClientScenario> scenarios() {
         return List.of(detailTiersFromAfar(), entityCrossesTheFrame(), thirdPersonCrossing(), clicksThroughTheFrame(), wandScreen(),
-                nestedViewAndStateCommand(), screamDisturbsNeons(), soundHeardThroughTheFrame(), occlusionThroughTheFrame());
+                nestedViewAndStateCommand(), screamDisturbsNeons(), soundHeardThroughTheFrame(), occlusionThroughTheFrame(), soundAndParticlesBothWays(),
+                floorArrivalLandsPastTheEdge(), blockBrokenThroughASameWorldFrame());
     }
 
     /** Vue de base : portail du Level 0 pose, joueur a {@code distance} blocs du plan, regard vers le cadre. */
@@ -220,6 +238,64 @@ final class PortalFeaturesClientTests {
                 .cleanup(ClientTestPortals::remove);
     }
 
+    /**
+     * Bloc casse puis pose a travers un cadre vers le meme monde : vanilla n'envoie ni le son ni les eclats a celui qui
+     * agit, que son client aurait predits ; a travers le cadre, rien n'est predit, et ils lui parviennent quand meme.
+     */
+    private static ClientScenario blockBrokenThroughASameWorldFrame() {
+        PortalSettings sameWorld = PortalSettings.DEFAULT.withExit(Optional.of(World.OVERWORLD),
+                Optional.of(new PortalMark(World.OVERWORLD, SAME_WORLD_EXIT, Direction.SOUTH)));
+        BlockPos[] target = new BlockPos[1];
+        int[] before = new int[1];
+        return ClientScenario.named("block_broken_through_a_same_world_frame")
+                .run("portail vers l'Overworld plus loin, joueur devant", context -> {
+                    ClientTestPortals.place(context, sameWorld);
+                    ClientTestPortals.standAt(context, 0.5, ClientTestPortals.PLANE_Z - 2.0, 0.0f, 0.0f);
+                })
+                .await("portail recu", ClientTestPortals::received, ClientTestPortals.PORTAL_TICKS)
+                .run("pierre derriere la sortie", context -> {
+                    target[0] = BlockPos.ofFloored(ClientTestPortals.pastExit(ClientTestPortals.clientPortal(context), 2.5).add(0.0, 0.5, 0.0));
+                    context.onServer(server -> ClientTestContext.serverWorld(server, World.OVERWORLD).setBlockState(target[0], Blocks.STONE.getDefaultState()));
+                })
+                .await("pierre visee a travers le cadre", context -> RemoteTargeting.blockHit() != null && RemoteTargeting.blockHit().getBlockPos().equals(target[0]), 400)
+                .run("clic gauche", context -> {
+                    before[0] = mainParticles(context);
+                    press(context.client().options.attackKey);
+                })
+                .await("pierre cassee", context -> context.fromServer(server -> ClientTestContext.serverWorld(server, World.OVERWORLD).getBlockState(target[0]).isAir()))
+                .await("eclats de la pierre dans le monde du joueur", context -> mainParticles(context) > before[0], 100)
+                .await("son de la casse joue", context -> playing(context, SoundEvents.BLOCK_STONE_BREAK), 100)
+                .run("pierre en main", context -> context.onServer(server -> ClientTestContext.serverPlayer(server).setStackInHand(Hand.MAIN_HAND,
+                        new ItemStack(Items.STONE))))
+                .run("bloc d'or a la place, vise", context -> context.onServer(server -> ClientTestContext.serverWorld(server, World.OVERWORLD)
+                        .setBlockState(target[0], Blocks.GOLD_BLOCK.getDefaultState())))
+                .await("bloc d'or vise a travers le cadre", context -> RemoteTargeting.blockHit() != null && RemoteTargeting.blockHit().getBlockPos().equals(target[0])
+                        && context.player().getMainHandStack().isOf(Items.STONE), 400)
+                .run("clic droit", context -> press(context.client().options.useKey))
+                .await("son de la pierre posee joue", context -> playing(context, SoundEvents.BLOCK_STONE_PLACE), 100)
+                .cleanup(context -> context.onServer(server -> {
+                    ServerWorld overworld = ClientTestContext.serverWorld(server, World.OVERWORLD);
+                    for (Direction side : Direction.values()) {
+                        if (overworld.getBlockState(target[0].offset(side)).isOf(Blocks.STONE)) {
+                            overworld.setBlockState(target[0].offset(side), Blocks.AIR.getDefaultState());
+                        }
+                    }
+                    overworld.setBlockState(target[0], Blocks.AIR.getDefaultState());
+                    ClientTestContext.serverPlayer(server).setStackInHand(Hand.MAIN_HAND, ItemStack.EMPTY);
+                }))
+                .cleanup(ClientTestPortals::remove);
+    }
+
+    /** Particules du monde du joueur, vivantes et en attente, dans le gestionnaire vanilla. */
+    private static int mainParticles(ClientTestContext context) {
+        ParticleManagerAccessor manager = (ParticleManagerAccessor) context.client().particleManager;
+        int count = manager.backrooms$getNewParticles().size();
+        for (Queue<Particle> sheet : manager.backrooms$getParticles().values()) {
+            count += sheet.size();
+        }
+        return count;
+    }
+
     /** Un appui sur la touche, comme un clic de la souris : vanilla le traite au tick suivant. */
     private static void press(KeyBinding key) {
         KeyBinding.onKeyPressed(key.getDefaultKey());
@@ -357,6 +433,109 @@ final class PortalFeaturesClientTests {
                         && routed().contains("entity.howler.scream"))
                 .frames(30)
                 .cleanup(LevelZeroClientTests::backToOverworld);
+    }
+
+    /**
+     * Son et particules de l'autre cote, dans les deux sens : du Level 0 vu par le cadre de l'Overworld, puis, une fois
+     * passe, de l'Overworld vu par le cadre de retour (le monde quitte, que le client garde). Un son par sens, pour ne
+     * jamais prendre l'un pour l'autre.
+     */
+    private static ClientScenario soundAndParticlesBothWays() {
+        int[] before = new int[1];
+        return withPortal("sound_and_particles_both_ways", PortalSettings.DEFAULT, 4.0)
+                .run("note et flammes derriere la sortie, dans le Level 0", context -> {
+                    before[0] = particles(BackroomsConstants.LEVEL_ZERO_WORLD);
+                    context.onServer(server -> emit(ClientTestContext.serverWorld(server, BackroomsConstants.LEVEL_ZERO_WORLD),
+                            ClientTestPortals.pastExit(overworldPortal(), 2.0), SoundEvents.BLOCK_NOTE_BLOCK_HARP.value()));
+                })
+                .await("flammes du Level 0 dans la vue", context -> particles(BackroomsConstants.LEVEL_ZERO_WORLD) > before[0], 100)
+                .await("note du Level 0 jouee au cadre de l'Overworld", context -> playing(context, SoundEvents.BLOCK_NOTE_BLOCK_HARP.value()), 100)
+                .run("marche vers le cadre", context -> context.client().options.forwardKey.setPressed(true))
+                .await("bascule dans le Level 0", LevelZeroClientTests::inLevelZero, 200)
+                .run("arret, demi-tour vers le cadre de retour", context -> {
+                    context.client().options.forwardKey.setPressed(false);
+                    PortalViewClientTests.turnAround(context);
+                })
+                .frames(40)
+                .run("note et flammes devant l'entree, dans l'Overworld", context -> {
+                    before[0] = particles(World.OVERWORLD);
+                    context.onServer(server -> emit(ClientTestContext.serverWorld(server, World.OVERWORLD),
+                            new Vec3d(0.5, ClientTestPortals.FLOOR_Y + 1.0, ClientTestPortals.PLANE_Z - 2.0), SoundEvents.BLOCK_NOTE_BLOCK_BELL.value()));
+                })
+                .await("flammes de l'Overworld dans la vue de retour", context -> particles(World.OVERWORLD) > before[0], 100)
+                .await("note de l'Overworld jouee au cadre de retour", context -> playing(context, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value()), 100)
+                .cleanup(context -> {
+                    context.client().options.forwardKey.setPressed(false);
+                    LevelZeroClientTests.backToOverworld(context);
+                    ClientTestPortals.remove(context);
+                });
+    }
+
+    /**
+     * Arrivee au sol : entre en marchant par un cadre debout, le joueur jaillit du cadre couche sur le sol du Level 0,
+     * pousse dans le sens de son regard. Il retombe au-dela du bord devant lui, le corps tout entier hors de l'ouverture,
+     * jamais sur le cadre, et reste dans le Level 0 (decisions de l'auteur des 30 et 31 octobre 2026).
+     */
+    private static ClientScenario floorArrivalLandsPastTheEdge() {
+        PortalSettings toFloor = new PortalSettings(1, 2, true, true, false, false, PortalExit.FLOOR, 0);
+        int[] onFrame = new int[1];
+        return withPortal("floor_arrival_lands_past_the_edge", toFloor, 4.0)
+                .run("marche vers le cadre", context -> context.client().options.forwardKey.setPressed(true))
+                .await("sorti du cadre au sol du Level 0", LevelZeroClientTests::inLevelZero, 200)
+                .run("arret", context -> context.client().options.forwardKey.setPressed(false))
+                .await("pose au-dela du bord du cadre", context -> {
+                    boolean over = overFloorFrame(context);
+                    if (context.player().isOnGround() && over) {
+                        onFrame[0]++;
+                    }
+                    return context.player().isOnGround() && !over;
+                }, 100)
+                .ticks(20)
+                .check("devant le cadre, dans le Level 0, jamais pose dessus", context -> {
+                    ClientTestContext.require(LevelZeroClientTests.inLevelZero(context), "Reparti par le cadre au lieu de retomber devant lui.");
+                    ClientTestContext.require(!overFloorFrame(context), "Pose sur le cadre d'arrivee : " + context.player().getPos() + ".");
+                    ClientTestContext.require(onFrame[0] == 0, "Pose " + onFrame[0] + " tick(s) sur le cadre d'arrivee avant d'en descendre.");
+                })
+                .cleanup(context -> {
+                    context.client().options.forwardKey.setPressed(false);
+                    LevelZeroClientTests.backToOverworld(context);
+                    ClientTestPortals.remove(context);
+                });
+    }
+
+    /** Le corps du joueur touche l'ouverture d'un cadre couche au sol de son monde, vu d'en haut. */
+    private static boolean overFloorFrame(ClientTestContext context) {
+        ClientPlayerEntity player = context.player();
+        for (BackroomsPortalEntity portal : ClientPortalIndex.portals(context.world())) {
+            if (portal.facingSource().normal.y > 0.0 && BackroomsPortalEntity.facesOpening(portal.facingSource(), portal.getPos(),
+                    portal.width() + player.getWidth(), portal.height() + player.getWidth(), player.getX(), portal.getY(), player.getZ(), true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Une note et une gerbe de flammes a ce point, cote serveur : envoyees aux joueurs proches, relayees a ceux qui le voient. */
+    private static void emit(ServerWorld world, Vec3d at, SoundEvent note) {
+        world.spawnParticles(ParticleTypes.FLAME, at.x, at.y, at.z, 20, 0.2, 0.2, 0.2, 0.0);
+        world.playSound(null, at.x, at.y, at.z, note, SoundCategory.BLOCKS, 1.0f, 1.0f);
+    }
+
+    /** Le moteur de son du client joue ce son : il a une source, quel que soit le monde ou il a ete emis. */
+    private static boolean playing(ClientTestContext context, SoundEvent event) {
+        SoundSystem system = ((SoundManagerAccessor) context.client().getSoundManager()).backrooms$getSoundSystem();
+        for (SoundInstance sound : ((SoundSystemAccessor) system).backrooms$getSources().keySet()) {
+            if (sound.getId().equals(event.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Particules du monde distant de cette dimension chez le client. */
+    private static int particles(RegistryKey<World> dimension) {
+        RemoteWorld remote = RemoteWorldRegistry.get(dimension);
+        return remote == null ? 0 : remote.particleCount();
     }
 
     private static ClientScenario soundHeardThroughTheFrame() {

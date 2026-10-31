@@ -41,8 +41,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
  * <p>Le client applique les blocs de l'autre cote a son joueur, qui decide de ses deplacements ; le serveur les applique
  * aux mobs, objets et projectiles, pas aux joueurs : il refuserait des pas qu'un client sans monde distant charge aurait
  * faits librement. Les blocs caches derriere le plan le sont des deux cotes, pour tous : le serveur accepte ainsi les pas
- * du joueur qui s'y engage. La paroi du plan suit la meme regle que les blocs de l'autre cote. Un cadre d'arrivee au sol
- * garde ({@link ArrivalGuard}) n'engage pas qui vient d'en sortir et se ferme sous lui, pour tous.
+ * du joueur qui s'y engage. La paroi du plan suit la meme regle que les blocs de l'autre cote.
  */
 public final class PortalCollision {
 
@@ -64,8 +63,8 @@ public final class PortalCollision {
 
     /**
      * Suivi des traversees d'un cote, chacun sur son fil (le serveur sur le sien, le client sur celui du rendu) : dernier
-     * engagement dans un cadre ({@link #tunnel}) et garde d'arrivee ({@link ArrivalGuard}), par entity. Les entities de
-     * chaque table sont aussi dans une liste, que le tick parcourt par index : ni iterateur ni entree allouee.
+     * engagement dans un cadre ({@link #tunnel}), par entity. Les entities de la table sont aussi dans une liste, que le
+     * tick parcourt par index : ni iterateur ni entree allouee.
      */
     public enum Side {
         SERVER,
@@ -73,8 +72,6 @@ public final class PortalCollision {
 
         final Map<Entity, Engagement> engaged = new IdentityHashMap<>();
         final List<Entity> engagedEntities = new ArrayList<>();
-        final Map<Entity, ArrivalGuard.Guard> guards = new IdentityHashMap<>();
-        final List<Entity> guardedEntities = new ArrayList<>();
     }
 
     /** Cote serveur : le registre des portails charges, tous mondes confondus, et les mondes du serveur. */
@@ -96,7 +93,7 @@ public final class PortalCollision {
         }
     };
 
-    /** Epaisseur, derriere le plan, de l'ouverture fermee ({@link #closedOpening}) : paroi d'un bord, sol d'une garde. */
+    /** Epaisseur, derriere le plan, de l'ouverture fermee ({@link #closedOpening}) : la paroi d'un bord. */
     static final double CLOSED_DEPTH = 0.5;
     /**
      * Largeur, hors de l'ouverture, des bords d'un cadre pour un joueur : une petite paroi contre laquelle sa tete ou ses
@@ -130,29 +127,24 @@ public final class PortalCollision {
     }
 
     /**
-     * Ajoute aux collisions d'un deplacement les blocs de l'autre cote des portails ou l'entity est engagee, le plan des
-     * portails sur le bord desquels elle bute, et le sol qui ferme le cadre d'arrivee au sol dont elle est gardee.
+     * Ajoute aux collisions d'un deplacement les blocs de l'autre cote des portails ou l'entity est engagee, et le plan des
+     * portails sur le bord desquels elle bute.
      *
-     * @param entity entity qui se deplace ; un joueur cote serveur ne recoit que le sol de sa garde
+     * @param entity entity qui se deplace ; un joueur cote serveur n'en recoit rien, son client decide de ses pas
      * @param world monde de l'entity
      * @param collisions collisions vanilla du deplacement
      * @param movingBox boite de l'entity etiree par son deplacement
      * @return les collisions recues, ou une nouvelle liste qui les complete
      */
     public static List<VoxelShape> withOtherSide(Entity entity, World world, List<VoxelShape> collisions, Box movingBox) {
+        if (entity instanceof ServerPlayerEntity) {
+            return collisions;
+        }
         List<BackroomsPortalEntity> portals = worlds.portals(world);
-        boolean serverPlayer = entity instanceof ServerPlayerEntity;
         List<VoxelShape> result = collisions;
         for (int i = 0; i < portals.size(); i++) {
             BackroomsPortalEntity portal = portals.get(i);
             if (portal.getWorld() != world) {
-                continue;
-            }
-            if (ArrivalGuard.guards(entity, portal)) {
-                result = withClosedOpening(portal, movingBox, result, collisions);
-                continue;
-            }
-            if (serverPlayer) {
                 continue;
             }
             if (engages(portal, entity, movingBox)) {
@@ -232,9 +224,8 @@ public final class PortalCollision {
     }
 
     /**
-     * Portail ou l'entity est engagee avec cette boite (la sienne, ou etiree par un deplacement), hors d'un cadre d'arrivee
-     * dont elle est gardee : les blocs de son cote que ce portail cache ({@link #hides}) n'existent pas pour elle. Le premier
-     * trouve ; {@code null} si aucun.
+     * Portail ou l'entity est engagee avec cette boite (la sienne, ou etiree par un deplacement) : les blocs de son cote que
+     * ce portail cache ({@link #hides}) n'existent pas pour elle. Le premier trouve ; {@code null} si aucun.
      *
      * <p>Une entity engagee le reste {@value #CROSSING_TICKS} ticks apres son dernier engagement, jusqu'au {@link #tick} qui
      * l'oublie, tant qu'elle est en face de l'ouverture : son point de traversee vient de passer le plan, et la traversee
@@ -254,8 +245,7 @@ public final class PortalCollision {
         List<BackroomsPortalEntity> portals = worlds.portals(world);
         for (int i = 0; i < portals.size(); i++) {
             BackroomsPortalEntity portal = portals.get(i);
-            if (portal.getWorld() == world && engages(portal, entity, box) && !ArrivalGuard.guards(entity, portal)
-                    && !backFaceOf(portal, crossing)) {
+            if (portal.getWorld() == world && engages(portal, entity, box) && !backFaceOf(portal, crossing)) {
                 remember(entity, portal, world, side);
                 return portal;
             }
@@ -317,23 +307,6 @@ public final class PortalCollision {
     }
 
     /**
-     * Retire d'une liste de suivi une entity qui s'y trouve, par identite : deux entities de mondes differents peuvent avoir
-     * le meme identifiant, que {@code Entity.equals} compare.
-     */
-    static void unfollow(List<Entity> entities, Entity entity) {
-        int i = entities.size() - 1;
-        while (entities.get(i) != entity) {
-            i--;
-        }
-        entities.remove(i);
-    }
-
-    /** Cote qui suit les traversees des entities de ce monde. */
-    static Side side(World world) {
-        return worlds.side(world);
-    }
-
-    /**
      * {@code true} si le bloc de cette position est tout entier derriere le plan du portail, dans son ouverture prolongee
      * vers l'arriere : pour l'entity engagee, il n'existe pas.
      */
@@ -374,7 +347,7 @@ public final class PortalCollision {
 
     /**
      * Ouverture du cadre fermee, du plan a {@value #CLOSED_DEPTH} bloc derriere : la paroi sur laquelle bute qui ne traverse
-     * pas correctement ({@link #walls}), le sol qui ferme un cadre d'arrivee au sol pour qui en est garde.
+     * pas correctement ({@link #walls}).
      */
     static Box closedOpening(BackroomsPortalEntity portal) {
         PortalFacing facing = portal.facingSource();
@@ -387,10 +360,13 @@ public final class PortalCollision {
 
     /**
      * L'entity a son point de traversee (les yeux pour un joueur ou un cadre couche, les pieds sinon) devant le plan d'un
-     * portail ouvert, en face de l'ouverture, et sa boite deplacee touche le cadre.
+     * portail ouvert, en face de l'ouverture, et sa boite deplacee touche le cadre. Une entity dont le cooldown de portail
+     * court ne s'engage dans aucun cadre : elle ne pourrait pas le traverser, et passerait sous le plan d'un cadre au sol
+     * (celui d'ou elle vient de sortir, retombee dedans aussitot) sans traverser.
      */
     static boolean engages(BackroomsPortalEntity portal, Entity entity, Box movingBox) {
         return portal.teleportable()
+                && !entity.hasPortalCooldown()
                 && portal.crossingPointFaces(entity, entity.getX(), entity.getY(), entity.getZ())
                 && portal.detectionBox().intersects(movingBox);
     }

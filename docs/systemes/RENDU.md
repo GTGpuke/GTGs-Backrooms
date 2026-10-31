@@ -102,6 +102,13 @@ reçoit la lightmap du monde qu'elle montre.
 Le brouillard du profil remplace celui de vanilla sur le terrain (`DimensionFog`). Vanilla garde la main quand la caméra
 est dans un fluide ou la neige poudreuse, sous cécité ou obscurité, ou sous un brouillard épais imposé.
 
+Vanilla tire la couleur du ciel et celle du brouillard des biomes autour de la caméra, en 216 points pondérés
+(`CubicSampler.sampleColor`), et crée trois à quatre vecteurs par point : plus de huit cents par appel, à chaque image et
+à chaque vue de portail, soit les deux tiers de ce que le fil de rendu alloue. Le mod fait le même calcul sans eux
+(`BiomeColorSampling`, branché par `BiomeColors` dans `BackgroundRenderer.render` et `ClientWorld.getSkyColor`) : mêmes
+opérations dans le même ordre, donc le même résultat au bit près. Les effets de dimension de vanilla (Overworld, Nether,
+End) et ceux d'un monde à look sont reproduits ; d'autres, ceux d'un autre mod, laissent vanilla calculer.
+
 ### Néons
 
 Chaque monde client tient l'index de ses néons (`NeonIndex`, `NeonMap`). Il se remplit des chunks reçus, en ne
@@ -175,7 +182,11 @@ Tout test de niveau masque avec `StencilLookMask.LEVEL_MASK`. Une vue n'écrit s
 qu'elle prend, ceux qui passent du niveau n à n+1, et le retour de niveau les laisse. En fin d'image, les bits de look
 d'un pixel valent donc le look de la vue la plus profonde qui y est visible. La main du joueur, dessinée après les vues
 et par-dessus tout, écrit sur ses pixels les bits de look du monde du joueur (`HandMask`) : elle est de son monde, même
-devant un cadre, et le post du look que montre le cadre ne dessine pas la silhouette du cadre sur elle.
+devant un cadre, et le post du look que montre le cadre ne dessine pas la silhouette du cadre sur elle. Il en va de
+même pour les moitiés d'entités à cheval sur un cadre (`StraddlingEntityRenderer`). Vanilla ne les dessine pas, et
+elles passent après les vues : leurs pixels prennent les bits de look du monde du joueur, au niveau du monde
+(`PortalStencilRenderer.renderMainWorldParts`). Sans cela, un cochon frappé contre un cadre montrait la silhouette du
+cadre sur son rouge.
 
 L'effacement n'écrit que les bits du masque courant, d'où un masque `0xFF`. Il a lieu au début du rendu du monde, même
 sans portail visible, puis au début de la passe des portails. L'option `debugStencil` affiche le stencil à la place de
@@ -337,9 +348,11 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
 La stratégie de test et la couverture sont décrites dans [TESTS.md](../dev/TESTS.md). La colle OpenGL de
 `core/render/client/` y est nommée, et le reste du moteur est couvert à 100 %.
 
-La logique pure a ses tests unitaires, de `ShaderPatcherTest` à `NeonMapTest`. `MixinTargetsTest` vérifie
+La logique pure a ses tests unitaires, de `ShaderPatcherTest` à `NeonMapTest`. `BiomeColorSamplingTest` compare la
+couleur des biomes à celle de vanilla, au bit près, sur des milliers de points et pour chaque effet de dimension. `MixinTargetsTest` vérifie
 que les mixins du moteur s'appliquent. Dans un vrai client, `LevelZeroClientTests` vérifie le look du Level 0, les néons
-envoyés, la couleur du brouillard et le jumeau GLSL. `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
+envoyés, la couleur du brouillard et le jumeau GLSL, et que la couleur des biomes du mod est celle de vanilla dans
+l'Overworld comme dans le Level 0 (`biome_colors_match_vanilla`). `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
 framebuffer recréé et le sampler du dessin plein écran. `PortalViewClientTests` vérifie le look dans un cadre et
 l'absence de couture à la traversée.
 

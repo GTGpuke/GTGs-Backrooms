@@ -311,6 +311,11 @@ public final class RemoteWorld {
         return this.particles;
     }
 
+    /** Particules de ce monde, vivantes et en attente ; aucune pour une vue secondaire (diagnostic). */
+    public int particleCount() {
+        return this.particles == null ? 0 : this.particles.count(MinecraftClient.getInstance().particleManager);
+    }
+
     /**
      * Rend les particules de ce monde, devenu principal a une traversee : elles partent avec l'ancien monde principal
      * ({@link RemoteWorldRegistry#swapMainWorld}), et ce monde ne les garde pas, sans quoi l'ancien resterait retenu par

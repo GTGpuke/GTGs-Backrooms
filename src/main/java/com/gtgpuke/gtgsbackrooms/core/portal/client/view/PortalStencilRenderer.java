@@ -614,7 +614,7 @@ public final class PortalStencilRenderer {
             // Ce qui traverse un portail : chaque moitie de ce cote, dans le brouillard et l'eclairage du monde du joueur.
             restoreMainFog();
             applyEntityLighting(client.world);
-            StraddlingEntityRenderer.renderMainWorldParts(client, camera, positionMatrix, projectionMatrix, tickDelta);
+            renderMainWorldParts(client, camera, positionMatrix, projectionMatrix, tickDelta);
             logDebugState(client);
         } finally {
             GL11.glStencilFunc(GL11.GL_ALWAYS, WORLD_LEVEL, FULL_MASK);
@@ -814,6 +814,26 @@ public final class PortalStencilRenderer {
             GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
         }
         GL11.glStencilFunc(GL11.GL_EQUAL, level + 1, StencilLookMask.LEVEL_MASK);
+    }
+
+    /**
+     * Moities du monde du joueur des entities qui traversent ({@link StraddlingEntityRenderer}), dessinees apres les vues :
+     * devant un cadre, leurs pixels portaient encore le look de la dimension qu'il montre, et le post de ce look dessinait
+     * la silhouette du cadre sur elles (un cochon frappe contre un cadre, son rouge plus clair devant la vue). Chaque pixel
+     * qu'elles couvrent prend le look du monde du joueur, comme la main ({@link HandMask}) ; le niveau reste celui du monde.
+     */
+    private static void renderMainWorldParts(MinecraftClient client, Camera camera, Matrix4f positionMatrix, Matrix4f projectionMatrix,
+            float tickDelta) {
+        GL11.glStencilFunc(GL11.GL_EQUAL, StencilLookMask.value(WORLD_LEVEL, LookProfiles.of(client.world.getRegistryKey()).id()),
+                StencilLookMask.LEVEL_MASK);
+        GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+        GL11.glStencilMask(StencilLookMask.LOOK_MASK);
+        try {
+            StraddlingEntityRenderer.renderMainWorldParts(client, camera, positionMatrix, projectionMatrix, tickDelta);
+        } finally {
+            GL11.glStencilMask(FULL_MASK);
+            GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+        }
     }
 
     /** Identifiant du look de la dimension que ce portail montre, 0 sans profil. */

@@ -3,16 +3,25 @@ package com.gtgpuke.gtgsbackrooms.gametest.client;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.render.BuiltChunkStorage;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.passive.PigEntity;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkSectionPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -24,8 +33,10 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.view.SectionGenerations;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.BuildBuffers;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorld;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
+import com.gtgpuke.gtgsbackrooms.mixin.client.BuiltChunkStorageAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.WorldRendererAccessor;
 
 /**
@@ -38,8 +49,16 @@ final class PortalViewClientTests {
     private static final int AFTER_SWITCH_FRAMES = 12;
     /** Images rendues apres un demi-tour : le temps que le graphe vanilla montre ce qui etait derriere et que cela se construise. */
     private static final int TURN_FRAMES = 20;
+    /** Image lente pendant l'approche d'un cadre, comptee a part : plus de deux images a 60 Hz. */
+    private static final double SLOW_FRAME_MILLIS = 25.0;
+    /** Distance au plan d'un joueur qui ne peut plus passer le cadre de sitot. */
+    private static final double FAR_FROM_FRAME = 30.0;
+    /** Distance au plan d'ou le joueur part vers le cadre sans s'arreter : hors de la fenetre pres du cadre. */
+    private static final double APPROACH_BLOCKS = 20.0;
     /** Le joueur colle au cadre (plan a z = 4,5) : le cadre remplit l'ecran, sous la main comprise. */
     private static final double HAND_TEST_Z = 4.2;
+    /** Cochon devant le plan, a moins de la marge du modele d'une entity vivante : a cheval sur le cadre pour le rendu. */
+    private static final double STRADDLING_GAP = 0.5;
     /** Ticks laisses a une section rendue a reconstruire pour l'etre. */
     private static final int REBUILD_TICKS = 200;
     /** Sections rendues a reconstruire, celle du renderer du joueur puis celle de la vue, suivies jusqu'a leur reconstruction. */
@@ -66,7 +85,7 @@ final class PortalViewClientTests {
     static List<ClientScenario> scenarios() {
         // Le recul vient apres la liberation des mondes distants : il entre dans un Level 0 jamais construit hors du cadre.
         return List.of(portalViewAndSeamlessCrossings(), remoteWorldReleasedAndForgotten(), crossingBackwardsThroughAnUnseenFrame(),
-                handKeepsThePlayersLook());
+                handKeepsThePlayersLook(), straddlingEntityKeepsThePlayersLook(), crossingWithoutStopping());
     }
 
     /**
@@ -143,6 +162,37 @@ final class PortalViewClientTests {
     }
 
     /**
+     * Le joueur arrive de loin et passe le cadre sans s'arreter, comme en jeu : la fenetre de l'arrivee part pendant
+     * qu'il approche, et le Level 0 est la a la bascule, sans chunk recu ensuite ni section proche manquante.
+     */
+    private static ClientScenario crossingWithoutStopping() {
+        return ClientScenario.named("crossing_without_stopping")
+                .run("joueur et portail dans l'Overworld, loin du cadre", context -> {
+                    ClientTestPortals.place(context, PortalSettings.DEFAULT);
+                    ClientTestPortals.standAt(context, 0.5, ClientTestPortals.PLANE_Z - APPROACH_BLOCKS, 0.0f, 0.0f);
+                })
+                .await("portail recu par le client", ClientTestPortals::received, ClientTestPortals.PORTAL_TICKS)
+                .await("vue du Level 0 prete dans le cadre", ClientTestPortals::viewReady, ClientTestPortals.PORTAL_TICKS)
+                .run("marche droit vers le cadre", context -> {
+                    ClientTestFrames.startRecording();
+                    context.client().options.forwardKey.setPressed(true);
+                })
+                .await("bascule dans le Level 0", LevelZeroClientTests::inLevelZero, 400)
+                .frames(AFTER_SWITCH_FRAMES)
+                .run("arret", context -> context.client().options.forwardKey.setPressed(false))
+                .check("Level 0 deja la a la bascule", context -> {
+                    List<ClientTestFrames.FrameStep> steps = ClientTestFrames.stopRecording();
+                    requireArrivalReady(steps, seamOf(steps, "passage sans arret"), "passage sans arret");
+                })
+                .cleanup(context -> {
+                    context.client().options.forwardKey.setPressed(false);
+                    ClientTestFrames.stopRecording();
+                    ClientTestPortals.remove(context);
+                    LevelZeroClientTests.backToOverworld(context);
+                });
+    }
+
+    /**
      * La main du joueur est de son monde, meme devant un cadre : ses pixels prennent le look du monde du joueur, et le
      * post-traitement du monde que montre le cadre ne la touche pas (sinon la silhouette du cadre se voit sur la main).
      * Colle au cadre, qui remplit l'ecran, le joueur voit moins de pixels du Level 0 avec sa main qu'en la cachant (F1). Les
@@ -176,6 +226,58 @@ final class PortalViewClientTests {
                     ClientTestPortals.remove(context);
                     LevelZeroClientTests.backToOverworld(context);
                 });
+    }
+
+    /**
+     * Une entity a cheval sur le plan d'un cadre (un cochon contre lui) se dessine apres les vues : ses pixels prennent le
+     * look du monde du joueur, sans quoi le post-traitement du Level 0 que montre le cadre dessinait la silhouette du cadre
+     * sur elle (visible sur le rouge d'un cochon frappe). Le cochon devant le cadre, l'image a moins de pixels au look du
+     * Level 0 que sans lui.
+     */
+    private static ClientScenario straddlingEntityKeepsThePlayersLook() {
+        int[] pixels = new int[2];
+        UUID[] pig = new UUID[1];
+        return ClientScenario.named("straddling_entity_keeps_the_players_look")
+                .run("joueur devant un grand portail, regard vers le bas du cadre", context -> {
+                    ClientTestPortals.place(context, new PortalSettings(3, 3, true));
+                    ClientTestPortals.standAt(context, 0.5, ClientTestPortals.PLANE_Z - 2.6, 0.0f, 25.0f);
+                })
+                .await("portail recu par le client", ClientTestPortals::received, ClientTestPortals.PORTAL_TICKS)
+                .await("vue du Level 0 prete dans le cadre", ClientTestPortals::viewReady, ClientTestPortals.PORTAL_TICKS)
+                .frames(10)
+                .run("pixels du Level 0, sans le cochon", context -> pixels[1] = levelZeroPixels(context))
+                .run("cochon contre le cadre", context -> context.onServer(server -> {
+                    ServerWorld overworld = ClientTestContext.serverWorld(server, World.OVERWORLD);
+                    PigEntity entity = EntityType.PIG.create(overworld);
+                    entity.refreshPositionAndAngles(0.5, ClientTestPortals.FLOOR_Y, ClientTestPortals.PLANE_Z - STRADDLING_GAP, 90.0f, 0.0f);
+                    entity.setAiDisabled(true);
+                    overworld.spawnEntity(entity);
+                    pig[0] = entity.getUuid();
+                }))
+                .await("cochon chez le client", context -> find(context.world(), pig[0]) != null)
+                .frames(10)
+                .run("pixels du Level 0, avec le cochon", context -> pixels[0] = levelZeroPixels(context))
+                .check("le cochon garde le look du monde du joueur", context -> {
+                    ClientTestContext.require(pixels[1] > 0, "Le cadre ne montre pas le Level 0 a l'ecran.");
+                    ClientTestContext.require(pixels[0] < pixels[1], "Les pixels du cochon gardent le look du Level 0 que montre le cadre : "
+                            + pixels[0] + " avec le cochon, " + pixels[1] + " sans.");
+                })
+                .cleanup(context -> context.onServer(server -> {
+                    Entity entity = ClientTestContext.serverWorld(server, World.OVERWORLD).getEntity(pig[0]);
+                    if (entity != null) {
+                        entity.discard();
+                    }
+                }))
+                .cleanup(ClientTestPortals::remove);
+    }
+
+    private static @Nullable Entity find(ClientWorld world, @Nullable UUID uuid) {
+        for (Entity entity : world.getEntities()) {
+            if (entity.getUuid().equals(uuid)) {
+                return entity;
+            }
+        }
+        return null;
     }
 
     /** Pixels de la derniere image au look du Level 0 ; le profil, charge avec les ressources, se lit au moment de compter. */
@@ -212,6 +314,8 @@ final class PortalViewClientTests {
                 })
                 // Pres du cadre, le serveur envoie l'arrivee jusqu'a la distance de vue : elle est complete avant le passage.
                 .await("arrivee envoyee jusqu'a la distance de vue", PortalViewClientTests::arrivalWindowReceived, ClientTestPortals.PORTAL_TICKS)
+                // Pres du cadre, la vue construit d'avance ce que le joueur verra en sortant, jusqu'a sa distance de vue.
+                .await("arrivee construite d'avance devant la sortie", PortalViewClientTests::arrivalPrebuilt, ClientTestPortals.PORTAL_TICKS)
                 .run("marche vers le cadre", context -> {
                     ClientTestFrames.startRecording();
                     context.client().options.forwardKey.setPressed(true);
@@ -221,8 +325,9 @@ final class PortalViewClientTests {
                 .frames(AFTER_SWITCH_FRAMES)
                 .run("arret", context -> context.client().options.forwardKey.setPressed(false))
                 .check("aller sans couture", context -> requireSeamless(ClientTestFrames.stopRecording(), "aller"))
-                .await("tampons de construction du jeu au renderer du Level 0, deux a la vue de l'Overworld",
-                        context -> buildBuffersFollowThePlayer(context, World.OVERWORLD), REBUILD_TICKS)
+                // Pres du cadre de retour, la vue de l'Overworld, son ancien renderer, garde les tampons du jeu : il peut repasser.
+                .await("tampons de construction du jeu au renderer du Level 0 et a la vue de l'Overworld, que le joueur peut repasser",
+                        context -> buildBuffersFollowThePlayer(context, World.OVERWORLD, BuildBuffers.PLAYER_COUNT), REBUILD_TICKS)
                 // Sitot passe, le joueur se retourne vers le cadre d'ou il vient : ce qui entourait l'arrivee est deja construit.
                 .run("demi-tour vers le cadre", context -> {
                     ClientTestFrames.startRecording();
@@ -242,12 +347,16 @@ final class PortalViewClientTests {
                 .frames(AFTER_SWITCH_FRAMES)
                 .run("arret", context -> context.client().options.backKey.setPressed(false))
                 .check("retour sans couture", context -> requireSeamless(ClientTestFrames.stopRecording(), "retour"))
-                .await("tampons de construction du jeu au renderer de l'Overworld, deux a la vue du Level 0",
-                        context -> buildBuffersFollowThePlayer(context, BackroomsConstants.LEVEL_ZERO_WORLD), REBUILD_TICKS)
+                .await("tampons de construction du jeu au renderer de l'Overworld et a la vue du Level 0, que le joueur peut repasser",
+                        context -> buildBuffersFollowThePlayer(context, BackroomsConstants.LEVEL_ZERO_WORLD, BuildBuffers.PLAYER_COUNT), REBUILD_TICKS)
                 // Face au cadre qui s'eloigne : la vue du Level 0 se dessine.
                 .run("une section de l'Overworld et une de la vue du Level 0 a reconstruire",
                         context -> markSections(context, BackroomsConstants.LEVEL_ZERO_WORLD))
                 .await("les deux renderers reconstruisent encore apres le retour", PortalViewClientTests::sectionsRebuilt, REBUILD_TICKS)
+                // Loin de tout cadre, plus aucune traversee en vue : la vue du Level 0 redescend aux deux tampons d'une vue.
+                .run("joueur loin du cadre", context -> ClientTestPortals.standAt(context, 0.5, ClientTestPortals.PLANE_Z - FAR_FROM_FRAME, 0.0f, 0.0f))
+                .await("deux tampons a la vue du Level 0, loin du cadre",
+                        context -> buildBuffersFollowThePlayer(context, BackroomsConstants.LEVEL_ZERO_WORLD, RemoteWorld.RENDER_BUFFER_COUNT), REBUILD_TICKS)
                 .cleanup(context -> {
                     context.client().options.forwardKey.setPressed(false);
                     context.client().options.backKey.setPressed(false);
@@ -258,7 +367,7 @@ final class PortalViewClientTests {
     }
 
     /** Le joueur fait demi-tour d'un coup, d'une image a la suivante. */
-    private static void turnAround(ClientTestContext context) {
+    static void turnAround(ClientTestContext context) {
         ClientPlayerEntity player = context.client().player;
         player.setYaw(player.getYaw() + 180.0f);
         player.prevYaw = player.getYaw();
@@ -280,12 +389,13 @@ final class PortalViewClientTests {
 
     /**
      * Les tampons de construction suivent le joueur : son renderer, celui d'une vue promu par la traversee, a le compte de
-     * vanilla (un par processeur), et la vue de {@code viewed}, son ancien renderer, redescend aux deux d'une vue.
+     * vanilla (un par processeur), et la vue de {@code viewed}, son ancien renderer, en a {@code viewCount} : le compte de
+     * vanilla tant que le joueur peut la repasser, deux ensuite.
      */
-    private static boolean buildBuffersFollowThePlayer(ClientTestContext context, RegistryKey<World> viewed) {
+    private static boolean buildBuffersFollowThePlayer(ClientTestContext context, RegistryKey<World> viewed, int viewCount) {
         RemoteWorld remote = RemoteWorldRegistry.get(viewed);
         return remote != null && BuildBuffers.count(context.client().worldRenderer) == BuildBuffers.PLAYER_COUNT
-                && BuildBuffers.count(remote.renderer()) == RemoteWorld.RENDER_BUFFER_COUNT;
+                && BuildBuffers.count(remote.renderer()) == viewCount;
     }
 
     /**
@@ -376,15 +486,38 @@ final class PortalViewClientTests {
         int nearHoles = 0;
         for (int i = Math.max(0, seam - 5); i < steps.size(); i++) {
             ClientTestFrames.FrameStep step = steps.get(i);
-            detail.append(String.format(Locale.ROOT, "%n  %3d%s ecart %5.2f, %5.1f ms, sections %3d, trous %3d (proches %d), chunks %3d, +%d -%d, distants +%d,"
-                    + " gc %d, %s", i - seam, i == seam ? "*" : " ", step.difference(), step.frameMillis(), step.builtSections(), step.holes(), step.nearHoles(),
-                    step.loadedChunks(), step.chunkLoads(), step.chunkUnloads(), step.remoteChunkLoads(), step.collections(), step.world().getPath()));
+            detail.append(String.format(Locale.ROOT, "%n  %3d%s ecart %5.2f, %5.1f ms, sections %3d, trous %3d (proches %d, le plus proche a %d), chunks %3d,"
+                    + " +%d -%d, distants +%d, gc %d, %s", i - seam, i == seam ? "*" : " ", step.difference(), step.frameMillis(), step.builtSections(), step.holes(),
+                    step.nearHoles(), step.nearestHole(), step.loadedChunks(), step.chunkLoads(), step.chunkUnloads(), step.remoteChunkLoads(), step.collections(),
+                    step.world().getPath()));
             if (i >= seam) {
                 loadedAfter += step.chunkLoads();
                 nearHoles = Math.max(nearHoles, step.nearHoles());
             }
         }
         ModConstants.LOGGER.info("[Test client] Images autour de la bascule du {} :{}", crossing, detail);
+        // Approche : le temps des images pendant que la fenetre de l'arrivee arrive et se construit d'avance.
+        List<Double> approach = new ArrayList<>();
+        int received = 0;
+        int collections = 0;
+        int slow = 0;
+        int longest = 0;
+        for (int i = 0; i < seam; i++) {
+            ClientTestFrames.FrameStep step = steps.get(i);
+            approach.add(step.frameMillis());
+            received += step.remoteChunkLoads();
+            collections += step.collections();
+            slow += step.frameMillis() > SLOW_FRAME_MILLIS ? 1 : 0;
+            longest = step.frameMillis() > steps.get(longest).frameMillis() ? i : longest;
+        }
+        List<Double> sorted = new ArrayList<>(approach);
+        sorted.sort(Double::compare);
+        ModConstants.LOGGER.info("[Test client] Approche du {} : {} images, mediane {} ms, 99e centile {} ms, {} au-dela de {} ms, la plus longue {} ms{},"
+                + " {} passage(s) du ramasse-miettes, {} chunks distants recus.", crossing, approach.size(),
+                String.format(Locale.ROOT, "%.1f", median(approach)),
+                String.format(Locale.ROOT, "%.1f", sorted.isEmpty() ? 0.0 : sorted.get(sorted.size() * 99 / 100)), slow, SLOW_FRAME_MILLIS,
+                String.format(Locale.ROOT, "%.1f", seam == 0 ? 0.0 : steps.get(longest).frameMillis()),
+                seam > 0 && steps.get(longest).collections() > 0 ? " (ramasse-miettes)" : "", collections, received);
         // Le client tient deja chaque chunk du monde d'arrivee (fenetre envoyee pres du cadre, ou monde quitte garde) : aucun
         // ne doit arriver en rafale apres la bascule, ni se reconstruire sous ses yeux. Et ce que le joueur voit en sortant
         // est deja construit (construction d'avance pres du cadre).
@@ -400,6 +533,46 @@ final class PortalViewClientTests {
         RemoteWorld remote = RemoteWorldRegistry.get(BackroomsConstants.LEVEL_ZERO_WORLD);
         int side = 2 * (context.client().options.getClampedViewDistance() + 1) + 1;
         return remote != null && remote.world().getChunkManager().getLoadedChunkCount() >= side * side;
+    }
+
+    /**
+     * La vue du Level 0 a construit d'avance ce que le joueur verra en sortant : devant la sortie, jusqu'a sa distance de
+     * vue, chaque section non vide de deux sections sous l'arrivee jusqu'a la plus haute non vide de sa colonne. Une
+     * section que la grille de la vue ne tient pas a sa place ne compte pas.
+     */
+    private static boolean arrivalPrebuilt(ClientTestContext context) {
+        RemoteWorld remote = RemoteWorldRegistry.get(BackroomsConstants.LEVEL_ZERO_WORLD);
+        BuiltChunkStorage chunks = remote == null ? null : ((WorldRendererAccessor) remote.renderer()).backrooms$getChunks();
+        if (chunks == null) {
+            return false;
+        }
+        BackroomsPortalEntity portal = ClientTestPortals.clientPortal(context);
+        Vec3d arrival = portal.destinationPos();
+        Direction out = portal.facingDestination().direction;
+        int centerX = ChunkSectionPos.getSectionCoord(arrival.x);
+        int centerY = ChunkSectionPos.getSectionCoord(arrival.y);
+        int centerZ = ChunkSectionPos.getSectionCoord(arrival.z);
+        int reach = context.client().options.getClampedViewDistance();
+        ClientWorld world = remote.world();
+        BlockPos.Mutable cursor = new BlockPos.Mutable();
+        for (int dx = -reach; dx <= reach; dx++) {
+            for (int dz = -reach; dz <= reach; dz++) {
+                WorldChunk chunk = world.getChunkManager().getWorldChunk(centerX + dx, centerZ + dz);
+                if (dx * out.getOffsetX() + dz * out.getOffsetZ() < 0 || chunk == null) {
+                    continue;
+                }
+                int top = Math.min(Math.max(centerY + 2, chunk.sectionIndexToCoord(chunk.getHighestNonEmptySection())), world.getTopSectionCoord() - 1);
+                for (int sectionY = Math.max(centerY - 2, world.getBottomSectionCoord()); sectionY <= top; sectionY++) {
+                    cursor.set(ChunkSectionPos.getBlockCoord(centerX + dx), ChunkSectionPos.getBlockCoord(sectionY), ChunkSectionPos.getBlockCoord(centerZ + dz));
+                    ChunkBuilder.BuiltChunk section = ((BuiltChunkStorageAccessor) chunks).backrooms$getRenderedChunk(cursor);
+                    if (!chunk.getSection(chunk.sectionCoordToIndex(sectionY)).isEmpty() && section != null && section.getOrigin().equals(cursor)
+                            && section.getData() == ChunkBuilder.ChunkData.EMPTY) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     private static double median(List<Double> values) {

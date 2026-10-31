@@ -30,7 +30,6 @@ import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.PortalCrossPayload;
-import com.gtgpuke.gtgsbackrooms.core.portal.transition.ArrivalGuard;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalCollision;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
@@ -40,24 +39,20 @@ import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestServerWorlds;
  * Tests en jeu des blocs caches derriere le plan d'un portail : un cadre pose sur un sol plein s'ouvre comme une trappe sous
  * qui y tombe et lui garde son elan, un cadre pose contre un mur se traverse comme si le mur n'y etait pas, un corps
  * engage dans un cadre n'est pas dans le mur qu'il traverse et le reste quelques ticks une fois le plan passe, sans que la
- * face arriere du cadre lui cache le cote d'ou il vient. Le cadre d'arrivee au sol garde qui en sort, meme au-dessus du
- * vide, jusqu'a ce qu'il en descende, s'accroupisse ou change de monde ; la garde refuse aussi une traversee annoncee.
- * Sur le bord d'un cadre en l'air, qui ne peut pas le traverser se pose sur son plan.
+ * face arriere du cadre lui cache le cote d'ou il vient. Qui sort d'un cadre d'arrivee au sol y retombe aussitot, meme
+ * pose sur la pierre, et un joueur qui tombe dans un cadre au sol le traverse aux yeux. Sur le bord d'un cadre en l'air, qui ne peut pas le traverser se pose sur son plan.
  *
  * <p>Le sol de l'arene est sous elle : la pierre posee a la premiere couche (Y = 0) fait un sol plein a Y = 1.
  */
 public final class PortalTunnelGameTests implements FabricGameTest {
 
     private static final double EPSILON = 1.0e-3;
+    /** Vitesse de marche d'un joueur simule qui entre dans un cadre, en blocs par tick. */
+    private static final double WALK = 0.2;
+    /** Ecart a la poussee la plus forte une fois le saut ajoute : le saut s'allonge par pas, la poussee retombe juste dessous. */
+    private static final double RISE_MARGIN = 0.05;
     /** Vitesse des objets qui filent vers un mur, en blocs par tick. */
     private static final double ITEM_SPEED = 0.3;
-    /** Pas d'un joueur simule qui descend, par tick, comme le dirait son client. */
-    private static final double FALL_STEP = 0.4;
-    /**
-     * Ticks pendant lesquels un corps garde doit tenir sur son cadre d'arrivee, compte de sa pose : plus que le cooldown de
-     * portail d'une entity (dix ticks, compte de son arrivee), moins que le repit de la garde.
-     */
-    private static final int HOLD_TICKS = 12;
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 100)
     public void aFloorFrameOnSolidGroundOpensUnderAFallingBodyAndKeepsItsSpeed(TestContext context) {
@@ -249,7 +244,7 @@ public final class PortalTunnelGameTests implements FabricGameTest {
     }
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400)
-    public void anArrivalFloorFrameHoldsWhoComesOutOfItBrieflyUnlessTheyStepOffOrSneak(TestContext context) {
+    public void whoComesOutOfAnArrivalFloorFrameFallsBackAtOnce(TestContext context) {
         ServerWorld world = context.getWorld();
         fill(context, new BlockPos(2, 0, 2), new BlockPos(8, 0, 5), Blocks.STONE);
         // Deux cadres au sol, l'un vers l'autre : A a ras de la pierre, B en l'air, trois blocs au-dessus du sol de l'arene.
@@ -258,58 +253,19 @@ public final class PortalTunnelGameTests implements FabricGameTest {
         BackroomsPortalEntity toB = spawn(world, a, PortalFacing.UP, PortalFacing.UP, b);
         BackroomsPortalEntity toA = spawn(world, b, PortalFacing.UP, PortalFacing.UP, a);
         ArmorStandEntity body = stand(world, a.add(0.0, 3.0, 0.0), true);
-        int[] held = {0};
-        long[] landed = {0L};
-        long[] pushed = {0L};
+        boolean[] restedOnA = {false};
         context.createTimedTaskRunner()
-                // Tombe dans A, il ressort de B vers le haut et retombe dessus : garde, il s'y pose, au-dessus du vide.
+                // Tombe dans A, il ressort de B vers le haut, retombe dans B (en l'air) et ressort de A.
+                .createAndAdd(() -> context.assertTrue(Math.abs(body.getX() - b.x) < 0.5, "Pas encore ressorti de B."))
+                .createAndAdd(() -> context.assertTrue(Math.abs(body.getX() - a.x) < 0.5, "Pas encore retombe dans B."))
+                // Sorti de A, il retombe dedans aussitot, la pierre sous le cadre n'y change rien : il ne s'y pose jamais.
                 .createAndAdd(() -> {
-                    context.assertTrue(near(ArrivalGuard.guardedCenter(body), b) && body.isOnGround(), "Pas encore pose sur B.");
-                    landed[0] = world.getTime();
+                    restedOnA[0] |= body.isOnGround() && Math.abs(body.getX() - a.x) < 0.5;
+                    context.assertTrue(Math.abs(body.getX() - b.x) < 0.5, "Sorti de A, il n'y est pas encore retombe : " + body.getPos() + ".");
                 })
-                .createAndAdd(() -> context.assertTrue(++held[0] > HOLD_TICKS, "Il doit tenir sur B."))
-                .createAndAddReported(() -> {
-                    context.assertTrue(near(ArrivalGuard.guardedCenter(body), b) && Math.abs(body.getY() - b.y) < EPSILON
-                            && Math.abs(body.getX() - b.x) < 0.5, "Garde, il tient sur B pendant son repit, au lieu de repartir : " + body.getPos() + ".");
-                    // Pousse a travers le plan (une commande, un piston) : garde, il ne repart pas non plus.
-                    body.setPosition(b.x, b.y - 2.5, b.z);
-                    pushed[0] = world.getTime();
-                })
-                // Le serveur juge ce pas a la fin du tick : la suite attend qu'il l'ait juge.
-                .createAndAdd(() -> context.assertTrue(world.getTime() > pushed[0] + 1, "Le pas pousse n'est pas encore juge."))
-                .createAndAddReported(() -> {
-                    context.assertTrue(Math.abs(body.getX() - b.x) < 0.5 && body.getY() < b.y && near(ArrivalGuard.guardedCenter(body), b),
-                            "Passe sous B, il n'est pas reparti par lui : " + body.getPos() + ".");
-                    body.setPosition(b.x, b.y, b.z);
-                    // Accroupi, on reprend son arrivee : la garde tombe, avant la fin du repit.
-                    body.setSneaking(true);
-                })
-                .createAndAdd(() -> context.assertTrue(ArrivalGuard.guardedCenter(body) == null, "Accroupi, il est encore garde."))
-                .createAndAddReported(() -> {
-                    context.assertTrue(world.getTime() - landed[0] < ArrivalGuard.GRACE_TICKS, "La garde est tombee a l'accroupissement, pas a la fin du repit.");
-                    body.setSneaking(false);
-                })
-                // B s'ouvre sous lui : il ressort de A, garde sur A cette fois, pose sur la pierre.
-                .createAndAdd(() -> context.assertTrue(near(ArrivalGuard.guardedCenter(body), a) && body.isOnGround(), "Pas encore pose sur A."))
-                .createAndAddReported(() -> {
-                    context.assertTrue(Math.abs(body.getX() - a.x) < 0.5 && Math.abs(body.getY() - a.y) < EPSILON,
-                            "Reparti par B, il tient sur A : " + body.getPos() + ".");
-                    // Il en descend : la garde tombe.
-                    body.setPosition(a.x + 2.0, a.y, a.z);
-                })
-                .createAndAdd(() -> context.assertTrue(ArrivalGuard.guardedCenter(body) == null, "Descendu du cadre, il est encore garde."))
-                .createAndAddReported(() -> body.setPosition(a.x, a.y, a.z))
-                // Revenu sur A, il y tombe et ressort de B ; cette fois, il y reste.
-                .createAndAdd(() -> {
-                    context.assertTrue(near(ArrivalGuard.guardedCenter(body), b) && body.isOnGround(), "Revenu sur A, il n'est pas encore pose sur B.");
-                    landed[0] = world.getTime();
-                })
-                // Le repit passe, B s'ouvre sous lui : il retombe et ressort de A, sans avoir bouge.
-                .createAndAdd(() -> context.assertTrue(near(ArrivalGuard.guardedCenter(body), a), "Reste sur B, il n'y est pas encore retombe."))
                 .createAndAddReported(() -> {
                     try {
-                        context.assertTrue(world.getTime() - landed[0] >= ArrivalGuard.GRACE_TICKS,
-                                "B s'est ouvert avant la fin du repit : " + (world.getTime() - landed[0]) + " ticks.");
+                        context.assertTrue(!restedOnA[0], "Sorti de A, il s'est pose sur la pierre sous le cadre au lieu d'y retomber.");
                     } finally {
                         body.discard();
                         toA.discard();
@@ -320,62 +276,140 @@ public final class PortalTunnelGameTests implements FabricGameTest {
                 .completeIfSuccessful();
     }
 
-    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 200)
-    public void aPlayerSetDownOnAFloorFrameIsHeldUntilTheyLeaveTheWorld(TestContext context) {
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400)
+    public void aSlowBodyFallingBackIntoAnArrivalFloorFrameDoesNotSinkIntoTheGround(TestContext context) {
         ServerWorld world = context.getWorld();
-        ServerWorld nether = GameTestServerWorlds.nether(context);
+        fill(context, new BlockPos(2, 0, 2), new BlockPos(16, 0, 5), Blocks.STONE);
+        // Deux cadres au sol, l'un vers l'autre, tous deux a ras de la pierre.
+        Vec3d a = context.getAbsolute(new Vec3d(4.5, 1.0, 4.0));
+        Vec3d c = context.getAbsolute(new Vec3d(14.5, 1.0, 4.0));
+        BackroomsPortalEntity toC = spawn(world, a, PortalFacing.UP, PortalFacing.UP, c);
+        BackroomsPortalEntity toA = spawn(world, c, PortalFacing.UP, PortalFacing.UP, a);
+        // Un objet qui glisse dans A presque sans elan : il ressort de C a peine plus vite et y retombe avant la fin du cooldown
+        // de portail qu'il vient de recevoir.
+        ItemEntity body = new ItemEntity(world, a.x, a.y + 0.05, a.z, new ItemStack(Items.DIAMOND));
+        body.setPickupDelayInfinite();
+        body.setVelocity(0.0, -0.1, 0.0);
+        world.spawnEntity(body);
+        boolean[] sunk = {false};
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> context.assertTrue(Math.abs(body.getX() - c.x) < 0.5, "Pas encore ressorti de C."))
+                // Ses yeux ne passent jamais le plan de C sans le traverser : il ne s'enfonce pas dans la pierre, il repart par C.
+                .createAndAdd(() -> {
+                    sunk[0] |= Math.abs(body.getX() - c.x) < 0.5 && body.getEyeY() < c.y - 0.3;
+                    context.assertTrue(Math.abs(body.getX() - a.x) < 0.5, "Sorti de C, il n'y est pas encore retombe : " + body.getPos() + ".");
+                })
+                .createAndAddReported(() -> {
+                    try {
+                        context.assertTrue(!sunk[0], "Retombe dans C pendant son cooldown, il est passe sous le plan sans traverser.");
+                    } finally {
+                        body.discard();
+                        toA.discard();
+                        toC.discard();
+                        fill(context, new BlockPos(2, 0, 2), new BlockPos(16, 0, 5), Blocks.AIR);
+                    }
+                })
+                .completeIfSuccessful();
+    }
+
+    /**
+     * Entre en marchant par un cadre debout et sorti d'un cadre couche au sol, un joueur est pousse dans le sens de son
+     * regard, juste assez pour retomber au-dela du bord devant lui : un petit saut s'ajoute quand la poussee la plus forte
+     * ne suffit pas, au plus celui d'un saut vanilla. D'un cadre au sol a un autre, rien ne s'ajoute.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 40)
+    public void aPlayerComingOutOfAFloorFrameIsPushedPastTheEdgeAhead(TestContext context) {
+        ServerWorld world = context.getWorld();
+        // Trois cadres debout vers des cadres au sol, et un cadre au sol vers un autre.
+        Vec3d high = context.getAbsolute(new Vec3d(3.5, 2.0, 4.0));
+        Vec3d low = context.getAbsolute(new Vec3d(9.5, 4.0, 4.0));
+        Vec3d tall = context.getAbsolute(new Vec3d(15.5, 3.0, 4.0));
+        Vec3d floor = context.getAbsolute(new Vec3d(21.5, 3.0, 4.0));
+        BackroomsPortalEntity fromHigh = sized(world, high, PortalFacing.NORTH, PortalFacing.UP, context.getAbsolute(new Vec3d(3.5, 10.0, 16.0)), 2.0f);
+        BackroomsPortalEntity fromLow = sized(world, low, PortalFacing.NORTH, PortalFacing.UP, context.getAbsolute(new Vec3d(9.5, 10.0, 16.0)), 2.0f);
+        BackroomsPortalEntity fromTall = sized(world, tall, PortalFacing.NORTH, PortalFacing.UP, context.getAbsolute(new Vec3d(15.5, 10.0, 16.0)), 4.0f);
+        BackroomsPortalEntity fromFloor = sized(world, floor, PortalFacing.UP, PortalFacing.UP, context.getAbsolute(new Vec3d(21.5, 10.0, 16.0)), 2.0f);
+        // Les pieds au bas d'un cadre de deux : les yeux en haut, qui vont a l'arriere du cadre couche, loin du bord devant.
+        ServerPlayerEntity atBack = walkInto(context, fromHigh, high.add(0.0, -1.0, -0.05));
+        // Les pieds sous un cadre de deux : les yeux en bas, qui vont pres du bord devant.
+        ServerPlayerEntity atFront = walkInto(context, fromLow, low.add(0.0, -2.5, -0.05));
+        // Les pieds au milieu d'un cadre de quatre : les yeux tout en haut, a plus de trois blocs et demi du bord devant.
+        ServerPlayerEntity farFromEdge = walkInto(context, fromTall, tall.add(0.0, 0.0, -0.05));
+        ServerPlayerEntity falling = GameTestPlayers.connect(context, GameMode.CREATIVE, floor.add(0.0, 0.05, 0.0), 0.0f, 90.0f);
+        try {
+            GameTestPlayers.receive(falling, new PortalCrossPayload(fromFloor.getUuid(), floor.add(0.0, -0.3 - falling.getStandingEyeHeight(), 0.0),
+                    new Vec3d(0.0, -0.5, 0.0), 0.0f, 90.0f));
+            requireCrossed(context, atBack, fromHigh);
+            requireCrossed(context, atFront, fromLow);
+            requireCrossed(context, farFromEdge, fromTall);
+            requireCrossed(context, falling, fromFloor);
+            Vec3d back = atBack.getVelocity();
+            context.assertTrue(horizontal(back) > TeleportExecutor.MAX_EDGE_PUSH - RISE_MARGIN && horizontal(back) <= TeleportExecutor.MAX_EDGE_PUSH + EPSILON
+                    && back.y > WALK + EPSILON && back.y < TeleportExecutor.MAX_EXIT_RISE,
+                    "Sorti a l'arriere du cadre : presque la poussee la plus forte et un petit saut, " + back + ".");
+            context.assertTrue(alongLook(atBack), "Poussee dans le sens du regard : " + back + ", lacet " + atBack.getYaw() + ".");
+            Vec3d front = atFront.getVelocity();
+            context.assertTrue(horizontal(front) > EPSILON && horizontal(front) < TeleportExecutor.MAX_EDGE_PUSH && Math.abs(front.y - WALK) < EPSILON,
+                    "Sorti pres du bord devant : une petite poussee, sans saut, " + front + ".");
+            Vec3d far = farFromEdge.getVelocity();
+            context.assertTrue(Math.abs(horizontal(far) - TeleportExecutor.MAX_EDGE_PUSH) < EPSILON
+                    && Math.abs(far.y - TeleportExecutor.MAX_EXIT_RISE) < EPSILON, "Trop loin du bord : poussee et saut au plus, " + far + ".");
+            Vec3d up = falling.getVelocity();
+            context.assertTrue(horizontal(up) < EPSILON && up.y > 0.0, "D'un cadre au sol a un autre, rien ne s'ajoute : " + up + ".");
+        } finally {
+            GameTestPlayers.disconnect(atBack);
+            GameTestPlayers.disconnect(atFront);
+            GameTestPlayers.disconnect(farFromEdge);
+            GameTestPlayers.disconnect(falling);
+            discard(fromHigh, fromLow, fromTall, fromFloor);
+        }
+        context.complete();
+    }
+
+    /** Un joueur, pieds la, qui annonce entrer en marchant dans un cadre debout tourne vers le nord (il va vers le sud). */
+    private static ServerPlayerEntity walkInto(TestContext context, BackroomsPortalEntity portal, Vec3d feet) {
+        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, feet, 0.0f, 0.0f);
+        GameTestPlayers.receive(player, new PortalCrossPayload(portal.getUuid(), feet, new Vec3d(0.0, 0.0, WALK), 0.0f, 0.0f));
+        return player;
+    }
+
+    private static void requireCrossed(TestContext context, ServerPlayerEntity player, BackroomsPortalEntity portal) {
+        context.assertTrue(player.getPos().squaredDistanceTo(portal.destinationPos()) < 16.0, "Pas de l'autre cote : " + player.getPos() + ".");
+    }
+
+    private static double horizontal(Vec3d velocity) {
+        return Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+    }
+
+    /** La vitesse horizontale du joueur va dans le sens de son regard. */
+    private static boolean alongLook(ServerPlayerEntity player) {
+        double yaw = Math.toRadians(player.getYaw());
+        Vec3d velocity = player.getVelocity();
+        return (-Math.sin(yaw) * velocity.x + Math.cos(yaw) * velocity.z) / horizontal(velocity) > 1.0 - EPSILON;
+    }
+
+    /** Portail d'un bloc de large et de cette hauteur, ajoute au monde. */
+    private static BackroomsPortalEntity sized(ServerWorld world, Vec3d center, PortalFacing source, PortalFacing exit, Vec3d arrival, float height) {
+        BackroomsPortalEntity portal = BackroomsPortalEntity.builder(world)
+                .position(center)
+                .facingSource(source)
+                .facingDestination(exit)
+                .destinationDim(World.OVERWORLD)
+                .destinationPos(arrival)
+                .size(1.0f, height)
+                .build();
+        world.spawnEntity(portal);
+        return portal;
+    }
+
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 40)
+    public void aPlayerFallingIntoAFloorFrameCrossesOnceTheirEyesPassThePlane(TestContext context) {
+        ServerWorld world = context.getWorld();
         Vec3d frame = context.getAbsolute(new Vec3d(4.5, 1.0, 4.0));
         Vec3d arrival = context.getAbsolute(new Vec3d(14.5, 6.0, 4.0));
-        // Le cadre au sol sous le joueur, puis ceux que la recherche du cadre de pose passe : d'un autre monde, debout, au-dessus
-        // des pieds, trop bas sous eux, a cote.
         BackroomsPortalEntity floor = spawn(world, frame, PortalFacing.UP, PortalFacing.DOWN, arrival);
-        BackroomsPortalEntity elsewhere = build(nether, frame, PortalFacing.UP, PortalFacing.DOWN, arrival);
-        List<BackroomsPortalEntity> passed = List.of(
-                elsewhere,
-                build(world, frame, PortalFacing.NORTH, PortalFacing.SOUTH, arrival),
-                build(world, frame.add(0.0, 0.5, 0.0), PortalFacing.UP, PortalFacing.DOWN, arrival),
-                build(world, frame.add(0.0, -0.5, 0.0), PortalFacing.UP, PortalFacing.DOWN, arrival),
-                build(world, frame.add(3.0, 0.0, 0.0), PortalFacing.UP, PortalFacing.DOWN, arrival));
-        Vec3d onFrame = frame.add(0.0, 0.05, 0.0);
-        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, onFrame, 0.0f, 90.0f);
-        ArmorStandEntity stray = stand(world, onFrame, false);
-        Vec3d[] feet = {onFrame};
-        try {
-            ArrivalGuard.arriveOnFrame(stray, passed);
-            context.assertTrue(ArrivalGuard.guardedCenter(stray) == null, "Aucun de ces cadres ne porte ses pieds : pas de garde.");
-            ArrivalGuard.arriveOnFrame(player, List.of(elsewhere, floor));
-            context.assertTrue(near(ArrivalGuard.guardedCenter(player), frame), "Pose sur le cadre au sol, le joueur en est garde.");
-            context.assertTrue(ArrivalGuard.guards(player, floor) && !ArrivalGuard.guards(player, elsewhere),
-                    "La garde tient pour ce cadre, pas pour un cadre au meme endroit d'un autre monde.");
-            // Il annonce une traversee de son cadre d'arrivee : refusee.
-            GameTestPlayers.receive(player, new PortalCrossPayload(floor.getUuid(), frame.add(0.0, -0.3 - player.getStandingEyeHeight(), 0.0),
-                    new Vec3d(0.0, -1.0, 0.0), 0.0f, 90.0f));
-            context.assertTrue(player.getServerWorld() == world && player.getPos().squaredDistanceTo(onFrame) < EPSILON,
-                    "Garde, son annonce de traversee est refusee : " + player.getPos() + ".");
-        } catch (RuntimeException failure) {
-            GameTestPlayers.disconnect(player);
-            floor.discard();
-            throw failure;
-        }
-        // Son client ne dit rien et le fait descendre a travers le plan : le serveur ne le fait pas repartir non plus.
-        for (int tick = 1; tick <= 8; tick++) {
-            context.runAtTick(tick, () -> {
-                feet[0] = feet[0].subtract(0.0, FALL_STEP, 0.0);
-                player.refreshPositionAndAngles(feet[0].x, feet[0].y, feet[0].z, 0.0f, 90.0f);
-            });
-        }
-        // Il quitte le monde avant la fin du repit de la garde : c'est le changement de monde qui la fait tomber.
-        context.runAtTick(ArrivalGuard.GRACE_TICKS / 2, () -> {
-            context.assertTrue(player.getServerWorld() == world && Math.abs(player.getX() - frame.x) < EPSILON && player.getY() < frame.y - 2.0,
-                    "Garde, il descend sous son cadre d'arrivee sans repartir : " + player.getPos() + ".");
-            // Il quitte le monde (portail vanilla, commande) : la garde tombe.
-            player.teleport(nether, frame.x, frame.y, frame.z, 0.0f, 0.0f);
-        });
-        context.runAtTick(ArrivalGuard.GRACE_TICKS / 2 + 2, () -> {
-            context.assertTrue(ArrivalGuard.guardedCenter(player) == null, "Parti dans un autre monde, il n'est plus garde.");
-            player.teleport(world, onFrame.x, onFrame.y, onFrame.z, 0.0f, 90.0f);
-        });
-        context.runAtTick(ArrivalGuard.GRACE_TICKS / 2 + 4, () -> {
+        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, frame.add(0.0, 0.05, 0.0), 0.0f, 90.0f);
+        context.runAtTick(2, () -> {
             try {
                 // Il tombe dans le cadre : ses yeux ont passe le plan de trois dixiemes, ses pieds sont bien plus bas. Le serveur
                 // juge l'annonce aux yeux, qui decident de la traversee d'un cadre couche.
@@ -383,7 +417,6 @@ public final class PortalTunnelGameTests implements FabricGameTest {
                         new Vec3d(0.0, -1.0, 0.0), 0.0f, 90.0f));
                 context.assertTrue(Math.abs(player.getX() - arrival.x) < 0.5 && player.getY() < arrival.y,
                         "Les yeux juste passes, l'annonce est acceptee : il ressort sous le cadre d'arrivee : " + player.getPos() + ".");
-                context.assertTrue(ArrivalGuard.guardedCenter(player) == null, "Sorti par un plafond, il n'est garde par rien.");
             } finally {
                 GameTestPlayers.disconnect(player);
                 floor.discard();
@@ -392,7 +425,6 @@ public final class PortalTunnelGameTests implements FabricGameTest {
         });
     }
 
-    /** Remplit de ce bloc la boite entre deux positions relatives a l'arene. */
     /**
      * Un joueur franchit tout cadre aux yeux, et sa tete comme ses epaules doivent passer l'ouverture : engage, il bute sur
      * les bords du cadre qui depassent, et un cadre trop bas pour ses yeux ne se franchit pas, la ou un objet passe aux pieds.

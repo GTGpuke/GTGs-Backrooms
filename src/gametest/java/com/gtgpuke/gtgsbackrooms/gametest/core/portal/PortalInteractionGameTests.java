@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.DoorBlock;
@@ -21,9 +22,12 @@ import net.minecraft.entity.passive.SheepEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.s2c.play.BlockBreakingProgressS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
+import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import net.minecraft.server.OperatorEntry;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.test.GameTest;
 import net.minecraft.test.GameTestException;
 import net.minecraft.test.TestContext;
@@ -36,6 +40,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldEvents;
 import net.minecraft.world.border.WorldBorder;
 
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
@@ -302,9 +307,13 @@ public final class PortalInteractionGameTests implements FabricGameTest {
                 context.assertTrue(world.getBlockState(lever).get(LeverBlock.POWERED), "Le levier est bascule a travers le portail.");
                 // Un coffre ne s'ouvre pas : son ecran se fermerait aussitot. Mais l'objet en main s'utilise sur lui.
                 creative.setStackInHand(Hand.MAIN_HAND, new ItemStack(Items.COBBLESTONE));
+                GameTestPlayers.sent(creative, PlaySoundS2CPacket.class);
                 blockAction(creative, portal, new BlockHitResult(Vec3d.ofCenter(chest).add(0.0, 0.5, 0.0), Direction.UP, chest, false),
                         PortalBlockActionPayload.Action.USE);
                 context.assertTrue(world.getBlockState(chest.up()).isOf(Blocks.COBBLESTONE), "La pierre est posee sur le coffre, en creatif.");
+                // Vanilla ne lui envoie pas le son de la pose (son client l'aurait predit) : a travers le cadre, il le recoit.
+                context.assertTrue(GameTestPlayers.sent(creative, PlaySoundS2CPacket.class).stream()
+                        .anyMatch(sound -> sound.getSound().value() == SoundEvents.BLOCK_STONE_PLACE), "Le son de la pierre posee parvient a celui qui la pose.");
                 context.assertTrue(creative.getMainHandStack().getCount() == 1, "La pile n'est pas consommee en creatif.");
                 // Accroupi avec un objet en main : le bloc n'est pas sollicite, seul l'objet l'est.
                 creative.setSneaking(true);
@@ -444,8 +453,15 @@ public final class PortalInteractionGameTests implements FabricGameTest {
                 context.assertTrue(world.getBlockState(command).isAir(), "Un operateur casse le bloc de commande a travers le portail.");
                 blockAction(creative, portal, hitOn(context, TARGET_BLOCK.south()), PortalBlockActionPayload.Action.START_MINING);
                 context.assertTrue(world.getBlockState(gold).isOf(Blocks.GOLD_BLOCK), "L'evenement de casse peut refuser.");
+                GameTestPlayers.sent(creative, WorldEventS2CPacket.class);
                 blockAction(creative, portal, hitOn(context, TARGET_BLOCK), PortalBlockActionPayload.Action.START_MINING);
                 context.assertTrue(world.getBlockState(dirt).isAir(), "La terre est cassee d'un coup en creatif.");
+                context.assertTrue(GameTestPlayers.sent(creative, WorldEventS2CPacket.class).stream()
+                        .anyMatch(event -> event.getEventId() == WorldEvents.BLOCK_BROKEN && event.getPos().equals(dirt)),
+                        "Le son et les eclats de la casse parviennent au mineur.");
+                world.syncWorldEvent(creative, WorldEvents.BLOCK_BROKEN, dirt, Block.getRawIdFromState(Blocks.DIRT.getDefaultState()));
+                context.assertTrue(GameTestPlayers.sent(creative, WorldEventS2CPacket.class).isEmpty(),
+                        "Hors d'une action a travers un cadre, vanilla l'exclut toujours de ses propres effets.");
             } finally {
                 GameTestPlayers.disconnect(creative);
             }

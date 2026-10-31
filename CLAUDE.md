@@ -33,7 +33,7 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - `core/` : `ModConstants`, `ModConfig` (options lues en `-D`) et `registry/` : registres (`Registry.register` dans des
   champs `static final`), un par type (blocs, items, block entities, entities, composants, sons, onglet créatif,
   payloads). Le bloc portail n'a pas d'item : la baguette le pose.
-- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), garde d'une arrivée au sol, arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/systemes/PORTAILS.md` avant d'y toucher.
+- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/systemes/PORTAILS.md` avant d'y toucher.
 - `core/perf/` : moniteur de performance opt-in.
 - `core/audio/` : moteur audio maison (`docs/systemes/AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
 - `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
@@ -363,12 +363,20 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   blocs puis joue un son attend que le client ait les blocs. Une image capturée attend le processeur graphique : les
   temps d'image d'un relevé avec captures ne valent que pour comparer. Pour le vrai temps, un relevé sans captures ; JFR
   y nomme `main` le fil de rendu (renommé après son départ), et son échantillonnage ne suffit pas à expliquer une image
-  longue isolée. Le délai de libération d'un monde distant y vaut 5 s
+  longue isolée. JFR n'échantillonne que le Java : le temps passé dans le pilote graphique (l'essentiel d'une vue de
+  portail) n'y paraît pas. Pour la mémoire, `ThreadMXBean.getThreadAllocatedBytes` du fil de rendu entre deux images
+  mesure exactement ; `CubicSampler.sampleColor` (ciel, brouillard) créait les deux tiers de ce qu'il alloue
+  (`BiomeColors`). Le délai de libération d'un monde distant y vaut 5 s
   (`remoteWorldReleaseSeconds`), et après le dernier test le client quitte le monde : la fin de partie est un test
   (`end_of_game`). Une règle de rendu ou d'audio qu'aucune image ne montre se lit dans l'état (uniforme, sampler,
-  `alGetSourcef`, diagnostic `AcousticRouter.describe`), jamais à l'œil. Le secours du serveur compare la position d'un
+  `alGetSourcef`, diagnostic `AcousticRouter.describe`), jamais à l'œil. Gradle tient `runClientTest` pour à jour si
+  rien n'a changé : `--rerun` (sur la tâche) pour le rejouer, sous charge par exemple. L'image la plus longue d'un relevé
+  est presque toujours un passage du ramasse-miettes : comparer des variantes au 99e centile, sur plusieurs passages. Le
+  secours du serveur compare la position d'un
   joueur d'un tick à l'autre (`TeleportExecutor.processPlayer`) : une téléportation de moins de 8 blocs qui coupe un
   cadre est une traversée. Un joueur neuf apparaît au hasard dans `spawnRadius` : le monde des tests du client le met à 0.
+  En vol créatif, vanilla élargit le champ de vision de 10 % (`getFovMultiplier`) : un test qui recalcule la projection
+  de l'image (`getBasicProjectionMatrix`) coupe `fovEffectScale` le temps de ses mesures.
 - Tests en jeu : `GameTestPlayers.sent` consomme ce qu'il rend. Une attente puis une vérification qui lisent le même
   type doivent accumuler ce qu'elles lisent, sinon la vérification ne voit plus ce que l'attente a déjà lu (et un envoi
   fautif passe inaperçu).
@@ -385,7 +393,12 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   entre dans un bloc qu'il voit (ramené en arrière) : un bloc caché au client doit l'être au serveur, et encore un peu
   après le plan (l'engagement retenu de `PortalCollision.tunnel`), sinon le pas qui passe le plan est refusé.
   L'étouffement (`Entity.isInsideWall`) et le voile de mur à l'écran (`InGameOverlayRenderer.getInWallBlockState`, huit
-  points autour des yeux) se décident chacun de leur côté.
+  points autour des yeux) se décident chacun de leur côté. Une entité dont la traversée serait refusée (cooldown de portail)
+  ne doit pas s'engager : la trappe ouverte, elle passerait sous le plan sans traverser.
+- Effets d'une action : vanilla envoie le son d'un bloc posé et l'évènement d'un bloc cassé aux joueurs proches sauf à
+  leur auteur (`except` de `PlayerManager.sendToAround`), dont le client les a joués en prédisant l'action. Une action à
+  travers un cadre n'est pas prédite : `RemoteInteractionHandler.sendWithheld` les lui envoie (même monde seulement ; vers
+  une autre dimension, le relais le sert).
 - Cadre double face : passé le plan de la face avant, on est devant la face arrière (même centre, normale opposée) ;
   « le portail où l'entity est engagée » doit exclure la face arrière de celui qu'elle traverse, qui cache le côté d'où
   elle vient. La caméra ne passe jamais le plan avant la bascule : un œil dans un bloc caché derrière le plan y lit une
@@ -397,7 +410,10 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 - Pack de shaders et main : le pack dessine la main à sa vraie profondeur, et le plan d'un cadre à moins d'un demi-bloc
   de la caméra la bat ; une vue dessinée après l'image la recouvrait (`HandMask` marque ses pixels dans le stencil).
   Sans pack, la main se dessine après les vues mais ses pixels gardaient les bits de look du cadre derrière elle, et le
-  post de ce look y dessinait la silhouette du cadre : `HandMask` y écrit les bits de look du monde du joueur. Les tests
+  post de ce look y dessinait la silhouette du cadre : `HandMask` y écrit les bits de look du monde du joueur. Même
+  piège pour tout ce qui se dessine après les vues sans être de la vue : les moitiés d'entités à cheval sur un cadre
+  (`renderMainWorldParts`, le rouge d'un cochon frappé contre un cadre éclairci devant la vue) prennent elles aussi le
+  look du monde du joueur. Les tests
   du client cachent l'interface, main comprise (`hudHidden`) : un test qui veut la main l'affiche le temps de sa mesure,
   et relit le stencil entre deux images (`ClientTestStencil`).
 - Code commun mesuré : pas de branche sur `world.isClient()` (le serveur de test n'a pas de client, la branche client

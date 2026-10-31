@@ -8,8 +8,11 @@ import net.minecraft.block.BlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.Saddleable;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemUsageContext;
+import net.minecraft.network.packet.Packet;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
@@ -22,6 +25,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 import net.minecraft.world.entity.EntityChangeListener;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -42,6 +46,10 @@ import com.gtgpuke.gtgsbackrooms.mixin.EntityAccessor;
  * ressort. L'action vanilla s'execute alors avec le joueur transpose de l'autre cote le temps de l'appel :
  * position et regard dans la dimension d'arrivee, sans que le gestionnaire d'entities ne le voie bouger,
  * pour que recul, orientation de pose et portee se calculent comme s'il etait sur place.
+ *
+ * <p>Vanilla n'envoie pas a l'auteur d'une action les sons et les effets qu'elle produit (bloc pose, bloc casse) : son
+ * client les a deja joues en la predisant. A travers un cadre, rien n'est predit : ils lui parviennent quand meme
+ * ({@link #sendWithheld}).
  */
 public final class RemoteInteractionHandler {
 
@@ -51,6 +59,8 @@ public final class RemoteInteractionHandler {
     private static final float STRONG_ATTACK_THRESHOLD = 0.9f;
     private static final Hand[] HANDS = Hand.values();
     private static boolean initialized;
+    /** Joueur dont une action a travers un cadre s'execute en ce moment, ou {@code null}. */
+    private static @Nullable ServerPlayerEntity actor;
 
     /** Portail valide devant le joueur, dimension d'arrivee et point d'ou son regard ressort. */
     record RemoteReach(BackroomsPortalEntity portal, ServerWorld destination, Vec3d transposedEye) {
@@ -88,6 +98,32 @@ public final class RemoteInteractionHandler {
         ServerPlayNetworking.registerGlobalReceiver(PortalBlockActionPayload.ID, (payload, context) -> onBlockAction(context.player(), payload));
         RemoteMiningTracker.init();
         initialized = true;
+    }
+
+    /**
+     * Envoi vanilla aux joueurs proches dont l'auteur d'une action est exclu ({@code PlayerManager.sendToAround}) : s'il
+     * agit en ce moment a travers un cadre de son propre monde, l'envoi part aussi a lui, que son client n'a rien predit.
+     * Vers une autre dimension, il n'est pas dans ce monde : le relais aux joueurs qui le voient par un portail le sert
+     * ({@code PortalViewTracker.relayToViewers}). Appele par le mixin de {@code PlayerManager}.
+     *
+     * @param except joueur que vanilla exclut de l'envoi, ou {@code null}
+     * @param worldKey dimension de l'envoi
+     * @param packet son, evenement de monde ou particules
+     */
+    public static void sendWithheld(@Nullable PlayerEntity except, RegistryKey<World> worldKey, Packet<?> packet) {
+        if (except != null && except == actor && except.getWorld().getRegistryKey() == worldKey) {
+            actor.networkHandler.sendPacket(packet);
+        }
+    }
+
+    /** Execute une action du joueur a travers un cadre : ce que vanilla lui retient lui parvient ({@link #sendWithheld}). */
+    static void actThroughFrame(ServerPlayerEntity player, Runnable action) {
+        actor = player;
+        try {
+            action.run();
+        } finally {
+            actor = null;
+        }
     }
 
     /**
@@ -257,7 +293,7 @@ public final class RemoteInteractionHandler {
             player.setPitch(look.y);
             player.setHeadYaw(look.x);
             player.setBodyYaw(look.x);
-            action.run();
+            actThroughFrame(player, action);
         } finally {
             player.setPosition(position);
             player.setYaw(yaw);

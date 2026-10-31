@@ -46,13 +46,16 @@ import net.minecraft.client.world.ClientChunkManager;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.BlockBreakingInfo;
+import net.minecraft.util.Util;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.ChunkSectionPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.BlockView;
+import net.minecraft.world.chunk.WorldChunk;
 
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.BackroomsPortalBlock;
@@ -99,14 +102,28 @@ public final class RemoteViewRenderer {
      * l'arrivee se construisent alors d'avance ({@link #prebuildArrival}).
      */
     public static final double PREBUILD_DISTANCE = 8.0;
-    /** Sections construites d'avance autour de l'arrivee : rayon horizontal, en sections. */
+    /** Sections construites d'avance tout autour de l'arrivee : rayon horizontal, en sections ; au-dela, devant la sortie. */
     private static final int PREBUILD_RADIUS = 4;
-    /** Sections construites d'avance autour de l'arrivee : de part et d'autre de celle de l'arrivee, en hauteur. */
+    /** Sections construites d'avance sous celle de l'arrivee, et au moins autant au-dessus. */
     private static final int PREBUILD_HEIGHT = 2;
-    /** Constructions demandees d'avance au plus par image : la file du chunk builder reste courte. */
-    private static final int PREBUILD_PER_FRAME = 8;
+    /**
+     * Constructions demandees d'avance au plus par image : la file du chunk builder reste courte, et un client a peu
+     * d'images par seconde (machine chargee, rendu logiciel) prepare quand meme l'arrivee pendant son approche.
+     */
+    private static final int PREBUILD_PER_FRAME = 32;
     /** Position de la section examinee par la construction d'avance (fil de rendu seulement). */
     private static final BlockPos.Mutable PREBUILD_CURSOR = new BlockPos.Mutable();
+    /**
+     * Millisecondes pendant lesquelles un renderer garde les tampons de construction du joueur apres sa derniere
+     * construction d'avance : qui tourne autour de la distance d'un cadre ne les fait pas allouer et fermer sans cesse.
+     */
+    private static final long PREBUILD_HOLD_MS = 5_000L;
+    /**
+     * Repos de la construction d'avance, en millisecondes, apres un parcours qui n'a plus rien trouve a construire : sans
+     * lui, le parcours des colonnes jusqu'a la distance de vue se refait a chaque image pres d'un cadre, pour rien. En
+     * millisecondes et non en images : un client a peu d'images par seconde reprend aussi vite les chunks qui arrivent.
+     */
+    private static final long PREBUILD_REST_MS = 100L;
     /**
      * La grille de sections d'un renderer ne se recentre que si l'ancrage s'eloigne de plus de ce nombre de chunks de
      * son centre : deux portails voisins vers la meme dimension, ou le retour juste apres une traversee, la partagent
@@ -171,6 +188,10 @@ public final class RemoteViewRenderer {
     private final CoarseTerrain coarse;
     /** Palier de la vue en cours de dessin : {@code true} si elle est allegee (ni meteo ni particules, entities figees). */
     private boolean reduced;
+    /** Heure de la derniere construction d'avance de l'arrivee ({@link #prebuildArrival}), en millisecondes. */
+    private long lastPrebuildMs = Long.MIN_VALUE / 2;
+    /** Heure jusqu'a laquelle la construction d'avance se repose, rien n'y restant a construire. */
+    private long prebuildRestUntilMs = Long.MIN_VALUE / 2;
     /** Brouillard du ciel, passe au rendu du ciel : cree une fois, il lit la camera et l'instant poses avant chaque dessin. */
     private final Runnable skyFog = this::applySkyFog;
     /** Camera et fraction de tick du ciel en cours de dessin, lues par {@link #skyFog}. */
@@ -731,10 +752,13 @@ public final class RemoteViewRenderer {
 
     /**
      * Le joueur approche du cadre d'un portail vers une autre dimension : il peut passer, et ce renderer deviendrait le
-     * sien. La vue ne construit que les sections que montre le cadre ; celles qui entourent l'arrivee, dans tous les sens,
-     * se construisent ici d'avance, les plus proches d'abord, quelques-unes par image. Sans cela, ce qui entoure le joueur
-     * apres la traversee apparaitrait section par section, et derriere lui s'il se retourne. Une section ne se construit
-     * que dans un chunk charge entoure de ses quatre voisins : les chunks d'un monde distant arrivent avec leur lumiere
+     * sien. La vue ne construit que les sections que montre le cadre ; celles qui entourent l'arrivee se construisent ici
+     * d'avance, les plus proches d'abord, quelques-unes par image : tout autour sur {@link #PREBUILD_RADIUS} sections (ce
+     * que le joueur voit en se retournant), puis devant la sortie jusqu'a sa distance de vue (ce qu'il voit en sortant). En
+     * hauteur, de {@link #PREBUILD_HEIGHT} sections sous l'arrivee jusqu'a la plus haute section non vide de la colonne
+     * (une colline, une montagne au loin). Sans cela, ce qui entoure le joueur apres la traversee apparaitrait section par
+     * section. Une section vide ne dessine rien : elle ne se construit pas d'avance. Une section ne se construit que dans
+     * un chunk charge entoure de ses quatre voisins : les chunks d'un monde distant arrivent avec leur lumiere
      * ({@link RemoteWorld#loadChunk}). Le tampon de regions du chunk builder ne s'alloue que s'il y a une section a
      * construire, comme a chaque {@code updateChunks} de vanilla.
      */
@@ -747,20 +771,35 @@ public final class RemoteViewRenderer {
                 || portal.squaredDistanceToFrame(player.getX(), player.getEyeY(), player.getZ()) > PREBUILD_DISTANCE * PREBUILD_DISTANCE) {
             return;
         }
+        long now = Util.getMeasuringTimeMs();
+        this.lastPrebuildMs = now;
+        if (now < this.prebuildRestUntilMs) {
+            return;
+        }
         Vec3d arrival = portal.destinationPos();
         int centerX = ChunkSectionPos.getSectionCoord(arrival.x);
         int centerY = ChunkSectionPos.getSectionCoord(arrival.y);
         int centerZ = ChunkSectionPos.getSectionCoord(arrival.z);
+        Direction out = portal.facingDestination().direction;
+        int reach = Math.max(PREBUILD_RADIUS, client.options.getClampedViewDistance());
         ChunkRendererRegionBuilder regions = null;
         int budget = PREBUILD_PER_FRAME;
-        for (int ring = 0; ring <= PREBUILD_RADIUS && budget > 0; ring++) {
+        for (int ring = 0; ring <= reach && budget > 0; ring++) {
             for (int dx = -ring; dx <= ring && budget > 0; dx++) {
                 for (int dz = -ring; dz <= ring && budget > 0; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != ring || !columnReady(centerX + dx, centerZ + dz)) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != ring || ring > PREBUILD_RADIUS && dx * out.getOffsetX() + dz * out.getOffsetZ() < 0
+                            || !columnReady(centerX + dx, centerZ + dz)) {
                         continue;
                     }
-                    for (int dy = -PREBUILD_HEIGHT; dy <= PREBUILD_HEIGHT && budget > 0; dy++) {
-                        PREBUILD_CURSOR.set(ChunkSectionPos.getBlockCoord(centerX + dx), ChunkSectionPos.getBlockCoord(centerY + dy),
+                    WorldChunk chunk = this.world.getChunkManager().getWorldChunk(centerX + dx, centerZ + dz);
+                    int bottom = Math.max(centerY - PREBUILD_HEIGHT, this.world.getBottomSectionCoord());
+                    int top = Math.min(Math.max(centerY + PREBUILD_HEIGHT, chunk.sectionIndexToCoord(chunk.getHighestNonEmptySection())),
+                            this.world.getTopSectionCoord() - 1);
+                    for (int sectionY = bottom; sectionY <= top && budget > 0; sectionY++) {
+                        if (chunk.getSection(chunk.sectionCoordToIndex(sectionY)).isEmpty()) {
+                            continue;
+                        }
+                        PREBUILD_CURSOR.set(ChunkSectionPos.getBlockCoord(centerX + dx), ChunkSectionPos.getBlockCoord(sectionY),
                                 ChunkSectionPos.getBlockCoord(centerZ + dz));
                         ChunkBuilder.BuiltChunk section = ((BuiltChunkStorageAccessor) chunks).backrooms$getRenderedChunk(PREBUILD_CURSOR);
                         // La grille boucle : la section rangee a cette place peut en couvrir une autre.
@@ -777,6 +816,19 @@ public final class RemoteViewRenderer {
                 }
             }
         }
+        if (budget == PREBUILD_PER_FRAME) {
+            // Tout ce qui peut se construire l'est : le parcours se repose un instant.
+            this.prebuildRestUntilMs = now + PREBUILD_REST_MS;
+        }
+    }
+
+    /**
+     * {@code true} si ce renderer construit d'avance l'arrivee d'un cadre que le joueur peut passer, ou l'a fait il y a peu
+     * ({@link #PREBUILD_HOLD_MS}) : il deviendra peut-etre le sien, et construit alors au rythme de celui du joueur
+     * ({@link BuildBuffers}).
+     */
+    boolean prebuilding() {
+        return Util.getMeasuringTimeMs() - this.lastPrebuildMs < PREBUILD_HOLD_MS;
     }
 
     /** {@code true} si le chunk de cette colonne et ses quatre voisins sont charges : ses sections peuvent se construire. */

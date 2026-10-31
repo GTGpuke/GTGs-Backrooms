@@ -148,8 +148,15 @@ final class RemoteMiningTracker {
         PortalNetwork.send(player, new RemoteBlockBreakingPayload(mining.dimension.getValue(), mining.pos, stage));
     }
 
-    /** Casse un bloc comme {@code ServerPlayerInteractionManager.tryBreakBlock}, evenements Fabric compris. */
+    /**
+     * Casse un bloc comme {@code ServerPlayerInteractionManager.tryBreakBlock}, evenements Fabric compris ; le son et les
+     * eclats de la casse parviennent au mineur ({@link RemoteInteractionHandler#actThroughFrame}).
+     */
     static void breakBlock(ServerPlayerEntity player, ServerWorld world, BlockPos pos) {
+        RemoteInteractionHandler.actThroughFrame(player, () -> tryBreakBlock(player, world, pos));
+    }
+
+    private static void tryBreakBlock(ServerPlayerEntity player, ServerWorld world, BlockPos pos) {
         BlockState state = world.getBlockState(pos);
         if (!player.getMainHandStack().getItem().canMine(state, world, pos, player)) {
             return;

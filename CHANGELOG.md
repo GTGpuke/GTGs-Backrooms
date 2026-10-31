@@ -83,13 +83,30 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   son-image. Le résumé montre les huit sections les plus longues au lieu de cinq.
 - **Commande `/backrooms_state`** : côté client, écrit l'état de l'image au journal.
 - **Tests du client** : un vrai client, fenêtre cachée, joue des scénarios pas à pas (`./gradlew runClientTest`), dans
-  `build` et en CI. Toute erreur OpenGL fait échouer le test. Treize scénarios et une vérification de fin de partie
+  `build` et en CI. Toute erreur OpenGL fait échouer le test. Vingt-six scénarios et une vérification de fin de partie
   ([tests](docs/dev/TESTS.md)).
 - **Couverture de tout le code** : `./gradlew jacocoAllReport` mesure aussi les parties exclues du verrou à 100 %.
 - **Arrivées de référence** : huit tests en jeu figent l'arrivée calculée par la 0.10.0. Un changement de la recherche
   d'arrivée qui en modifie une fait échouer le build.
+- **Affichage de chaque orientation de cadre verrouillé** : pour un cadre debout, au sol et au plafond, à ras ou au
+  milieu du bloc, vers chaque sortie, vu de face, de biais, de près, de loin et de dos, puis pour son arrivée vue du
+  Level 0, les pixels qui montrent l'autre monde doivent couvrir exactement l'ouverture projetée à l'écran. Un cadre
+  qui montre le bloc du dessous ou le mur derrière lui fait échouer le build ([tests](docs/dev/TESTS.md)).
+- **Créatures qui traversent sans à-coup** : un corps qui passe un cadre vers le Level 0 à vitesse constante ne doit
+  ni s'arrêter ni sauter à l'écran.
 
 ### Changed
+- **Deux tiers d'allocations en moins par image** : la couleur du ciel et du brouillard des biomes se calcule sans les
+  huit cents vecteurs par appel de vanilla, à chaque image et à chaque vue de portail, avec le même résultat au bit près.
+  Le fil de rendu passe de 83 à 33 Kio alloués par image sans portail, de 139 à 46 avec un portail en vue ; le
+  ramasse-miettes passe moins souvent.
+- **Construction d'avance au repos** : près d'un cadre, le parcours des sections de l'arrivée ne se refait plus à chaque
+  image une fois tout construit.
+- **Arrivée au sol sans pose** : qui sort d'un cadre d'arrivée couché au sol ne s'y pose plus une seconde. Il y retombe
+  aussitôt et repart par le retour, même avec un bloc sous le cadre ([portails](docs/systemes/PORTAILS.md)).
+- **Poussée à la sortie d'un cadre au sol** : entré en marchant par un cadre debout, le joueur est poussé dans le sens de
+  son regard et retombe devant le cadre d'arrivée, au lieu de retomber dedans. Un petit saut s'ajoute quand il en sort
+  loin du bord.
 - **Vue imbriquée vers un troisième monde** : un portail vu à travers un autre montre son monde d'arrivée au lieu de
   rester sombre et muet.
 - **Pack de shaders reconnu sans API tierce** : le mod reconnaît un pack actif à ses programmes de rendu, et non plus
@@ -113,12 +130,17 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   passe à la racine du dépôt, et le workflow de release le lit là.
 
 ### Removed
+- **Garde d'arrivée au sol** (`ArrivalGuard`) : remplacée par le retour aussitôt par le cadre.
 - **Recherche d'arrivée synchrone** : elle générait les chunks sur le thread serveur et ne servait plus qu'aux tests.
   Seule reste la recherche chunk par chunk, sous le nom `PortalTargets.resolve`.
 - **Audit d'octobre et bilan de revue** (`docs/AUDIT.md`, `docs/revue/`) : leurs décisions encore valables sont dans
   [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ### Fixed
+- **Silhouette du cadre sur une créature qui le touche** : un cochon frappé contre un cadre montrait le contour du
+  portail sur son modèle. Une entité à cheval sur un cadre se dessine après les vues, et ses pixels gardaient le look de
+  la dimension que montre le cadre. Le post-traitement de ce look éclaircissait alors le rouge du coup sur la partie
+  devant la vue. Ses pixels prennent maintenant le look du monde du joueur, comme la main ([rendu](docs/systemes/RENDU.md)).
 - **Traversée vers une autre dimension sans chunks qui se rechargent** : l'arrivée se reconstruisait sous les yeux du
   joueur. Vanilla lui renvoyait des centaines de chunks qu'il avait déjà, une seconde fois quand ils devenaient actifs
   dans un monde déjà visité, et l'anneau au bord de sa vue manquait. Près d'un cadre, l'arrivée part maintenant jusqu'à
@@ -128,6 +150,15 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   cadre, même pour un cadre qu'on passe sans le regarder. Le monde d'arrivée se construit ensuite avec autant de
   tampons que vanilla, et non les deux d'une vue. L'index des néons relève une rafale de chunks en plusieurs ticks au lieu
   d'une image de 9 ms.
+- **Scintillement à la traversée vers une autre dimension** : qui passait le cadre sans s'arrêter, ou sur une machine
+  chargée, voyait des chunks arriver et des sections lointaines se construire juste après la bascule. Près d'un cadre,
+  le serveur envoie maintenant la fenêtre de l'arrivée trois fois plus vite, et la vue construit d'avance tout ce qui est
+  devant la sortie jusqu'à la distance de vue, avec autant de tampons de construction que le renderer du joueur.
+- **Son et éclats d'un bloc cassé ou posé à travers un cadre vers le même monde** : vanilla ne les envoie pas à celui
+  qui agit, dont le client les joue d'habitude en prédisant l'action ; à travers un cadre, rien n'est prédit, et il ne
+  voyait ni n'entendait rien. Ils lui parviennent maintenant.
+- **Entité qui retombe dans un cadre pendant son cooldown** : la trappe s'ouvrait sous elle alors que sa traversée était
+  refusée, et elle passait sous le plan. Elle s'y tient maintenant jusqu'à la fin du délai.
 - **Silhouette d'un cadre sur la main** : en première personne, devant un portail, la partie de la main qui couvrait
   le cadre prenait le post-traitement du monde qu'il montre (vignette, bloom). La main garde maintenant le look de son
   monde.
