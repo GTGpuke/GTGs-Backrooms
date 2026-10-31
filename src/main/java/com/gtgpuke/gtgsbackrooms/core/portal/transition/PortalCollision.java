@@ -347,7 +347,7 @@ public final class PortalCollision {
 
     /**
      * Ouverture du cadre fermee, du plan a {@value #CLOSED_DEPTH} bloc derriere : la paroi sur laquelle bute qui ne traverse
-     * pas correctement ({@link #walls}).
+     * pas correctement ou ne peut pas traverser encore ({@link #walls}).
      */
     static Box closedOpening(BackroomsPortalEntity portal) {
         PortalFacing facing = portal.facingSource();
@@ -360,27 +360,38 @@ public final class PortalCollision {
 
     /**
      * L'entity a son point de traversee (les yeux pour un joueur ou un cadre couche, les pieds sinon) devant le plan d'un
-     * portail ouvert, en face de l'ouverture, et sa boite deplacee touche le cadre. Une entity dont le cooldown de portail
-     * court ne s'engage dans aucun cadre : elle ne pourrait pas le traverser, et passerait sous le plan d'un cadre au sol
-     * (celui d'ou elle vient de sortir, retombee dedans aussitot) sans traverser.
+     * portail ouvert, en face de l'ouverture, et sa boite deplacee touche le cadre. Une entity a qui la traversee est
+     * refusee ({@link #crossingRefused}) ne s'engage dans aucun cadre : elle passerait sous le plan sans traverser.
      */
     static boolean engages(BackroomsPortalEntity portal, Entity entity, Box movingBox) {
         return portal.teleportable()
-                && !entity.hasPortalCooldown()
+                && !crossingRefused(entity)
                 && portal.crossingPointFaces(entity, entity.getX(), entity.getY(), entity.getZ())
                 && portal.detectionBox().intersects(movingBox);
     }
 
     /**
-     * L'entity a son point de traversee devant le plan d'un portail ouvert, mais hors de son ouverture (sur un bord), et sa
-     * boite deplacee touche le cadre : elle ne peut pas le traverser correctement, et le plan l'arrete.
+     * L'entity a son point de traversee devant le plan d'un portail ouvert, hors de son ouverture (sur un bord) ou dedans
+     * alors que la traversee lui est refusee ({@link #crossingRefused}), et sa boite deplacee touche le cadre : elle ne
+     * peut pas le traverser, et le plan l'arrete. Retombee sur un cadre au sol pendant son cooldown, meme en l'air, elle
+     * s'y tient jusqu'a la fin du delai.
      */
     static boolean walls(BackroomsPortalEntity portal, Entity entity, Box movingBox) {
         double y = entity.getY() + portal.crossingHeight(entity);
         return portal.teleportable()
                 && portal.signedDistance(entity.getX(), y, entity.getZ()) > 0.0
-                && !portal.withinOpening(entity, entity.getX(), y, entity.getZ())
+                && (!portal.withinOpening(entity, entity.getX(), y, entity.getZ()) || crossingRefused(entity))
                 && portal.detectionBox().intersects(movingBox);
+    }
+
+    /**
+     * {@code true} si le cooldown de portail vanilla de l'entity court : aucun cadre ne la fait traverser
+     * ({@code TeleportExecutor}). Celui d'un joueur ne compte pas : vanilla le pose apres un portail du Nether sans
+     * l'envoyer au client, et le serveur refuserait les pas que le client fait dans un cadre ; le delai d'un joueur
+     * entre deux traversees est celui du mod.
+     */
+    private static boolean crossingRefused(Entity entity) {
+        return !(entity instanceof PlayerEntity) && entity.hasPortalCooldown();
     }
 
     /** Blocs de l'autre cote que la boite deplacee atteindrait au-dela du plan d'arrivee, ramenes de ce cote. */

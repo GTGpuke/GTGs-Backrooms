@@ -72,12 +72,13 @@ public final class PortalViewTracker {
 
     /** Intervalle de recalcul des fenetres voulues. */
     static final int UPDATE_INTERVAL_TICKS = 5;
-    /** Chunks complets envoyes au plus par joueur et par recalcul, pour lisser la bande passante. */
+    /** Chunks complets envoyes au plus par joueur, par dimension vue et par recalcul, pour lisser la bande passante. */
     static final int MAX_CHUNKS_PER_UPDATE = 8;
     /**
-     * Chunks envoyes au plus par joueur et par tick pres d'un cadre, tant que la fenetre de l'arrivee n'est pas complete : la
-     * distance de vue et son anneau (361 chunks a 8 de vue) partent pendant les quelques secondes qu'il met a atteindre le
-     * plan en marchant, meme si le serveur tique moins vite. Vanilla en envoie jusqu'a 64 par tick a un client qui suit.
+     * Chunks envoyes au plus par joueur, par dimension vue et par recalcul pres d'un cadre, ou le recalcul a lieu a chaque
+     * tick tant que la fenetre de l'arrivee n'est pas complete : la distance de vue et son anneau (361 chunks a 8 de vue)
+     * partent pendant les quelques secondes qu'il met a atteindre le plan en marchant, meme si le serveur tique moins
+     * vite. Vanilla en envoie jusqu'a 64 par tick a un client qui suit.
      */
     static final int NEAR_CHUNKS_PER_TICK = 24;
     /** Delai avant de decharger une dimension dont le joueur n'a plus aucun portail a portee : un pas au-dela ne doit pas tout renvoyer. */

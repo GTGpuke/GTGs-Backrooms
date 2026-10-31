@@ -31,10 +31,11 @@ class BiomeColorSamplingTest {
         return new Vec3d((random.nextDouble() - 0.5) * range, (random.nextDouble() - 0.5) * 128.0, (random.nextDouble() - 0.5) * range);
     }
 
-    private static void assertSame(Vec3d expected, Vec3d actual, String what) {
-        assertEquals(Double.doubleToRawLongBits(expected.x), Double.doubleToRawLongBits(actual.x), what + " : rouge " + expected + " / " + actual);
-        assertEquals(Double.doubleToRawLongBits(expected.y), Double.doubleToRawLongBits(actual.y), what + " : vert " + expected + " / " + actual);
-        assertEquals(Double.doubleToRawLongBits(expected.z), Double.doubleToRawLongBits(actual.z), what + " : bleu " + expected + " / " + actual);
+    /** Les deux couleurs sont les memes au bit pres, composante par composante. */
+    private static void requireSameBits(Vec3d expected, Vec3d actual, String what) {
+        assertEquals(Double.doubleToRawLongBits(expected.x), Double.doubleToRawLongBits(actual.x), what + " : rouge " + expected + " / " + actual + ".");
+        assertEquals(Double.doubleToRawLongBits(expected.y), Double.doubleToRawLongBits(actual.y), what + " : vert " + expected + " / " + actual + ".");
+        assertEquals(Double.doubleToRawLongBits(expected.z), Double.doubleToRawLongBits(actual.z), what + " : bleu " + expected + " / " + actual + ".");
     }
 
     @Test
@@ -47,12 +48,12 @@ class BiomeColorSamplingTest {
         for (int i = 0; i < CASES; i++) {
             Vec3d pos = position(random, i);
             float sun = i % 7 == 0 ? (float) (i % 2) : random.nextFloat();
-            assertSame(CubicSampler.sampleColor(pos, (x, y, z) -> overworld.adjustFogColor(Vec3d.unpackRgb(rgb(x, y, z)), sun)),
+            requireSameBits(CubicSampler.sampleColor(pos, (x, y, z) -> overworld.adjustFogColor(Vec3d.unpackRgb(rgb(x, y, z)), sun)),
                     BiomeColorSampling.sample(pos, BiomeColorSamplingTest::rgb, sun * 0.94F + 0.06F, sun * 0.94F + 0.06F, sun * 0.91F + 0.09F, null),
                     "Overworld en " + pos + ", soleil " + sun);
-            assertSame(CubicSampler.sampleColor(pos, (x, y, z) -> nether.adjustFogColor(Vec3d.unpackRgb(rgb(x, y, z)), sun)),
+            requireSameBits(CubicSampler.sampleColor(pos, (x, y, z) -> nether.adjustFogColor(Vec3d.unpackRgb(rgb(x, y, z)), sun)),
                     BiomeColorSampling.sample(pos, BiomeColorSamplingTest::rgb, 1.0, 1.0, 1.0, null), "Nether en " + pos);
-            assertSame(CubicSampler.sampleColor(pos, (x, y, z) -> end.adjustFogColor(Vec3d.unpackRgb(rgb(x, y, z)), sun)),
+            requireSameBits(CubicSampler.sampleColor(pos, (x, y, z) -> end.adjustFogColor(Vec3d.unpackRgb(rgb(x, y, z)), sun)),
                     BiomeColorSampling.sample(pos, BiomeColorSamplingTest::rgb, 0.15F, 0.15F, 0.15F, null), "End en " + pos);
         }
     }
@@ -64,9 +65,9 @@ class BiomeColorSamplingTest {
         Vec3d fixed = new Vec3d(0.31, 0.27, 0.12);
         for (int i = 0; i < CASES; i++) {
             Vec3d pos = position(random, i);
-            assertSame(CubicSampler.sampleColor(pos, (x, y, z) -> Vec3d.unpackRgb(rgb(x, y, z))),
+            requireSameBits(CubicSampler.sampleColor(pos, (x, y, z) -> Vec3d.unpackRgb(rgb(x, y, z))),
                     BiomeColorSampling.sample(pos, BiomeColorSamplingTest::rgb, 1.0, 1.0, 1.0, null), "Ciel en " + pos);
-            assertSame(CubicSampler.sampleColor(pos, (x, y, z) -> fixed), BiomeColorSampling.sample(pos, BiomeColorSamplingTest::rgb, 1.0, 1.0, 1.0, fixed),
+            requireSameBits(CubicSampler.sampleColor(pos, (x, y, z) -> fixed), BiomeColorSampling.sample(pos, BiomeColorSamplingTest::rgb, 1.0, 1.0, 1.0, fixed),
                     "Couleur imposee en " + pos);
         }
     }

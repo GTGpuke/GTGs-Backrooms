@@ -43,7 +43,7 @@ final class EntityContinuityClientTests {
     private static final double MAX_STEP_RATIO = 4.0;
     /** Pas sous cette part du pas median : la copie semble arretee. */
     private static final double STILL_RATIO = 0.25;
-    /** Plus longue suite d'images ou la copie semble arretee (deux ticks a 120 images par seconde). */
+    /** Plus longue suite d'images ou la copie semble arretee : un peu plus d'un tick a 120 images par seconde. */
     private static final int MAX_STILL_FRAMES = 8;
     private static final int MAX_FRAMES = 4000;
 
@@ -53,9 +53,9 @@ final class EntityContinuityClientTests {
     private static int worldSwitches;
     private static @Nullable Vec3d last;
     private static @Nullable ClientWorld lastWorld;
-    private static @Nullable UUID body;
+    private static volatile @Nullable UUID body;
     private static @Nullable BackroomsPortalEntity frame;
-    private static boolean tracking;
+    private static volatile boolean tracking;
     private static boolean installed;
 
     private EntityContinuityClientTests() {
@@ -152,7 +152,7 @@ final class EntityContinuityClientTests {
             still = step < STILL_RATIO * median ? still + 1 : 0;
             longestStill = Math.max(longestStill, still);
         }
-        ModConstants.LOGGER.info("[Test client] {} : {} images, pas median {}, plus grand {}, arret le plus long {} image(s), {} changement(s) de monde",
+        ModConstants.LOGGER.info("[Test client] {} : {} images, pas median {}, plus grand {}, arret le plus long {} image(s), {} changement(s) de monde.",
                 what, moving.length, String.format(Locale.ROOT, "%.4f", median), String.format(Locale.ROOT, "%.4f", longest), longestStill, worldSwitches);
         ClientTestContext.require(worldSwitches == 1, what + " : la copie a change " + worldSwitches + " fois de monde au lieu d'une.");
         ClientTestContext.require(missingFrames == 0, what + " : la copie a manque " + missingFrames + " image(s).");

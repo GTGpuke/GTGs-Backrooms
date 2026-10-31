@@ -82,7 +82,7 @@ public final class BiomeColorSampling {
                         pointGreen = (rgb >> 8 & 0xFF) / 255.0 * scaleGreen;
                         pointBlue = (rgb & 0xFF) / 255.0 * scaleBlue;
                     }
-                    // vec3d.add(point.multiply(weight)) : le produit d'abord, puis la somme.
+                    // Comme vec3d.add(point.multiply(weight)) : le produit d'abord, puis la somme.
                     red += pointRed * weight;
                     green += pointGreen * weight;
                     blue += pointBlue * weight;

@@ -493,11 +493,12 @@ public final class TeleportExecutor {
         double headingZ = Math.cos(yaw);
         double dx = exit.x - portal.destinationPos().x;
         double dz = exit.z - portal.destinationPos().z;
-        // Distance de la sortie au bord de l'ouverture que vise le regard : le premier des bords de ses deux directions.
-        double toEdge = Math.min(
-                toEdge(dx * arrival.axisW.x + dz * arrival.axisW.z, headingX * arrival.axisW.x + headingZ * arrival.axisW.z, portal.width() / 2.0),
-                toEdge(dx * arrival.axisH.x + dz * arrival.axisH.z, headingX * arrival.axisH.x + headingZ * arrival.axisH.z, portal.height() / 2.0));
-        double distance = toEdge + width / 2.0 + EDGE_CLEARANCE;
+        // Distance, le long du regard, de la sortie a la ligne ou le corps est tout entier au-dela du bord vise : le bord de
+        // chaque direction du cadre recule de la demi-largeur du corps et d'une marge, et le premier atteint compte.
+        double beyond = width / 2.0 + EDGE_CLEARANCE;
+        double distance = Math.min(
+                toEdge(dx * arrival.axisW.x + dz * arrival.axisW.z, headingX * arrival.axisW.x + headingZ * arrival.axisW.z, portal.width() / 2.0 + beyond),
+                toEdge(dx * arrival.axisH.x + dz * arrival.axisH.z, headingX * arrival.axisH.x + headingZ * arrival.axisH.z, portal.height() / 2.0 + beyond));
         double rise = velocity.y;
         double push = pushOver(distance, rise);
         // Trop loin pour la poussee la plus forte : un petit saut allonge le temps en l'air.
@@ -526,8 +527,9 @@ public final class TeleportExecutor {
     }
 
     /**
-     * Distance, le long d'une direction du cadre, du point {@code offset} au bord de l'ouverture vers lequel va
-     * {@code direction} (composante unitaire du regard sur cette direction) ; infinie si le regard lui est perpendiculaire.
+     * Distance, le long du regard, du point {@code offset} (sa coordonnee sur une direction du cadre) a la limite a
+     * {@code half} du centre vers laquelle va {@code direction} (composante unitaire du regard sur cette direction) ;
+     * infinie si le regard lui est perpendiculaire.
      */
     private static double toEdge(double offset, double direction, double half) {
         return (half - offset * Math.signum(direction)) / Math.abs(direction);

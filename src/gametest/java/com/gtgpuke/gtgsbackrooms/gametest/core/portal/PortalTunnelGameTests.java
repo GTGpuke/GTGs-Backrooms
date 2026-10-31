@@ -1,13 +1,14 @@
 package com.gtgpuke.gtgsbackrooms.gametest.core.portal;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 import com.mojang.authlib.GameProfile;
-import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.decoration.ArmorStandEntity;
@@ -17,6 +18,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.test.AfterBatch;
 import net.minecraft.test.GameTest;
 import net.minecraft.test.TestContext;
 import net.minecraft.util.math.BlockPos;
@@ -53,6 +55,15 @@ public final class PortalTunnelGameTests implements FabricGameTest {
     private static final double RISE_MARGIN = 0.05;
     /** Vitesse des objets qui filent vers un mur, en blocs par tick. */
     private static final double ITEM_SPEED = 0.3;
+    /** Largeur d'un joueur, et trajet vanilla d'un corps en l'air : freinage horizontal, gravite, freinage vertical. */
+    private static final double PLAYER_WIDTH = 0.6;
+    private static final double AIR_DRAG = 0.91;
+    private static final double GRAVITY = 0.08;
+    private static final double VERTICAL_DRAG = 0.98;
+    /** Lot des arrivees au sol : leurs attentes peuvent expirer avant le nettoyage de leur derniere tache. */
+    private static final String FLOOR_ARRIVAL_BATCH = "portal_floor_arrival";
+    /** Portails et corps poses par ce lot, retires apres lui, qu'il ait reussi ou non. */
+    private static final List<Entity> FLOOR_ARRIVAL_LEFTOVERS = new ArrayList<>();
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 100)
     public void aFloorFrameOnSolidGroundOpensUnderAFallingBodyAndKeepsItsSpeed(TestContext context) {
@@ -243,7 +254,14 @@ public final class PortalTunnelGameTests implements FabricGameTest {
                 .completeIfSuccessful();
     }
 
-    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400)
+    /** Apres le lot des arrivees au sol, reussi ou non : plus de portail ni de corps poses par lui. */
+    @AfterBatch(batchId = FLOOR_ARRIVAL_BATCH)
+    public void afterFloorArrival(ServerWorld world) {
+        FLOOR_ARRIVAL_LEFTOVERS.forEach(Entity::discard);
+        FLOOR_ARRIVAL_LEFTOVERS.clear();
+    }
+
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400, batchId = FLOOR_ARRIVAL_BATCH)
     public void whoComesOutOfAnArrivalFloorFrameFallsBackAtOnce(TestContext context) {
         ServerWorld world = context.getWorld();
         fill(context, new BlockPos(2, 0, 2), new BlockPos(8, 0, 5), Blocks.STONE);
@@ -253,6 +271,7 @@ public final class PortalTunnelGameTests implements FabricGameTest {
         BackroomsPortalEntity toB = spawn(world, a, PortalFacing.UP, PortalFacing.UP, b);
         BackroomsPortalEntity toA = spawn(world, b, PortalFacing.UP, PortalFacing.UP, a);
         ArmorStandEntity body = stand(world, a.add(0.0, 3.0, 0.0), true);
+        FLOOR_ARRIVAL_LEFTOVERS.addAll(List.of(toB, toA, body));
         boolean[] restedOnA = {false};
         context.createTimedTaskRunner()
                 // Tombe dans A, il ressort de B vers le haut, retombe dans B (en l'air) et ressort de A.
@@ -276,7 +295,7 @@ public final class PortalTunnelGameTests implements FabricGameTest {
                 .completeIfSuccessful();
     }
 
-    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400)
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400, batchId = FLOOR_ARRIVAL_BATCH)
     public void aSlowBodyFallingBackIntoAnArrivalFloorFrameDoesNotSinkIntoTheGround(TestContext context) {
         ServerWorld world = context.getWorld();
         fill(context, new BlockPos(2, 0, 2), new BlockPos(16, 0, 5), Blocks.STONE);
@@ -291,6 +310,7 @@ public final class PortalTunnelGameTests implements FabricGameTest {
         body.setPickupDelayInfinite();
         body.setVelocity(0.0, -0.1, 0.0);
         world.spawnEntity(body);
+        FLOOR_ARRIVAL_LEFTOVERS.addAll(List.of(toC, toA, body));
         boolean[] sunk = {false};
         context.createTimedTaskRunner()
                 .createAndAdd(() -> context.assertTrue(Math.abs(body.getX() - c.x) < 0.5, "Pas encore ressorti de C."))
@@ -310,6 +330,72 @@ public final class PortalTunnelGameTests implements FabricGameTest {
                     }
                 })
                 .completeIfSuccessful();
+    }
+
+    /**
+     * Comme le precedent, le cadre d'arrivee en l'air : rien sous lui ne porte le corps retombe pendant son cooldown. Son
+     * ouverture fermee le porte jusqu'a la fin du delai, puis il y tombe et repart par l'autre cadre.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 400, batchId = FLOOR_ARRIVAL_BATCH)
+    public void aSlowBodyFallingBackIntoAnArrivalFloorFrameInTheAirStandsOnIt(TestContext context) {
+        ServerWorld world = context.getWorld();
+        fill(context, new BlockPos(2, 0, 2), new BlockPos(6, 0, 5), Blocks.STONE);
+        // A a ras de la pierre, C en l'air, trois blocs au-dessus du sol de l'arene.
+        Vec3d a = context.getAbsolute(new Vec3d(4.5, 1.0, 4.0));
+        Vec3d c = context.getAbsolute(new Vec3d(14.5, 3.0, 4.0));
+        BackroomsPortalEntity toC = spawn(world, a, PortalFacing.UP, PortalFacing.UP, c);
+        BackroomsPortalEntity toA = spawn(world, c, PortalFacing.UP, PortalFacing.UP, a);
+        ItemEntity body = new ItemEntity(world, a.x, a.y + 0.05, a.z, new ItemStack(Items.DIAMOND));
+        body.setPickupDelayInfinite();
+        body.setVelocity(0.0, -0.1, 0.0);
+        world.spawnEntity(body);
+        FLOOR_ARRIVAL_LEFTOVERS.addAll(List.of(toC, toA, body));
+        boolean[] sunk = {false};
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> context.assertTrue(Math.abs(body.getX() - c.x) < 0.5, "Pas encore ressorti de C."))
+                .createAndAdd(() -> {
+                    sunk[0] |= Math.abs(body.getX() - c.x) < 0.5 && body.getEyeY() < c.y - 0.3;
+                    context.assertTrue(Math.abs(body.getX() - a.x) < 0.5, "Sorti de C, il n'y est pas encore retombe : " + body.getPos() + ".");
+                })
+                .createAndAddReported(() -> {
+                    try {
+                        context.assertTrue(!sunk[0], "Retombe dans C, en l'air, pendant son cooldown, il est passe sous le plan sans traverser.");
+                    } finally {
+                        body.discard();
+                        toA.discard();
+                        toC.discard();
+                        fill(context, new BlockPos(2, 0, 2), new BlockPos(6, 0, 5), Blocks.AIR);
+                    }
+                })
+                .completeIfSuccessful();
+    }
+
+    /**
+     * Le cooldown de portail vanilla d'un joueur, pose apres un portail du Nether et jamais envoye a son client, ne lui
+     * ferme pas un cadre au sol : il s'y engage comme son client le voit, sinon le serveur refuserait les pas que celui-ci y
+     * fait. Celui d'un porte-armure le lui ferme.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 40)
+    public void aPlayersVanillaPortalCooldownDoesNotCloseAFrameUnderThem(TestContext context) {
+        ServerWorld world = context.getWorld();
+        Vec3d center = context.getAbsolute(new Vec3d(4.5, 3.0, 4.0));
+        BackroomsPortalEntity frame = spawn(world, center, PortalFacing.UP, PortalFacing.UP, context.getAbsolute(new Vec3d(14.5, 3.0, 4.0)));
+        // Connecte loin du cadre, il ne s'y est jamais engage : un engagement recent tiendrait encore quelques ticks.
+        ServerPlayerEntity player = GameTestPlayers.connect(context, GameMode.CREATIVE, center.add(8.0, 0.0, 0.0), 0.0f, 90.0f);
+        ArmorStandEntity body = stand(world, center.add(0.0, 0.05, 0.0), false);
+        try {
+            player.setPortalCooldown(10);
+            body.setPortalCooldown(10);
+            player.setPosition(center.add(0.0, 0.05, 0.0));
+            context.assertTrue(PortalCollision.tunnel(player, player.getBoundingBox().offset(0.0, -0.1, 0.0)) == frame,
+                    "Le cooldown vanilla du joueur lui ferme le cadre au sol.");
+            context.assertTrue(PortalCollision.tunnel(body, body.getBoundingBox().offset(0.0, -0.1, 0.0)) == null,
+                    "Le cooldown du porte-armure ne lui ferme pas le cadre au sol.");
+        } finally {
+            GameTestPlayers.disconnect(player);
+            frame.discard();
+        }
+        context.complete();
     }
 
     /**
@@ -364,6 +450,54 @@ public final class PortalTunnelGameTests implements FabricGameTest {
             discard(fromHigh, fromLow, fromTall, fromFloor);
         }
         context.complete();
+    }
+
+    /**
+     * Le regard en biais a la sortie d'un cadre au sol, le joueur parti du centre retombe tout entier au-dela du bord vise :
+     * au retour de ses pieds au plan, au bout du trajet vanilla d'un corps en l'air, sa boite est hors de l'ouverture. Les
+     * angles s'ecartent de plus de trente degres des axes du cadre : la ou la demi-largeur du corps compte le plus le long
+     * du regard.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 20)
+    public void aPlayerPushedOutOfAFloorFrameAtAnAngleLandsWhollyPastTheEdge(TestContext context) {
+        ServerWorld world = context.getWorld();
+        Vec3d arrival = context.getAbsolute(new Vec3d(9.5, 10.0, 16.0));
+        BackroomsPortalEntity portal = sized(world, context.getAbsolute(new Vec3d(3.5, 2.0, 4.0)), PortalFacing.NORTH, PortalFacing.UP, arrival, 2.0f);
+        try {
+            PortalFacing exit = portal.facingDestination();
+            for (float yaw : new float[] {30.0f, 45.0f, 60.0f, 135.0f, 225.0f, 315.0f}) {
+                Vec3d velocity = TeleportExecutor.playerExitVelocity(portal, arrival, new Vec3d(0.0, WALK, 0.0), yaw, PLAYER_WIDTH);
+                Vec3d landed = landing(arrival, velocity);
+                Vec3d offset = landed.subtract(arrival);
+                double alongWidth = Math.abs(offset.dotProduct(exit.axisW));
+                double alongHeight = Math.abs(offset.dotProduct(exit.axisH));
+                context.assertTrue(alongWidth >= portal.width() / 2.0 + PLAYER_WIDTH / 2.0 - EPSILON
+                        || alongHeight >= portal.height() / 2.0 + PLAYER_WIDTH / 2.0 - EPSILON,
+                        "Regard a " + yaw + " degres : retombe a " + offset + " du centre, la boite encore sur l'ouverture.");
+            }
+        } finally {
+            portal.discard();
+        }
+        context.complete();
+    }
+
+    /** Pieds au retour au plan de depart, partis de {@code start} a cette vitesse : deplacement, puis freinage et gravite. */
+    private static Vec3d landing(Vec3d start, Vec3d velocity) {
+        double x = start.x;
+        double y = start.y;
+        double z = start.z;
+        double vx = velocity.x;
+        double vy = velocity.y;
+        double vz = velocity.z;
+        do {
+            x += vx;
+            y += vy;
+            z += vz;
+            vx *= AIR_DRAG;
+            vz *= AIR_DRAG;
+            vy = (vy - GRAVITY) * VERTICAL_DRAG;
+        } while (y > start.y);
+        return new Vec3d(x, y, z);
     }
 
     /** Un joueur, pieds la, qui annonce entrer en marchant dans un cadre debout tourne vers le nord (il va vers le sud). */
@@ -554,8 +688,8 @@ public final class PortalTunnelGameTests implements FabricGameTest {
         body.setPosition(feet.x, feet.y, feet.z);
     }
 
-    private static boolean near(@Nullable Vec3d point, Vec3d expected) {
-        return point != null && point.squaredDistanceTo(expected) < EPSILON * EPSILON;
+    private static boolean near(Vec3d point, Vec3d expected) {
+        return point.squaredDistanceTo(expected) < EPSILON * EPSILON;
     }
 
     private static void discard(BackroomsPortalEntity... portals) {

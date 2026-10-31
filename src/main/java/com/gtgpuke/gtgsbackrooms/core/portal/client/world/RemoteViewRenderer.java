@@ -780,6 +780,9 @@ public final class RemoteViewRenderer {
         int centerX = ChunkSectionPos.getSectionCoord(arrival.x);
         int centerY = ChunkSectionPos.getSectionCoord(arrival.y);
         int centerZ = ChunkSectionPos.getSectionCoord(arrival.z);
+        // Sortie verticale (cadre d'arrivee au sol ou au plafond) : le joueur en sort la tete en haut ou en bas, et regarde
+        // ensuite tout autour ; le filtre de ce qui est devant la sortie ne retient alors rien, et tout se construit jusqu'a
+        // sa distance de vue.
         Direction out = portal.facingDestination().direction;
         int reach = Math.max(PREBUILD_RADIUS, client.options.getClampedViewDistance());
         ChunkRendererRegionBuilder regions = null;

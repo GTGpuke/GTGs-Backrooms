@@ -33,7 +33,7 @@ public final class LookDimensionEffects extends DimensionEffects {
     }
 
     /** Couleur que {@link #adjustFogColor} donne a tout point : celle du brouillard du profil ; {@code null} s'il n'en a pas. */
-    public @Nullable Vec3d fixedFogColor() {
+    @Nullable Vec3d fixedFogColor() {
         LookProfile.Fog fog = LookProfiles.of(this.dimension).fog();
         return fog.enabled() ? fog.color() : null;
     }

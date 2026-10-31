@@ -49,7 +49,7 @@ final class PortalViewClientTests {
     private static final int AFTER_SWITCH_FRAMES = 12;
     /** Images rendues apres un demi-tour : le temps que le graphe vanilla montre ce qui etait derriere et que cela se construise. */
     private static final int TURN_FRAMES = 20;
-    /** Image lente pendant l'approche d'un cadre, comptee a part : plus de deux images a 60 Hz. */
+    /** Image lente pendant l'approche d'un cadre, comptee a part : plus d'une image et demie a 60 Hz. */
     private static final double SLOW_FRAME_MILLIS = 25.0;
     /** Distance au plan d'un joueur qui ne peut plus passer le cadre de sitot. */
     private static final double FAR_FROM_FRAME = 30.0;

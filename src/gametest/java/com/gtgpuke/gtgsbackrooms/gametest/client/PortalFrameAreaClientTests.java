@@ -54,7 +54,7 @@ final class PortalFrameAreaClientTests {
     private static final int HEIGHT = 4;
     /** Images laissees au client apres chaque deplacement : vue construite, image stable. */
     private static final int SETTLE_FRAMES = 20;
-    /** Ecart toleree : un demi-pixel sur tout le contour (pixels de bord), plus un pour cent de l'aire. */
+    /** Ecart tolere : un demi-pixel sur tout le contour (pixels de bord), plus un pour cent de l'aire. */
     private static final double EDGE_SHARE = 0.5;
     private static final double AREA_SHARE = 0.01;
     /** Chunks de l'Overworld recus avant de tenir pour prete la vue du cadre d'arrivee. */
@@ -102,8 +102,12 @@ final class PortalFrameAreaClientTests {
     private static ClientScenario matrix(String name, Direction facing, BlockPos block, boolean viewFromBack) {
         List<String> failures = new ArrayList<>();
         BackroomsPortalEntity[] source = new BackroomsPortalEntity[1];
+        double[] fovEffect = new double[1];
         ClientScenario scenario = ClientScenario.named(name)
-                .run("effet du vol sur le champ de vision coupe", context -> context.client().options.getFovEffectScale().setValue(0.0));
+                .run("effet du vol sur le champ de vision coupe", context -> {
+                    fovEffect[0] = context.client().options.getFovEffectScale().getValue();
+                    context.client().options.getFovEffectScale().setValue(0.0);
+                });
         PortalExit[] exits = {PortalExit.STRAIGHT, PortalExit.FLOOR, PortalExit.CEILING};
         for (boolean flush : new boolean[] {false, true}) {
             for (PortalExit exit : exits) {
@@ -177,7 +181,7 @@ final class PortalFrameAreaClientTests {
                 .check("chaque cadre couvre exactement son ouverture", context ->
                         ClientTestContext.require(failures.isEmpty(), failures.size() + " zone(s) fausse(s) :\n" + String.join("\n", failures)))
                 .cleanup(context -> {
-                    context.client().options.getFovEffectScale().setValue(1.0);
+                    context.client().options.getFovEffectScale().setValue(fovEffect[0]);
                     remove(context, block);
                     context.onServer(server -> {
                         ServerPlayerEntity player = ClientTestContext.serverPlayer(server);
@@ -243,13 +247,12 @@ final class PortalFrameAreaClientTests {
         if (context.client().world == null || context.client().world.getRegistryKey() != BackroomsConstants.LEVEL_ZERO_WORLD) {
             return null;
         }
-        BackroomsPortalEntity nearest = null;
         for (BackroomsPortalEntity portal : ClientPortalIndex.portals(context.world())) {
             if (portal.facingSource() == source.facingDestination() && portal.getPos().isInRange(source.destinationPos(), 1.0)) {
-                nearest = portal;
+                return portal;
             }
         }
-        return nearest;
+        return null;
     }
 
     private static boolean overworldViewReady(ClientTestContext context) {
@@ -271,13 +274,13 @@ final class PortalFrameAreaClientTests {
         }
         double tolerance = EDGE_SHARE * expected[1] + AREA_SHARE * expected[0];
         double wanted = shown ? expected[0] : 0.0;
-        String line = String.format(Locale.ROOT, "%s : %d pixel(s) au look de l'autre monde, %.0f attendu(s) (tolerance %.0f)",
+        String line = String.format(Locale.ROOT, "%s : %d pixel(s) au look de l'autre monde, %.0f attendu(s) (tolerance %.0f).",
                 where, actual, wanted, tolerance);
         ModConstants.LOGGER.info("[Test client] {}", line);
         if (expected[0] < 1000.0) {
-            failures.add(line + ", cadre trop petit a l'ecran : point de vue a revoir.");
+            failures.add(line + " Cadre trop petit a l'ecran : point de vue a revoir.");
         } else if (Math.abs(actual - wanted) > tolerance) {
-            failures.add(line + ".");
+            failures.add(line);
         }
     }
 

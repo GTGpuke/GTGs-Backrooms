@@ -105,8 +105,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 - **Arrivée au sol sans pose** : qui sort d'un cadre d'arrivée couché au sol ne s'y pose plus une seconde. Il y retombe
   aussitôt et repart par le retour, même avec un bloc sous le cadre ([portails](docs/systemes/PORTAILS.md)).
 - **Poussée à la sortie d'un cadre au sol** : entré en marchant par un cadre debout, le joueur est poussé dans le sens de
-  son regard et retombe devant le cadre d'arrivée, au lieu de retomber dedans. Un petit saut s'ajoute quand il en sort
-  loin du bord.
+  son regard et retombe devant le cadre d'arrivée, au lieu de retomber dedans, le corps tout entier au-delà du bord,
+  même le regard en biais. Un petit saut s'ajoute quand il en sort loin du bord.
 - **Vue imbriquée vers un troisième monde** : un portail vu à travers un autre montre son monde d'arrivée au lieu de
   rester sombre et muet.
 - **Pack de shaders reconnu sans API tierce** : le mod reconnaît un pack actif à ses programmes de rendu, et non plus
@@ -158,7 +158,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   qui agit, dont le client les joue d'habitude en prédisant l'action ; à travers un cadre, rien n'est prédit, et il ne
   voyait ni n'entendait rien. Ils lui parviennent maintenant.
 - **Entité qui retombe dans un cadre pendant son cooldown** : la trappe s'ouvrait sous elle alors que sa traversée était
-  refusée, et elle passait sous le plan. Elle s'y tient maintenant jusqu'à la fin du délai.
+  refusée, et elle passait sous le plan. L'ouverture fermée la porte maintenant jusqu'à la fin du délai, même sur un
+  cadre en l'air. Le délai vanilla d'un joueur, posé après un portail du Nether, ne lui ferme plus les cadres : le
+  serveur refusait ses pas, que son client faisait dans un cadre ouvert.
 - **Silhouette d'un cadre sur la main** : en première personne, devant un portail, la partie de la main qui couvrait
   le cadre prenait le post-traitement du monde qu'il montre (vignette, bloom). La main garde maintenant le look de son
   monde.

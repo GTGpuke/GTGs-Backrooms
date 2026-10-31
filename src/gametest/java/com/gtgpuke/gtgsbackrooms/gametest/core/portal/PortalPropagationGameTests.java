@@ -174,6 +174,8 @@ public final class PortalPropagationGameTests implements FabricGameTest {
                     } finally {
                         GameTestPlayers.disconnect(player);
                         portal.discard();
+                        // Le Nether est partage par les lancements : la pierre posee pour la casse ne doit pas y rester.
+                        nether.setBlockState(BlockPos.ofFloored(RELAY_EXIT).south(), Blocks.AIR.getDefaultState());
                     }
                 })
                 .completeIfSuccessful();
