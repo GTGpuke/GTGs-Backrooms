@@ -11,6 +11,7 @@ import org.lwjgl.opengl.GL31;
 
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
@@ -18,6 +19,7 @@ import com.gtgpuke.gtgsbackrooms.core.audio.client.CueTracker;
 import com.gtgpuke.gtgsbackrooms.core.audio.cue.CueClock;
 import com.gtgpuke.gtgsbackrooms.core.render.light.NeonSchedule;
 import com.gtgpuke.gtgsbackrooms.core.render.light.NeonSelection;
+import com.gtgpuke.gtgsbackrooms.core.render.light.ShadowCasters;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
@@ -43,12 +45,25 @@ public final class NeonLights {
     private static final int DISTURBANCES = 4;
     private static final int DISTURBANCE_OFFSET = CAPACITY * FLOATS_PER_NEON * 2;
     private static final int FORCE_OFFSET = DISTURBANCE_OFFSET + DISTURBANCES * 4;
-    private static final int BLOCK_FLOATS = FORCE_OFFSET + DISTURBANCES;
+    /** Direction ou eclairent les dalles, en espace camera. */
+    private static final int AXIS_OFFSET = FORCE_OFFSET + DISTURBANCES;
+    /** Neons que comptent les halos et les reflets : les autres s'y fondent sur {@link #NEAR_FADE} blocs, sans saut. */
+    private static final int NEAREST = 10;
+    private static final float NEAR_FADE = 6.0f;
+    private static final float SEARCH_MARGIN = 16.0f;
+    private static final int FACES_OFFSET = AXIS_OFFSET + 4;
+    private static final int CASTERS_OFFSET = FACES_OFFSET + CAPACITY * FLOATS_PER_NEON;
+    private static final int CASTER_RAYS_OFFSET = CASTERS_OFFSET + ShadowCasters.VALUES;
+    private static final int CASTER_LIGHT_OFFSET = CASTER_RAYS_OFFSET + 4;
+    private static final int BLOCK_FLOATS = CASTER_LIGHT_OFFSET + 4;
+    /** La plus grande lumiere qu'une tuile retient, celle de {@code surface.fsh}. */
+    private static final float TILE_MAX_LIGHT = 4.0f;
     private static final FloatBuffer[] BLOCKS = new FloatBuffer[DEPTHS];
     private static final int[] COUNTS = new int[DEPTHS];
     private static final NeonSelection SELECTION = new NeonSelection(CAPACITY);
     private static final int[] KEPT = new int[CAPACITY];
     private static final Vector3f VIEW_POSITION = new Vector3f();
+    private static final ShadowCasters CASTERS = new ShadowCasters();
     private static int depth;
     private static int buffer;
 
@@ -92,7 +107,12 @@ public final class NeonLights {
         if (neons.any() && LookState.shadersCarryLook()) {
             int wanted = Math.min(CAPACITY, LookResources.quality().neonCount());
             float radius = neons.radius();
-            NeonIndex.collect(world, cameraPos.x, cameraPos.y, cameraPos.z, radius * 2.0 + 16.0, SELECTION);
+            LookProfile.BakedLight baked = LookProfiles.of(world.getRegistryKey()).bakedLight();
+            float behind = Math.max(radius, baked.reach());
+            int originX = MathHelper.floor(cameraPos.x);
+            int originY = MathHelper.floor(cameraPos.y);
+            int originZ = MathHelper.floor(cameraPos.z);
+            NeonIndex.collect(world, cameraPos.x, cameraPos.y, cameraPos.z, radius * 2.0 + SEARCH_MARGIN, SELECTION);
             int available = SELECTION.count();
             int tick = CueClock.tick(world.getTime());
             for (int i = 0; i < available && count < wanted; i++) {
@@ -102,10 +122,13 @@ public final class NeonLights {
                 float dz = (float) (BlockPos.unpackLongZ(packed) + 0.5 - cameraPos.z);
                 positionMatrix.transformPosition(dx, dy, dz, VIEW_POSITION);
                 // Derriere la camera de plus que sa portee (la camera regarde vers -z) : aucun fragment visible ne le recoit.
-                if (VIEW_POSITION.z > radius) {
+                if (VIEW_POSITION.z > behind) {
                     continue;
                 }
                 block.put(VIEW_POSITION.x).put(VIEW_POSITION.y).put(VIEW_POSITION.z).put(radius);
+                int at = FACES_OFFSET + count * FLOATS_PER_NEON;
+                block.put(at, BlockPos.unpackLongX(packed) + 0.5f - originX).put(at + 1, (float) (BlockPos.unpackLongY(packed) - originY))
+                        .put(at + 2, BlockPos.unpackLongZ(packed) + 0.5f - originZ).put(at + 3, SELECTION.nearShare(i, NEAREST, NEAR_FADE, radius * 2.0f + SEARCH_MARGIN));
                 KEPT[count++] = i;
             }
             block.position(CAPACITY * FLOATS_PER_NEON);
@@ -114,19 +137,40 @@ public final class NeonLights {
             for (int k = 0; k < count; k++) {
                 long packed = SELECTION.position(KEPT[k]);
                 // L'etat du calendrier, moins ce qu'un cri proche lui retire (liaison son-image, plafond de clignotement compris).
-                float state = NeonSchedule.intensity(packed, seed, tick, neons.flickering(), neons.dead())
+                float state = NeonSchedule.intensity(packed, seed, tick, neons.flickering(), neons.dead(), neons.blackout())
                         * CueTracker.neonFactor(dimension, BlockPos.unpackLongX(packed) + 0.5, BlockPos.unpackLongY(packed) + 0.5, BlockPos.unpackLongZ(packed) + 0.5);
                 block.put(neons.red() * neons.strength()).put(neons.green() * neons.strength()).put(neons.blue() * neons.strength()).put(state);
             }
             disturbances(block, dimension, cameraPos);
+            casters(block, world, LookProfiles.of(world.getRegistryKey()), originX, originY, originZ, tickDelta);
         } else {
             for (int i = DISTURBANCE_OFFSET; i < BLOCK_FLOATS; i++) {
                 block.put(i, 0.0f);
             }
         }
+        positionMatrix.transformDirection(0.0f, -1.0f, 0.0f, VIEW_POSITION);
+        block.put(AXIS_OFFSET, VIEW_POSITION.x).put(AXIS_OFFSET + 1, VIEW_POSITION.y).put(AXIS_OFFSET + 2, VIEW_POSITION.z);
         block.position(0).limit(BLOCK_FLOATS);
         COUNTS[depth] = count;
         upload();
+    }
+
+    /** Les corps qui portent une ombre et ce qu'il faut savoir des dalles pour la calculer : rien dans une vue de portail, plafonnee sous ce palier. */
+    private static void casters(FloatBuffer block, World world, LookProfile look, int originX, int originY, int originZ, float tickDelta) {
+        LookProfile.BakedLight baked = look.bakedLight();
+        int rays = depth == 0 && baked.any() ? LookResources.quality().casterRays() : 0;
+        if (rays == 0) {
+            CASTERS.clear();
+        } else {
+            EntityShadows.write(world, originX, originY, originZ, tickDelta, CASTERS);
+        }
+        block.position(CASTERS_OFFSET);
+        block.put(CASTERS.values(), 0, CASTERS.cylinders() * ShadowCasters.CYLINDER_VALUES);
+        LookProfile.Neons neons = look.neons();
+        float emission = Math.max(neons.red(), Math.max(neons.green(), neons.blue())) * baked.emission();
+        block.put(CASTER_RAYS_OFFSET, CASTERS.cylinders()).put(CASTER_RAYS_OFFSET + 1, rays).put(CASTER_RAYS_OFFSET + 3, baked.reach());
+        block.put(CASTER_LIGHT_OFFSET, (float) Math.cos(Math.toRadians(baked.angle()))).put(CASTER_LIGHT_OFFSET + 1, baked.size())
+                .put(CASTER_LIGHT_OFFSET + 2, emission > 0.0f ? TILE_MAX_LIGHT / emission : 0.0f).put(CASTER_LIGHT_OFFSET + 3, emission);
     }
 
     /** Les perturbations de la dimension de la vue : source relative a sa camera (axes du monde), portee, force. */

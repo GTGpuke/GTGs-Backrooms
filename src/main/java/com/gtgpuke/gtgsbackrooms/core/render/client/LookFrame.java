@@ -54,6 +54,8 @@ public final class LookFrame {
         LookState.beginWorld(profile, CueClock.seconds(world.getTime(), tickDelta), cameraPos.x, cameraPos.y, cameraPos.z, CueClock.tick(world.getTime()));
         LookState.setShadersCarryLook(!RemoteViewRenderer.foreignTerrain(renderer));
         clearStencil(profile);
+        LookLuts.bind();
+        LightVolume.frame();
         NeonLights.beginWorld(world, cameraPos, positionMatrix, tickDelta);
         GpuTimer.begin(GpuTimer.WORLD);
     }

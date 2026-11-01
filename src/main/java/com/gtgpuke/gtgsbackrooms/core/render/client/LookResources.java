@@ -13,6 +13,7 @@ import org.apache.commons.io.IOUtils;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.opengl.GL11;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.resource.Resource;
 import net.minecraft.resource.ResourceFactory;
@@ -27,9 +28,11 @@ import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.render.fbo.FramebufferSpec;
 import com.gtgpuke.gtgsbackrooms.core.render.patch.ShaderPatchRegistry;
+import com.gtgpuke.gtgsbackrooms.core.render.post.StencilLookMask;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 
 /**
  * Ressources du moteur de shaders : les profils de look ({@code look_profiles/*.json}), les patchs de shaders
@@ -49,6 +52,8 @@ public final class LookResources {
     private static @Nullable ResourceFactory loadedFrom;
     private static ShaderPatchRegistry patches = ShaderPatchRegistry.EMPTY;
     private static @Nullable LookQuality quality;
+    /** Les looks des fichiers, avant les reglages du joueur. */
+    private static final List<LookProfile> BASE = new ArrayList<>();
 
     private LookResources() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -104,27 +109,71 @@ public final class LookResources {
         return patches;
     }
 
-    /** Qualite du moteur : celle de l'option, ou choisie d'apres la carte, relevee une fois (chaine du pilote). */
+    /** Palier du moteur : celui du joueur, ou choisi d'apres la carte, releve une fois par reglage (chaine du pilote). */
     public static LookQuality quality() {
         if (quality == null) {
-            quality = LookQuality.choose(ModConfig.LOOK_QUALITY, GL11.glGetString(GL11.GL_RENDERER));
-            ModConstants.LOGGER.info("[Look] Qualite {} ({}).", quality, ModConfig.LOOK_QUALITY);
+            String wanted = LookSettings.current().quality();
+            quality = LookQuality.choose(wanted, GL11.glGetString(GL11.GL_RENDERER));
+            ModConstants.LOGGER.info("[Look] Qualite {} ({}).", quality, wanted);
         }
         return quality;
     }
 
+    /** {@code true} si le cache de surfaces tourne. */
+    public static boolean surfaceLight() {
+        return LookSettings.current().surfaceLight(quality());
+    }
+
+    /**
+     * Le joueur change ses reglages : ils s'appliquent tout de suite, se sauvegardent, et les looks se refont. La lumiere cuite
+     * repart vers le cache de surfaces, et le terrain se reconstruit si l'ombrage de ses faces change.
+     *
+     * @param next reglages choisis
+     * @param client client du jeu
+     */
+    public static void applySettings(LookSettings next, MinecraftClient client) {
+        boolean bakedBefore = bakedAnywhere();
+        LookSettings.set(next);
+        quality = null;
+        LookSettingsStore.save(next);
+        publish();
+        LightVolume.rebake();
+        if (bakedBefore != bakedAnywhere() && client.worldRenderer != null) {
+            client.worldRenderer.reload();
+        }
+    }
+
+    private static boolean bakedAnywhere() {
+        for (int id = 1; id <= StencilLookMask.MAX_LOOK; id++) {
+            if (LookProfiles.byId(id).bakedLight().any()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Refait les looks en vigueur depuis ceux des fichiers, sous les reglages du joueur. */
+    private static void publish() {
+        List<LookProfile> effective = new ArrayList<>(BASE.size());
+        for (LookProfile base : BASE) {
+            effective.add(LookSettings.current().effective(base, quality()));
+        }
+        LookProfiles.load(effective);
+        LookLuts.rebuild(effective);
+    }
+
     private static void load(ResourceManager manager) {
         ShaderCompileCheck.resetCounts();
-        List<LookProfile> profiles = new ArrayList<>();
+        BASE.clear();
         for (Map.Entry<Identifier, Resource> entry : manager.findResources(PROFILES, LookResources::isModJson).entrySet()) {
             try {
                 LookProfile profile = LookProfile.fromJson(JsonParser.parseString(read(entry.getValue())).getAsJsonObject());
-                profiles.add(profile.comfort(ModConfig.REDUCE_FLASHES, ModConfig.REDUCE_VISUAL_NOISE));
+                BASE.add(profile);
             } catch (IOException | JsonParseException | IllegalStateException exception) {
                 ModConstants.LOGGER.error("[Look] Profil {} refuse ({}).", entry.getKey(), exception.getMessage());
             }
         }
-        LookProfiles.load(profiles);
+        publish();
         Map<String, String> patchFiles = new HashMap<>();
         for (Map.Entry<Identifier, Resource> entry : manager.findResources(PATCHES, LookResources::isModJson).entrySet()) {
             try {

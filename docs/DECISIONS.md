@@ -188,6 +188,63 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
 
 ## 31 octobre 2026
 
+- Palier Low de `QUALITE_ET_PRESETS`, première brique : le look d'une dimension tient dans une LUT 3D, appliquée dans
+  l'injection en fin de calcul du fragment (§5.7), après la lumière des néons et non plus avant. La lumière jaune des
+  tubes est désaturée et teintée avec le reste, et une couleur poussée au-delà de 1 est bornée avant l'étalonnage. La
+  lumière des néons se calcule au centre du texel (§5.4), aux deux qualités actuelles ([rendu](systemes/RENDU.md)).
+- Palier Low, lumière cuite (§4.2, §5.5) : la zone porte aussi la lumière directe des dalles et leurs ombres, pas seulement
+  le rebond, et elle remplace la lightmap sur le terrain. Tout reste en forward, sans G-buffer, conforme à la règle du
+  27 octobre et au repli de la spec pour l'hypothèse Q1. Le son se règlera plus tard (demande de l'auteur).
+- Palier High sans G-buffer : le cache de surfaces remplace les ombres DDA par fragment du repli de l'hypothèse Q1. Le Level 0
+  est statique : une lightmap au pixel de texture, calculée une fois par le processeur graphique, donne le même résultat
+  pour deux lectures par fragment, sans rendu différé. Le relief vient de la luminance des textures, en attendant de vrais
+  matériaux.
+- Le Level 0 n'a plus de brouillard (demande de l'auteur) : la spec en prévoyait un, teinté. La profondeur vient de la lumière,
+  et les dalles gardent un halo.
+- Écart à `QUALITE_ET_PRESETS` §5.4, décision de l'auteur du 1er novembre 2026 : seules les ombres portées sont pixelisées. La
+  lumière reste lisse, et seule une faible part du dégradé (`pixel_light`) garde la grille, avec un léger grain de pixels dans le
+  noir (`dark_pixels`). Le §5.4 appliquait la grille à toute la lumière.
+- Le Level 0 n'a pas de panne pour le moment (demande de l'auteur du 1er novembre 2026) : tous les néons éclairent, et le noir
+  n'existe que là où aucune dalle n'arrive. `neons.blackout` reste au calendrier et au profil, à 0.
+- Une dalle n'éclaire que par la face du bas de son bloc, comme un quad orienté avec une distance et un angle (demande de
+  l'auteur du 1er novembre 2026). C'est un écart aux lumières de zone exactes de `QUALITE_ET_PRESETS` §4.4 : la chute en carré de la
+  distance d'un rectangle physique brûlait le haut des murs et laissait le sol terne.
+- Écart à `QUALITE_ET_PRESETS` §5.3, décision de l'auteur du 1er novembre 2026 : les corps portent une ombre dès le palier High, pas
+  seulement en Ultra.
+- Menu de `QUALITE_ET_PRESETS` §9 : l'icône n'a aucun texte (demande de l'auteur). Écarts assumés : les presets sonores et la
+  qualité sonore attendront, le son se réglant plus tard ; pas de réglage des hallucinations, qui n'existent pas encore.
+- L'Ultra vise l'image de référence de l'auteur du 1er novembre 2026 (`docs/interne`), mesurée : presque toute sa lumière est
+  indirecte, ses sombres restent saturés, ses textures calmes. Écarts à `QUALITE_ET_PRESETS` assumés : plus de grille des texels en
+  Ultra (§5.4, sous tous les presets, le réglage ne vaut que pour les autres paliers) ; contraste des textures baissé (`traced.detail`,
+  §2.3 : la matière reste en pixels, mais moins marquée) ; la lumière directe à l'image et les rebonds ont des gains séparés, ce qui n'est
+  plus physique et donne le rendu voulu. La palette du profil change à tous les paliers : Low et Ultra gardent la même (§5.7).
+- La palette du Level 0 est une courbe de teinte par luminance (`grade.tones`, demande de l'auteur du 1er novembre 2026 : « c'est pas le
+  bon jaune »), relevée sur son image de référence : l'étalonnage par pente et puissance ne donnait pas à la fois les sombres ambrés et
+  les clairs citron. La teinte et la désaturation d'ensemble du profil sont à zéro. Toujours la même palette à tous les paliers (§5.7).
+- La moquette a une épaisseur (demande de l'auteur du 1er novembre 2026) : sa hauteur est le bruit de sa texture, le regard y entre et
+  s'arrête au premier pixel qui dépasse. `x_n.png` porte la hauteur en alpha, `x_s.png` ne porte plus que le lissage : une part renvoyée
+  par matière n'avait pas d'effet visible, et la table n'a que quatre valeurs par pixel.
+- Le cache de surfaces passe de 64 à 128 Mio, et ses rebonds de 8 à 16 Mio (décision prise en corrigeant les carrés de chunks, le
+  1er novembre 2026) : une grande salle ouverte du Level 0 demande dix-huit mille tuiles, le cache en avait seize mille. Réduire le rayon
+  des tuiles aurait changé l'image jusqu'à 24 blocs.
+- Écart à `QUALITE_ET_PRESETS` §5.5 : la lumière d'une surface a trois niveaux qui se fondent selon la distance (tuiles, zone, lightmap
+  recalée), parce que le passage d'un niveau à l'autre faisait s'allumer les néons au loin.
+- La matière d'un bloc s'écrit dans ses textures (demande de l'auteur du 1er novembre 2026, `QUALITE_ET_PRESETS` §5.6) : la moquette
+  est mate à tous les paliers, le reflet de sol humide n'existe plus, et seul le sombre du motif du papier peint renvoie un peu les
+  dalles, son fond restant mat et rugueux. « Le dessous » du motif a été compris comme le papier qu'il recouvre. Écarts : le reflet
+  de la spec, tracé vers ce que voit la surface, est remplacé par un lobe vers les dalles et des rayons de visibilité, parce que des
+  rayons sur une matière aussi peu lisse font des points brillants isolés ; les reflets commencent à High, Medium ne lisant pas les
+  matières ; un seul fichier de propriétés ne porte que deux valeurs, le lissage et la part renvoyée. La table de l'atlas et ses
+  deux fichiers par texture restent dans un moteur sans G-buffer.
+- Écart à la spec : le palier Ultra trace sa lumière sans calcul GPU ni G-buffer. Les rebonds se rangent sur les surfaces, en
+  GLSL 150 : il ne demande pas OpenGL 4.3, n'est jamais grisé, et n'a
+  ni rendu réduit, ni TAA, ni accumulation à l'écran. Il n'a pas non plus de coupe-circuit à part : un shader refusé coupe ses
+  rebonds pour la session. Auto se décide d'après `GL_RENDERER` seul, sans test de
+  performance. Les paliers Medium et High n'ont pas les lumières par tuiles ni le SSAO de la spec : le cache de surfaces les
+  remplace.
+- Écart à la spec : la cuisson va jusqu'à sept sections de côté, et une seule zone existe à la fois : une vue loin de la
+  caméra garde la lightmap.
+
 - Entré en marchant par un cadre debout et sorti d'un cadre au sol, le joueur est poussé dans le sens de son regard pour
   retomber au-delà du bord du cadre devant lui, au lieu de retomber dedans. Un petit saut complète la poussée quand il
   sort loin de ce bord ([portails](systemes/PORTAILS.md)).

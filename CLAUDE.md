@@ -34,9 +34,10 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
   champs `static final`), un par type (blocs, items, block entities, entities, composants, sons, onglet créatif,
   payloads). Le bloc portail n'a pas d'item : la baguette le pose.
 - `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/systemes/PORTAILS.md` avant d'y toucher.
+- `core/render/client/menu/` : icône du menu pause et écrans de réglages du joueur ; `core/render/quality/` : paliers, presets visuels et réglages (`LookSettings`, `config/gtgs_backrooms.json`).
 - `core/perf/` : moniteur de performance opt-in.
 - `core/audio/` : moteur audio maison (`docs/systemes/AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
-- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
+- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), lumière cuite du terrain (`light/bake/` : dalles en rectangles, ombres et rebonds sur une copie des blocs, sur un fil à part ; `client/LightCopy`, `LightWorker`, `LightVolume` pour la texture 3D de zone, `LightSurfaces` et `shaders/bake/surface.fsh` pour le cache de surfaces, lightmap au pixel de texture calculée sur le GPU, `EntityShadows` et `light/ShadowCasters` pour les ombres des corps, `LightBounces` et `shaders/bake/bounce.fsh` pour les rebonds tracés de l'Ultra, `BlockMaterials` pour la matière des blocs, écrite dans leurs textures (`x_s.png`, `x_n.png`) et recopiée dans une table alignée sur l'atlas ; calcul d'une dalle et marche dans la grille communs au Java et au GLSL, `shaders/include/area_light.glsl`, `block_march.glsl`, `surface_light.glsl`, tenus d'accord par `src/test/resources/area_light_vectors.json`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
 - `backrooms/level0/generation/` : `coord` → `noise` → `sector` → `layout` → `write`, orchestrés par `LevelZeroChunkGenerator`.
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
@@ -50,7 +51,7 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
   module) et aucune dépendance de mod à l'exécution hors Fabric Loader et Fabric API ; un pack de shaders se reconnaît
   au milieu du rendu du joueur (`ShaderPackState`), un mod qui dessine le terrain à sa grille vanilla vide
   (`RemoteViewRenderer.foreignTerrain`). Le terme d'IA n'apparaît pas dans le mod.
-- `mixin/` : commun (relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, monde de création du joueur suivi aux traversées, générations des sections de terrain (preuve d'occlusion des vues), météo et particules coupées dans une vue allégée, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
+- `mixin/` : commun (fermeture du serveur bornée, relais des changements de blocs, chunks tenus non renvoyés, sons et particules relayés, collision à travers le cadre, blocs cachés derrière le plan (collisions, étouffement), regard et poursuite des mobs, sources de lumière virtuelles des portails, accesseurs du suivi vanilla des entities et de la météo brute d'un monde) et `client/` (rendu des portails, découpe dans les shaders, monde distant, entités à cheval sur un portail, copies d'entités périmées remplacées, monde de création du joueur suivi aux traversées, générations des sections de terrain (preuve d'occlusion des vues), météo et particules coupées dans une vue allégée, visée et clics à travers le cadre, sons replacés après une traversée, roulis de la caméra à la traversée, voile de mur levé dans un bloc caché, main gardée des vues sous un pack).
 - `src/gametest/` : tests en jeu, mod séparé `gtgs_backrooms_gametest` chargé par `runGameTest` seulement (jamais dans le JAR, `verifyJarContents` le vérifie).
 
 ## Règles de code
@@ -319,8 +320,11 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   rend `null` quand tout est vide) ; et un mod de rendu du terrain ne passe pas par elle. Ce qui doit connaître les
   blocs d'un monde client (index des néons) se relève sur les chunks eux-mêmes : `ClientChunkEvents.CHUNK_LOAD` de
   Fabric (fin de `loadChunkFromPacket`, mondes distants compris), `ChunkSection.hasAny` (la palette, sans parcourir
-  les blocs), puis `ClientWorld.setBlockState(BlockPos, BlockState, int, int)`, par où passent paquets, mondes distants
-  et prédiction du joueur.
+  les blocs). Un bloc changé arrive ensuite par deux chemins : `ClientWorld.setBlockState(BlockPos, BlockState, int, int)` pour
+  la prédiction du joueur et les mondes distants, `ClientWorld.handleBlockUpdate` pour les paquets du serveur, qui appelle
+  directement `World.setBlockState` (`invokespecial`) : un crochet sur le seul premier ne voit jamais un bloc venu du
+  serveur (commande, autre joueur, mob), et un test qui pose ses blocs côté serveur est le seul à le voir. Ce qui suit les
+  blocs d'un monde client se branche sur les deux (`MixinClientWorld.backrooms$blockChanged`).
 - `ClientPlayNetworkHandler.onBlockEntityUpdate` applique les données à `client.world`, pas au monde du gestionnaire :
   rebrancher le gestionnaire sur un monde distant ne suffit pas, le monde distant les applique lui-même.
 - Tests en jeu : un client rapporte les sorties fugaces qu'il voit quand cela change (au plus tous les quatre ticks) et au
@@ -502,6 +506,12 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 - `/playsound` n'est pas un son du monde : le paquet part aux seuls joueurs visés, sans monde ni relais par les
   portails. Un son du monde au banc : un bloc musical sous une tête qui porte le son (`note_block_sound`), déclenché
   par un bloc de redstone posé à côté.
+- Envoi d'une texture par le mod (`glTexImage*` depuis un tampon) : vanilla pose le pas des lignes de chaque image qu'il
+  envoie (`NativeImage.upload` : `GL_UNPACK_ROW_LENGTH`, `SKIP_ROWS`, `SKIP_PIXELS`, alignement), textures animées
+  comprises, à chaque tick, sans le remettre. Un envoi en pleine partie (F3+T) lit alors sa table au-delà de sa fin et
+  le pilote plante (violation d'accès, sans exception Java) ; au premier chargement, l'état est encore neutre. Remettre
+  ces réglages (et `GL_UNPACK_IMAGE_HEIGHT`, `SKIP_IMAGES` pour une texture 3D) au défaut le temps de l'envoi, délier
+  `GL_PIXEL_UNPACK_BUFFER`, puis rendre l'état trouvé (`LookLuts.rebuild`).
 - Jumeau GLSL d'un hachage Java sur `int` : en GLSL 150, `uint` (multiplications modulo 2^32 comme Java) ; le `>>>` de
   Java est le `>>` de GLSL sur `uint`, le `>>` sur `int` est arithmétique des deux côtés ; aucun flottant dans une
   décision (un `fract(sin())` diffère d'un pilote à l'autre). Les deux se tiennent par un fichier de vecteurs communs
@@ -535,12 +545,49 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   `function` (l'appel échoue seul). Un monde du banc se rejoue sans le mod par une copie dont `level.dat` perd la
   dimension du mod (`WorldGenSettings.dimensions`) et son pack (`DataPacks`), le joueur remis dans l'Overworld
   (`make_vanilla_world.py` du scratchpad, `nbtlib`).
+- Un cache de taille fixe se juge à l'endroit le plus chargé d'un vrai monde, en marchant : le monde de test n'a jamais rempli le cache
+  de surfaces, et au repos une section en manque ne se voit que de loin. Une section servie à moitié doit être reprise quand des tuiles se
+  libèrent, sinon elle reste trouée en carré. La couche 3 du Level 0 est la seule que coupe une limite de section (Y = 32), en plein mur.
+  Relire les tuiles et comparer leurs bords (limite de chunk contre le reste) dit si un défaut suit la grille, sans regarder une image.
+  Une mesure de performance se fait machine libre : `nvidia-smi` dit si un jeu occupe la carte (104 images/s contre 325 le même jour).
+- Fermeture du serveur : `MinecraftServer.shutdown` appelle `ServerChunkManager.tick(() -> true, false)`, et `unloadChunks` vide alors
+  `unloadTaskQueue` sans rendre la main. Un chunk repris pendant son déchargement (`chunksToUnload.remove`) et encore retenu (`getRefCount`)
+  y remet sa tâche à chaque passage, et ce qui le retient attend le fil du serveur : blocage sans fin, sans exception (`MixinMinecraftServer`
+  borne ce temps). Au relevé : niveau 45, références positives, aucun ticket, `main_queue` non vide. Une exception de génération pendant
+  l'arrêt, elle, disparaît dans `setWorldGenException`. Un aléa qu'on croit lié à un enchaînement se compte sur des dizaines de lancements.
+- Deux côtés qui se souviennent d'une même section : la texture de zone efface ce qui sort de sa fenêtre, alors que `LightZone` garde ses
+  sections deux rangs plus loin, marquées publiées. Sans `LightZone.forget`, revenir sur ses pas laisse des pièces noires. Un bug qui
+  n'apparaît qu'au retour ne se voit pas à l'arrêt : une marche réelle, aller et retour, sur une copie d'un monde de l'auteur, comparée
+  image par image à la même vue au repos, sépare un retard de calcul d'une pièce vraiment sans lumière.
+- Tests du client : les mesures de performance se font en marchant, pas à l'arrêt ; le skin du joueur change à chaque lancement
+  (une manche sombre n'est pas une ombre).
+- Textures des blocs : tout PNG de `textures/block/` entre dans l'atlas (source `directory` du fichier d'atlas vanilla), sous-dossiers et
+  fichiers de matière compris, et l'atlas range ses textures sur la grille de ses niveaux de mipmap : une table de sa taille peut
+  générer ses niveaux sans qu'une moyenne déborde sur la texture voisine. La pente d'une normale pèse bien plus sur un mur que sur un
+  sol : une dalle au plafond arrive presque dans le plan du mur, et une petite pente y double la lumière reçue. Un grain réglé sur le
+  sol fait un crépi sur le mur.
 - Dessin plein écran : `ShaderProgram.initializeUniforms` alloue douze noms de samplers (`"Sampler" + i`) à chaque
   appel, et le tessellator vanilla un tampon par dessin : une passe par image passe par un `VertexBuffer` persistant et
   `addSampler` sous un nom constant, seulement quand la texture change (`FullscreenTriangle`). Une seule requête
   `GL_TIME_ELAPSED` peut être ouverte à la fois : les sections GPU ne s'imbriquent jamais, et rien sous un pack de
   shaders, qui dessine ses vues au milieu des nôtres (`GpuTimer`).
 - L'extension Java de VSCode compile avec JDT dans `build/classes/java/main` (même dossier que Gradle) ; avec un modèle de projet périmé, elle y écrit des classes `Unresolved compilation problems` qui font planter le client au chargement. L'autobuild est coupé dans `.vscode/settings.json` ; ne jamais le réactiver sans un import Gradle sain (JDK 21).
+
+- Menu pause : le titre de `GameMenuScreen` est lui aussi un `ClickableWidget`, de toute la largeur de l'écran, à x = 0 :
+  placer un bouton par rapport aux boutons du menu filtre sur `ButtonWidget` (l'icône se posait hors de l'écran), et un
+  `TexturedButtonWidget` en est un. Un écran qui veut montrer le jeu derrière lui remplace `renderBackground` (par défaut,
+  flou et voile).
+- Tests du client : une attente de repos qui compte ses images garde son compte à zéro en sortant ; sinon l'attente suivante passe à
+  sa première image, avant même que le travail lancé par l'étape d'avant n'ait commencé (`LightVolume.rebake` n'agit qu'au passage du
+  fil de cuisson), et la mesure tombe en plein recalcul.
+- Tests du client : le banc est plafonné à 100 images/s ; un coût se lit en temps GPU (`GpuTimer`, sections mesurées même sous le plafond), jamais en temps d'image (« 10 ms » y veut seulement dire qu'on tient le plafond). Le grain du film change à chaque image : deux images se comparent par l'écart moyen signé d'une bande, pas par l'écart absolu. Le monde de test est paisible : un mob hostile y disparaît au premier tick, un corps de test est un villageois. Une lecture filtrée dans un atlas dépend de la place de la tuile (dernier bit de l'arrondi) : ce qui doit égaler un recalcul complet relit au pixel (`texelFetch`), et se compare surface par surface, un recalcul redistribuant les tuiles.
+- Tests du client : le palier `auto` donne Low sur une carte intégrée (la CI, llvmpipe), sans post ni cache de surfaces ; un
+  test qui lit l'un des deux pose High (`LevelZeroClientTests.highTier`) et rend les réglages en sortant. Rejouer la suite une
+  fois avec `-PlookQuality=low`. Le juge d'un cache incrémental est le recalcul complet : mêmes tuiles au bit près après un
+  changement (`LightSurfaces.fingerprints`, `LightFollowsBlocksClientTests`), à condition que rien ne soit tiré au hasard au
+  calcul. Un mob lancé vers un cadre erre et le manque une fois sur cinq, ou, recréé à l'arrivée avec une IA neuve, y retourne : ses
+  buts tombent à chaque tick (`clearGoals(goal -> true)`, qui garde sa gravité, à la différence de `setAiDisabled`). Un corps lancé dans le Level 0 finit contre un mur : un relevé de
+  continuité s'arrête avant, sinon cet arrêt passe pour un gel.
 
 ## Avant de push
 

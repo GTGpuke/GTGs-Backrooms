@@ -11,9 +11,9 @@ import net.minecraft.entity.Entity;
 import net.minecraft.util.Util;
 import net.minecraft.world.BlockView;
 
-import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.audio.client.CueTracker;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.CrossingRoll;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 
 /**
  * Apres son orientation par vanilla, la camera du joueur prend ce qui reste du roulis d'une traversee
@@ -33,7 +33,7 @@ public abstract class MixinCamera {
         if (CrossingRoll.active()) {
             CrossingRoll.apply(self, Util.getMeasuringTimeMs());
         }
-        if (ModConfig.AUDIO_CAMERA_SHAKE && client.world != null) {
+        if (!LookSettings.current().motionReduced() && client.world != null) {
             CueTracker.shakeCamera(self, client.world, tickDelta, client.options.getDistortionEffectScale().getValue());
         }
     }

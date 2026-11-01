@@ -36,14 +36,18 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.world.PortalSightReporter;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteSyncReceiver;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModEntities;
+import com.gtgpuke.gtgsbackrooms.core.render.client.BlockMaterials;
 import com.gtgpuke.gtgsbackrooms.core.render.client.FramebufferRegistry;
 import com.gtgpuke.gtgsbackrooms.core.render.client.FullscreenTriangle;
 import com.gtgpuke.gtgsbackrooms.core.render.client.GpuTimer;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LightCopy;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookPrograms;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookSettingsStore;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonFaces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonLights;
+import com.gtgpuke.gtgsbackrooms.core.render.client.menu.PauseMenuButton;
 
 /**
  * Point d'entree client du mod : rendu adaptatif du Level 0, ecran de la baguette, portails.
@@ -63,9 +67,13 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
         // mod charges avec les shaders vanilla ; effets de dimension du Level 0.
         LookResources.register();
         NeonFaces.register();
+        BlockMaterials.register();
         LookPrograms.register();
         // Les neons de chaque monde client, releves a l'arrivee de ses chunks.
         NeonIndex.register();
+        LightCopy.register();
+        LookSettingsStore.load();
+        PauseMenuButton.register();
         // Moteur audio : profils par dimension et liens son-image recharges avec les ressources ; copie du monde du calcul
         // par rayons.
         AudioResources.register();
@@ -102,6 +110,7 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
             // Copie du monde pour les rayons, acoustique des sons en cours (resultats appliques, occlusion revue) et bourdonnement
             // des neons proches.
             SolidityIndex.onClientTick(client);
+            LightCopy.onClientTick(client);
             AcousticRouter.onClientTick(client);
             CueTracker.onClientTick(client);
             NeonHum.onClientTick(client);
@@ -136,6 +145,7 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
         AcousticWorker.clear();
         GeneratedAcoustics.clear();
         SolidityIndex.clear();
+        LightCopy.clear();
         CueTracker.clear();
         NeonHum.clear();
     }

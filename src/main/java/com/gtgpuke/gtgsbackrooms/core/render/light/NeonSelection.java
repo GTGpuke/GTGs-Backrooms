@@ -47,6 +47,23 @@ public final class NeonSelection {
         }
     }
 
+    /**
+     * La part d'un neon dans ce qui ne compte que les plus proches : 1 pres de la camera, 0 au rang ou la liste s'arrete et a la distance
+     * ou la recherche s'arrete. Elle suit la distance sans saut : un neon s'eteint avant de sortir, et son voisin s'allume en y entrant.
+     *
+     * @param index rang du neon
+     * @param nearest neons qui comptent
+     * @param fade distance, en blocs, sur laquelle la part passe de 1 a 0
+     * @param searched distance de la recherche, en blocs
+     * @return part, de 0 a 1
+     */
+    public float nearShare(int index, int nearest, float fade, float searched) {
+        float distance = (float) Math.sqrt(this.squaredDistances[index]);
+        float last = nearest <= this.count ? (float) Math.sqrt(this.squaredDistances[nearest - 1]) : searched;
+        float room = Math.min(last, searched) - distance;
+        return room <= 0.0f ? 0.0f : Math.min(room / fade, 1.0f);
+    }
+
     /** Nombre de neons gardes. */
     public int count() {
         return this.count;

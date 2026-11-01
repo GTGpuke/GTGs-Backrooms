@@ -48,6 +48,7 @@ public final class ShaderPatcher {
     /** Remplace par {@code 1.0} dans un shader de terrain (qui declare {@code ChunkOffset}), {@code 0.0} ailleurs. */
     public static final String TERRAIN_TOKEN = "${terrain}";
     private static final Pattern CHUNK_OFFSET = Pattern.compile("\\buniform\\s+vec3\\s+ChunkOffset\\s*;");
+    private static final Pattern LIGHT_MAP_COLOR = Pattern.compile("\\bout\\s+vec4\\s+lightMapColor\\s*;");
     private static final Pattern UV0 = Pattern.compile("\\bin\\s+vec2\\s+UV0\\s*;");
     private static final Pattern NORMAL = Pattern.compile("\\bin\\s+vec3\\s+Normal\\s*;");
 
@@ -56,6 +57,8 @@ public final class ShaderPatcher {
     private static final Pattern DEFINE = Pattern.compile("^[ \\t]*#[ \\t]*define[ \\t]+(\\w+)", Pattern.MULTILINE);
     private static final Pattern MAIN = Pattern.compile("\\bvoid\\s+main\\s*\\(\\s*\\)\\s*\\{");
     private static final Pattern OUTPUT = Pattern.compile("(?:layout\\s*\\([^)]*\\)\\s*)?\\bout\\s+vec4\\s+(\\w+)\\s*;");
+    /** Toute declaration d'une sortie, quel que soit son type, tableau compris : un fragment n'en a qu'une. */
+    private static final Pattern ANY_OUTPUT = Pattern.compile("\\bout\\s+\\w+\\s+\\w+\\s*(?:\\[[^\\]]*\\]\\s*)?[;,]");
     private static final Pattern DISCARD = Pattern.compile("\\bdiscard\\b");
     private static final Set<String> CONDITIONAL = Set.of("if", "ifdef", "ifndef", "elif", "else", "endif");
     private static final Set<String> HARMLESS = Set.of("version", "line", "define");
@@ -67,13 +70,14 @@ public final class ShaderPatcher {
      * @param version version GLSL declaree, 0 si absente ou declaree plusieurs fois
      * @param mains nombre de {@code void main()}
      * @param outputs noms des sorties {@code out vec4}, dans l'ordre
+     * @param declaredOutputs nombre de declarations de sortie, de tout type
      * @param discard {@code true} si la source peut rejeter un fragment
      * @param directives directives autres que {@code #version} et {@code #line}, dans l'ordre, repetitions comprises
      * @param macros noms des macros definies par {@code #define}
      * @param macroUsed {@code true} si une macro apparait dans la declaration d'une sortie ou la signature de {@code main}
      * @param unknownDirective {@code true} si une directive n'est ni conditionnelle, ni {@code #define}
      */
-    public record Analysis(int version, int mains, List<String> outputs, boolean discard, List<String> directives, List<String> macros,
+    public record Analysis(int version, int mains, List<String> outputs, int declaredOutputs, boolean discard, List<String> directives, List<String> macros,
             boolean macroUsed, boolean unknownDirective) {
 
         /** {@code true} si une directive conditionnelle est presente. */
@@ -138,6 +142,11 @@ public final class ShaderPatcher {
             outputs.add(output.group(1));
             signatureLines.add(lineAt(blank, output.start()));
         }
+        int declaredOutputs = 0;
+        Matcher anyOutput = ANY_OUTPUT.matcher(blank);
+        while (anyOutput.find()) {
+            declaredOutputs++;
+        }
         int mains = 0;
         Matcher main = MAIN.matcher(blank);
         while (main.find()) {
@@ -154,7 +163,7 @@ public final class ShaderPatcher {
                 }
             }
         }
-        return new Analysis(version, mains, List.copyOf(outputs), DISCARD.matcher(blank).find(), List.copyOf(directives), List.copyOf(macros),
+        return new Analysis(version, mains, List.copyOf(outputs), declaredOutputs, DISCARD.matcher(blank).find(), List.copyOf(directives), List.copyOf(macros),
                 macroUsed, unknown);
     }
 
@@ -175,7 +184,7 @@ public final class ShaderPatcher {
         if (analysis.mains() != 1) {
             return REFUSAL_MAIN;
         }
-        if (kind == ShaderKind.FRAGMENT && analysis.outputs().size() != 1) {
+        if (kind == ShaderKind.FRAGMENT && (analysis.outputs().size() != 1 || analysis.declaredOutputs() != 1)) {
             return REFUSAL_OUTPUT;
         }
         return null;
@@ -229,6 +238,12 @@ public final class ShaderPatcher {
         appendInjections(patched, injections, InjectionPoint.MAIN_BEFORE, INDENT, tokens);
         patched.append(INDENT).append(VANILLA_MAIN).append("();\n");
         appendInjections(patched, injections, InjectionPoint.MAIN_AFTER, INDENT, tokens);
+        if (terrain) {
+            appendInjections(patched, injections, InjectionPoint.TERRAIN_AFTER, INDENT, tokens);
+        }
+        if (LIGHT_MAP_COLOR.matcher(blank).find()) {
+            appendInjections(patched, injections, InjectionPoint.LIT_AFTER, INDENT, tokens);
+        }
         for (int i = 0; i < injections.size(); i++) {
             ShaderPatch.Injection injection = injections.get(i);
             if (injection.point() == InjectionPoint.OUTPUT) {

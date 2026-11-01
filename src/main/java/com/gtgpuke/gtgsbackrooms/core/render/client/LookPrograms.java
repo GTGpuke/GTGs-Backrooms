@@ -1,6 +1,7 @@
 package com.gtgpuke.gtgsbackrooms.core.render.client;
 
 import org.jetbrains.annotations.Nullable;
+import org.lwjgl.opengl.GL20;
 
 import net.minecraft.client.gl.GlUniform;
 import net.minecraft.client.gl.ShaderProgram;
@@ -27,10 +28,10 @@ public final class LookPrograms {
     public static final Identifier BLUR = Identifier.of(ModConstants.MOD_ID, "look_blur");
     /** Uniforme du post : x vignette, y aberration, z 1 pour appliquer aussi le look de l'etage 1, w force du bloom. */
     public static final String POST_PARAMS = "gtgs_PostParams";
-    /** Teinte du look de l'etage 1 (rgb) et sa force (a), quand les shaders ne le portent pas (pack, mod de terrain). */
-    public static final String POST_TINT = "gtgs_PostTint";
-    /** Desaturation (x), grain (y), vacillement (z), temps (w) du look de l'etage 1, quand les shaders ne le portent pas. */
+    /** Identifiant (x), grain (y), vacillement (z), temps (w) du look de l'etage 1, quand les shaders ne le portent pas. */
     public static final String POST_LOOK = "gtgs_PostLook";
+    /** Style du preset visuel : bande usee, bandes noires. */
+    public static final String POST_STYLE = "gtgs_PostStyle";
     /** Seuil de luminosite du bloom. */
     public static final String BLOOM_THRESHOLD = "gtgs_BloomThreshold";
     /** Pas du flou : un texel le long de l'axe de la passe. */
@@ -38,8 +39,10 @@ public final class LookPrograms {
 
     private static @Nullable ShaderProgram post;
     private static @Nullable GlUniform postParams;
-    private static @Nullable GlUniform postTint;
     private static @Nullable GlUniform postLook;
+    private static @Nullable GlUniform postStyle;
+    /** {@code true} une fois l'echantillonneur de la LUT du post lie a son unite, pour le programme charge. */
+    private static boolean postLutBound;
     private static @Nullable ShaderProgram bloomExtract;
     private static @Nullable GlUniform bloomThreshold;
     private static @Nullable ShaderProgram blur;
@@ -55,8 +58,9 @@ public final class LookPrograms {
             context.register(POST, VertexFormats.POSITION_TEXTURE, program -> {
                 post = program;
                 postParams = program.getUniform(POST_PARAMS);
-                postTint = program.getUniform(POST_TINT);
                 postLook = program.getUniform(POST_LOOK);
+                postStyle = program.getUniform(POST_STYLE);
+                postLutBound = false;
             });
             context.register(BLOOM_EXTRACT, VertexFormats.POSITION_TEXTURE, program -> {
                 bloomExtract = program;
@@ -79,14 +83,31 @@ public final class LookPrograms {
         return postParams;
     }
 
-    /** Uniforme de la teinte du look, ou {@code null} tant que le programme n'est pas charge. */
-    public static @Nullable GlUniform postTint() {
-        return postTint;
+    /**
+     * Lie l'echantillonneur de la LUT du post a son unite ({@link LookLuts#UNIT}), une fois par programme charge : vanilla
+     * ne lie que les echantillonneurs 2D de son fichier, et la valeur reste dans le programme.
+     */
+    public static void bindLutSampler() {
+        if (post == null || postLutBound) {
+            return;
+        }
+        post.bind();
+        int location = GlUniform.getUniformLocation(post.getGlRef(), LookLuts.SAMPLER);
+        if (location >= 0) {
+            GL20.glUniform1i(location, LookLuts.UNIT);
+        }
+        post.unbind();
+        postLutBound = true;
     }
 
     /** Uniforme des parametres du look, ou {@code null} tant que le programme n'est pas charge. */
     public static @Nullable GlUniform postLook() {
         return postLook;
+    }
+
+    /** Uniforme du style du preset, ou {@code null} tant que le programme n'est pas charge. */
+    public static @Nullable GlUniform postStyle() {
+        return postStyle;
     }
 
     /** Programme de la premiere passe du bloom, ou {@code null} tant qu'il n'est pas charge. */

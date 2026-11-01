@@ -20,14 +20,12 @@ import net.minecraft.util.Identifier;
 class ShaderPatchRegistryTest {
 
     private static final String WORLD_FRAGMENT = "assets/gtgs_backrooms/shader_patches/world_fragment.json";
-    private static final Identifier LOOK = Identifier.of("gtgs_backrooms", "shaders/include/look.glsl");
-    private static final Identifier SCHEDULE = Identifier.of("gtgs_backrooms", "shaders/include/neon_schedule.glsl");
 
     @Test
     @DisplayName("Le patch du mod s'applique aux shaders du monde et a eux seuls, bibliotheque du mod comprise")
     void modPatchAppliesToWorldShaders() throws IOException {
         ShaderPatchRegistry registry = ShaderPatchRegistry.of(Map.of("world_fragment.json", resource(WORLD_FRAGMENT)),
-                include -> include.equals(LOOK) ? lookInclude() : include.equals(SCHEDULE) ? scheduleInclude() : null);
+                ShaderPatchRegistryTest::modInclude);
         assertEquals(1, registry.size(), "Un patch.");
         Map<String, String> includes = VanillaShaders.includes();
         Map<String, String> core = VanillaShaders.core();
@@ -36,7 +34,10 @@ class ShaderPatchRegistryTest {
         assertTrue(patched.contains("vec4 gtgs_applyLook(vec4 c)"), "Bibliotheque du mod inseree.");
         assertTrue(patched.indexOf("float gtgs_neonIntensity(") < patched.indexOf("vec4 gtgs_applyLook(vec4 c)"),
                 "Le jumeau du calendrier des neons est insere avant le look qui l'appelle.");
+        assertTrue(patched.indexOf("vec3 gtgs_grade(") < patched.indexOf("vec4 gtgs_applyLook(vec4 c)"),
+                "L'etalonnage est insere avant le look qui l'appelle.");
         assertTrue(patched.endsWith("    fragColor = gtgs_applyLook(fragColor);\n}\n"), "Sortie passee par le look.");
+        assertTrue(patched.contains("uniform sampler3D gtgs_LightVolume;"), "La zone de lumiere cuite est lue par le fragment.");
         assertSame(patched, registry.patch(ShaderKind.FRAGMENT, "rendertype_solid", patched), "Deja patche.");
         String particle = VanillaShaders.compiled(core.get("particle.fsh"), includes);
         assertTrue(registry.patch(ShaderKind.FRAGMENT, "particle", particle).contains(ShaderPatcher.VANILLA_MAIN), "Les particules aussi.");
@@ -81,6 +82,7 @@ class ShaderPatchRegistryTest {
         String patched = registry.patch(ShaderKind.FRAGMENT, "x", source);
         assertTrue(patched.endsWith("    fragColor = f(fragColor);\n}\n"), "Le premier patch enveloppe la main : " + patched + ".");
         assertFalse(patched.contains("g();"), "Le second patch trouve la main deja enveloppee : un seul patch par etage.");
+        assertEquals(patched, registry.patch(ShaderKind.FRAGMENT, "x", source), "Meme resultat au chargement suivant, le second patch ignore de nouveau.");
         assertSame(patched, registry.patch(ShaderKind.FRAGMENT, "x", patched), "Le second trouve la source deja patchee et ne l'enveloppe pas deux fois.");
     }
 
@@ -96,17 +98,10 @@ class ShaderPatchRegistryTest {
         assertSame(twoOutputs, ShaderPatchRegistry.EMPTY.patch(ShaderKind.FRAGMENT, "x", twoOutputs), "Le registre vide ne touche a rien.");
     }
 
-    static String lookInclude() {
+    /** Une bibliotheque du mod, lue dans ses ressources. */
+    static String modInclude(Identifier include) {
         try {
-            return resource("assets/gtgs_backrooms/shaders/include/look.glsl");
-        } catch (IOException exception) {
-            throw new IllegalStateException(exception);
-        }
-    }
-
-    static String scheduleInclude() {
-        try {
-            return resource("assets/gtgs_backrooms/shaders/include/neon_schedule.glsl");
+            return resource("assets/" + include.getNamespace() + "/" + include.getPath());
         } catch (IOException exception) {
             throw new IllegalStateException(exception);
         }

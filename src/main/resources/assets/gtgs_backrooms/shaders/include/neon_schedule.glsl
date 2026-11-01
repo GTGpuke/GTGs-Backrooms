@@ -30,7 +30,16 @@ bool gtgs_neonFlickers(uint character, int tick) {
     return (gtgs_mix(character ^ slot * 0x27D4EB2Fu) >> 29u) == 0u;
 }
 
-float gtgs_neonIntensity(ivec3 p, int seed, int tick, float flickering, float dead) {
+// Un secteur de 64 blocs de cote en panne, d'apres la part des secteurs du profil.
+bool gtgs_neonBlackout(ivec3 p, int seed, float share) {
+    uint roll = gtgs_mix(uint(p.x >> 6) * 0x9E3779B1u ^ gtgs_mix(uint(p.z >> 6) * 0xC2B2AE3Du ^ uint(seed) ^ 0xD3A2646Cu)) >> 22u;
+    return int(roll) < int(share * 1024.0);
+}
+
+float gtgs_neonIntensity(ivec3 p, int seed, int tick, float flickering, float dead, float blackout) {
+    if (gtgs_neonBlackout(p, seed, blackout)) {
+        return 0.12;
+    }
     uint character = gtgs_neonCharacter(p, seed);
     int kind = gtgs_neonKind(character, flickering, dead);
     if (kind == 1) {

@@ -7,7 +7,27 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 
 ## [Unreleased]
 
+### Fixed
+- **Partie figée sur la sauvegarde** : quitter juste après être revenu sur ses pas, ce que les portails rendent plus probable, pouvait
+  bloquer la fermeture du monde sans fin. Le déchargement des chunks, boucle de vanilla, rend maintenant la main à chaque tour.
+- **Lumière et textures par carrés de chunks** : dans une grande salle ouverte, le cache de surfaces n'avait plus de tuiles, et une
+  section servie à moitié le restait, même une fois le joueur devant elle : ses murs gardaient de près la lumière grossière de la zone.
+  Le cache passe à 32 768 tuiles (128 Mio), et les sections proches sont toujours servies d'abord. En marchant dans une telle salle sur
+  un monde de l'auteur, les relevés avec des surfaces sans tuile à moins de 24 blocs passent de 164 sur 194 à aucun.
+- **Contraste des textures au loin** : en Ultra, au-delà de 48 blocs ou à une autre hauteur, le contraste d'une texture suivait ce que la
+  grille des blocs gardait d'une autre section ; il ne dépend plus de ce qu'elle répète.
+- **Tirets sombres au pied des murs** : l'épaisseur de la moquette allait lire sa lumière sous le mur qui la borde.
+- **Changement de couche** : la texture de zone se vide d'un coup, au lieu de montrer quelques images de lumière à la mauvaise hauteur, et
+  le dessous du monde est bien opaque pour les rayons.
+- Une section sans aucun néon se recalcule quand elle reçoit le premier.
+
 ### Added
+- **Matière des blocs** : à partir de High, ce qui brille et ce qui accroche la lumière s'écrit dans les textures du bloc, au pixel
+  (`x_s.png`, `x_n.png`). La moquette est mate à tous les paliers, n'a plus de reflet de sol humide et a une vraie épaisseur, tirée du
+  bruit de sa texture ; le fond du papier peint est mat et rugueux, et seul le sombre de son motif renvoie un peu les dalles. Medium n'a
+  plus de reflets ([rendu](docs/systemes/RENDU.md)).
+- **Palette du Level 0** : une courbe de teinte par luminance (`grade.tones`) reprend les couleurs de l'image de référence de l'auteur :
+  sombres ambrés, tons moyens dorés, clairs citron. L'Ultra gagne son épaule (`traced.shoulder`) et un plafond éclairé comme ses murs.
 - **Moteur de shaders** : chaque dimension à profil de look, aujourd'hui le Level 0, reçoit sa teinte, sa désaturation,
   son grain, sa courbe de lumière et son brouillard, par les shaders vanilla patchés au chargement. Option
   `gtgsbackrooms.look.enabled` ([rendu](docs/systemes/RENDU.md)).
@@ -22,8 +42,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 - **Jumeau GLSL du calendrier des néons** : la face de chaque tube suit son état et les cris proches dans le shader. En
   développement, `gtgsbackrooms.look.verifyNeonShader` le vérifie sur le GPU, et un écart le coupe. Jetons de patch
   `${uv}`, `${normal}` et `${terrain}`.
-- **Qualité et bloom** : `gtgsbackrooms.look.quality` vaut `light` (huit néons, sans bloom), `full` (trente-deux néons
-  et bloom) ou `auto`. Le seuil et la force du bloom viennent du profil.
+- **Qualité et bloom** : `gtgsbackrooms.look.quality` choisit le palier de départ, de `off` à `ultra`, ou `auto`. Le seuil
+  et la force du bloom viennent du profil.
 - **Repli de compilation** : chaque source patchée est d'abord compilée à blanc. Refusée par le pilote, elle est
   journalisée une fois et le shader reste vanilla. Le bilan des étages patchés s'écrit à chaque rechargement.
 - **Look sous un pack de shaders** : quand le pack dessine l'image, le look de chaque dimension se pose sur ses pixels,
@@ -94,8 +114,70 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   qui montre le bloc du dessous ou le mur derrière lui fait échouer le build ([tests](docs/dev/TESTS.md)).
 - **Créatures qui traversent sans à-coup** : un corps qui passe un cadre vers le Level 0 à vitesse constante ne doit
   ni s'arrêter ni sauter à l'écran.
+- **Étalonnage par LUT** : la palette de chaque dimension (désaturation, teinte, et la nouvelle section `grade` du
+  profil : pente, décalage, puissance, saturation) tient dans une LUT 3D, appliquée en fin de calcul de chaque fragment,
+  et par le post quand l'étage 1 passe par lui ([rendu](docs/systemes/RENDU.md#étalonnage)).
+- **Lumière cuite du Level 0** : le terrain quitte l'éclairage plat de vanilla. Chaque dalle de néon éclaire comme un
+  rectangle, la lumière s'arrête aux murs, rebondit deux fois en prenant leur couleur, et les coins s'assombrissent. Le
+  calcul tourne sur un fil à part, et le rendu ne lit qu'une texture 3D. Section `baked_light` du profil, option
+  `gtgsbackrooms.look.bakedLight` ([rendu](docs/systemes/RENDU.md#lumière-cuite)).
+- **Cache de surfaces** : en qualité complète, la lumière directe se calcule sur le processeur graphique pour chaque pixel
+  de texture, une fois par surface : ombres et pénombres au pixel, coins sombres, relief des textures qui accroche la
+  lumière ([rendu](docs/systemes/RENDU.md#cache-de-surfaces)).
+- **Ombres portées pixelisées** : le bord des ombres suit la grille des pixels de texture, en marches nettes, alors que la
+  lumière reste lisse. Plus aucun bruit au calcul : une ombre est la même d'une tuile à l'autre.
+- **Dalles de néon refaites** : une dalle n'éclaire plus que par sa face du bas, rien par ses côtés ni au-dessus de son plan. Le
+  sol sous elle reçoit le plus de lumière, le haut des murs ne brûle plus, et le Level 0 est bien plus clair. Tous les néons
+  éclairent, et là où aucune lumière n'arrive, c'est vraiment noir ([rendu](docs/systemes/RENDU.md#lumière-cuite)).
+- **Ombres des corps** : en High et en Ultra, le joueur et les créatures portent une ombre sur le terrain, nette au contact et
+  diluée en s'éloignant. Les entités reçoivent la même lumière que le décor, et restent dans l'ombre des murs
+  ([rendu](docs/systemes/RENDU.md#ombres-des-corps)).
+- **Lumière tracée en Ultra** : l'image change de nature. La lumière, presque toute indirecte, passe d'une surface à l'autre en prenant
+  la couleur des blocs, les ombres sont très larges, plus aucune grille de pixels, textures plus calmes et sol presque mat, sans
+  bruit à l'écran. Une pièce fermée reste noire. La section `traced` du profil règle tout ([rendu](docs/systemes/RENDU.md#lumière-tracée)).
+- **Palette du Level 0** : des jaunes plus verts, et des sombres saturés plutôt que bruns, à tous les paliers.
+- **Menu des Backrooms** : une icône dans le menu pause, seulement dans les Backrooms, ouvre un panneau sans flou pour voir le
+  jeu changer derrière : qualité Low, Medium, High, Ultra ou Auto, six styles (Fidèle, Pixel, Réaliste, VHS, Cinématique,
+  Confort), taille des pixels d'ombre, confort, et chaque effet un par un avec son coût GPU mesuré. Les réglages se gardent
+  dans `config/gtgs_backrooms.json` ([rendu](docs/systemes/RENDU.md#menu)).
+- **Halo, reflet et bloom large** : les dalles ont un halo, rayonnent dans la pièce et se reflètent sur la moquette humide.
+- **Entités sous la lumière du décor** : créatures et main reçoivent la direction réelle des néons proches, au lieu de la
+  lightmap.
+- **Lumière au texel** : la lumière se lit au centre du texel de chaque fragment, et son niveau se décide par pixel de
+  texture, d'où un dégradé pixelisé. Option `gtgsbackrooms.look.pixelShadows` : 32 par bloc (défaut), 16, ou 0 pour une
+  lumière lisse.
+- **Étalonnage et lumière au texel vérifiés sur le GPU** : un test du client compare ce que rendent les fonctions des
+  shaders à leurs jumeaux Java, et vérifie que tous les étages patchés compilent.
+
+### Fixed
+- Pièces noires où seules les dalles brillent : une section sortie de la fenêtre de la lumière restait tenue pour envoyée, et ne
+  revenait jamais quand le joueur retournait sur ses pas.
+- Néons qui s'allument au loin : les surfaces lointaines étaient cinq fois trop sombres, et une section prenait ses tuiles d'un coup ;
+  les trois niveaux de lumière se fondent désormais, et un halo ne saute plus quand son néon entre parmi les dix plus proches.
+- Rectangles sombres en marchant : une surface neuve n'avait qu'un rebond, la moitié de sa lumière, jusqu'au balayage suivant.
+- La main et les corps ne brûlent plus sous une dalle, et l'ombre d'un mur ne découpe plus la main.
+- **Ombres non actualisées** : les blocs reçus du serveur (commandes, autres joueurs, mobs) n'arrivaient ni à la lumière, ni à
+  l'index des néons, ni au calcul acoustique. Vanilla les applique par un autre chemin que la prédiction du joueur.
+- **Tout qui se recalculait à chaque bloc posé** : une section recuite perdait ses tuiles le temps de les refaire, et un bloc en
+  remettait des dizaines à cuire. Une tuile garde maintenant sa valeur, et un pilier ne recalcule plus qu'environ 10 % du cache, en
+  quelques images, sans rien faire disparaître. Un bloc que la lumière traverse (une torche) ne coûte plus rien.
+- **Ombres fausses** : une tuile pouvait se calculer sur une grille de blocs pas encore à jour et garder ses ombres. Quarante-huit
+  néons par section ne suffisaient pas : presque toutes atteignaient la limite, d'où des coutures aux bords de section. La portée
+  d'une dalle se coupait net, d'où des arcs sur le sol. Changer de hauteur vidait tout le cache.
 
 ### Changed
+- **Plus de brouillard dans le Level 0** : on voit net jusqu'au fond des couloirs ; seul le fondu vanilla reste, au bord de
+  la distance de rendu.
+- **Look du Level 0** : étalonnage chaud, hautes lumières tassées au lieu de saturer, bloom réservé à ce qui brille
+  vraiment. Sous la lumière cuite, le brouillard se pose par-dessus la lumière.
+- **Plafond de clignotement indépendant de la cadence** : une variation forte se mesure d'un extrême à l'autre de
+  l'effet, et la vitesse douce est fixée par seconde. Avant, à haute cadence, une montée rapide faite de petits pas
+  passait sans compter, et la vitesse douce dépendait de la cadence.
+- **Un patch de shaders ignoré se journalise** : un second patch qui vise un étage déjà patché est signalé une fois.
+  Un fragment qui déclare une sortie de plus, de tout type, reste vanilla.
+- **Désaturation et teinte après les néons** : elles passent dans la LUT, en fin de calcul du fragment. La lumière des
+  tubes est donc désaturée et teintée avec le reste, et une couleur que les néons poussent au-delà de 1 est bornée avant
+  d'être teintée.
 - **Deux tiers d'allocations en moins par image** : la couleur du ciel et du brouillard des biomes se calcule sans les
   huit cents vecteurs par appel de vanilla, à chaque image et à chaque vue de portail, avec le même résultat au bit près.
   Le fil de rendu passe de 83 à 33 Kio alloués par image sans portail, de 139 à 46 avec un portail en vue ; le

@@ -184,9 +184,11 @@ tremblement de caméra s'y cale : deux oscillations, un degré et demi au plus e
 jeu. Il est coupé par défaut et jamais joué dans une dimension vanilla.
 
 Le plafond de clignotement (`FlashLimiter`) borne l'effet de toutes les réactions ensemble. L'image ne varie jamais
-fortement plus de trois fois par seconde, et ne bouge ensuite que par petits pas. Chaque vue pèse la part de l'écran
-qu'elle couvre. L'option de confort qui réduit les flashs impose les petits pas et coupe la pulsation, sans toucher au
-son.
+fortement plus de trois fois par seconde, et ne bouge ensuite qu'à vitesse douce, 1,2 par seconde, à toute cadence
+d'image. Une variation forte se mesure depuis le dernier extrême de l'effet, pas d'une image à la suivante : une montée
+rapide faite de petits pas, à haute cadence, reste forte, comme un vacillement autour d'une valeur moyenne. Chaque vue
+pèse la part de l'écran qu'elle couvre. L'option de confort qui réduit les flashs impose la vitesse douce et coupe la
+pulsation, sans toucher au son.
 
 ### Un son de bout en bout
 

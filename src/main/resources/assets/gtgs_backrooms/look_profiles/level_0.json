@@ -1,12 +1,13 @@
 {
   "dimension": "gtgs_backrooms:backrooms_level_0",
   "id": 1,
-  "tint": [1.06, 1.0, 0.82, 0.35],
-  "desaturation": 0.15,
+  "tint": [1.0, 1.0, 1.0, 0.0],
+  "desaturation": 0.0,
   "grain": 0.02,
+  "grade": { "tones": { "share": 0.85, "stops": [[0.2, 1.33, 0.2], [0.3, 1.24, 0.23], [0.43, 1.14, 0.36], [0.54, 1.09, 0.445], [0.67, 1.035, 0.54], [0.79, 1.02, 0.65], [1.0, 1.0, 0.95]] } },
   "flicker": 0.0,
   "lightmap": { "floor": 0.08, "warmth": 0.2, "max_brightness": 0.92 },
-  "fog": { "color": [0.48, 0.44, 0.30], "start": 4.0, "end": 48.0 },
-  "post": { "vignette": 0.25, "chromatic": 0.0, "bloom": true, "bloom_threshold": 0.6, "bloom_strength": 0.8 },
-  "neons": { "block": "gtgs_backrooms:level_zero_fluorescent_light", "radius": 8.0, "color": [1.0, 0.96, 0.82], "strength": 0.6, "flickering": 0.0, "dead": 0.0 }
+  "post": { "vignette": 0.25, "chromatic": 0.0, "bloom": true, "bloom_threshold": 0.8, "bloom_strength": 1.5 },
+  "neons": { "block": "gtgs_backrooms:level_zero_fluorescent_light", "radius": 8.0, "color": [1.0, 0.96, 0.82], "strength": 0.6, "flickering": 0.0, "dead": 0.0, "blackout": 0.0 },
+  "baked_light": { "emission": 1.2, "ambient": [0.02, 0.018, 0.012], "reach": 14.0, "size": 1.0, "angle": 90.0, "shadow_size": 0.3, "occlusion": 0.6, "relief": 1.2, "haze": 0.035, "sheen": 1.1, "shoulder": 0.55, "toe": 0.02, "pixel_light": 0.12, "dark_pixels": 0.22, "bounce": 0.75, "traced": { "shadow_size": 3.0, "relief": 0.6, "sheen": 1.0, "bounce": 1.0, "toe": 0.0, "detail": 0.28, "exposure": 0.7, "direct": 0.7, "shoulder": 0.8 } }
 }

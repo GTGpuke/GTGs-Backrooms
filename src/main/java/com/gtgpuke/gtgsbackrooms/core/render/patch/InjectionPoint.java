@@ -16,6 +16,10 @@ public enum InjectionPoint {
     MAIN_BEFORE("main_before"),
     /** Dans la nouvelle {@code main}, apres l'appel de la {@code main} vanilla. */
     MAIN_AFTER("main_after"),
+    /** Comme {@link #MAIN_AFTER}, dans les seuls shaders du terrain (ceux qui declarent {@code ChunkOffset}). */
+    TERRAIN_AFTER("terrain_after"),
+    /** Comme {@link #MAIN_AFTER}, dans les seuls shaders qui declarent la sortie {@code lightMapColor} (les entites). */
+    LIT_AFTER("lit_after"),
     /** Fragment seulement : la variable de sortie declaree passe par la fonction donnee, apres la {@code main} vanilla. */
     OUTPUT("output");
 

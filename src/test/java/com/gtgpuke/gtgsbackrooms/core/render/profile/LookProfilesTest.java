@@ -59,6 +59,6 @@ class LookProfilesTest {
 
     static LookProfile profile(Identifier dimension, int id) {
         return new LookProfile(dimension, id, 1.0f, 1.0f, 1.0f, 0.5f, 0.1f, 0.0f, 0.0f, LookProfile.Lightmap.VANILLA, LookProfile.Fog.VANILLA,
-                LookProfile.Post.NONE, LookProfile.Neons.NONE);
+                LookProfile.Post.NONE, LookProfile.Neons.NONE, LookProfile.Grade.NEUTRAL, LookProfile.BakedLight.NONE);
     }
 }

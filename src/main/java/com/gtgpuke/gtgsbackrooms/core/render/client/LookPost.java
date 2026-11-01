@@ -25,6 +25,8 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderPackState;
 import com.gtgpuke.gtgsbackrooms.core.render.post.StencilLookMask;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.VisualPreset;
 import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
 
 /**
@@ -58,6 +60,9 @@ public final class LookPost {
     public static final int NO_FRAME = -1;
     /** Coupe-circuit : vrai apres une exception pendant le post, qui ne se dessine plus de la session. */
     private static boolean failed;
+
+    /** Pas des tours de flou larges du bloom, en texels. */
+    private static final float[] WIDE_BLURS = {2.5f, 5.5f};
 
     private LookPost() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -141,10 +146,15 @@ public final class LookPost {
         boolean stageOneInShaders = lookBits && LookState.shadersCarryLook();
         ShaderProgram program = LookPrograms.post();
         GlUniform params = LookPrograms.postParams();
-        GlUniform tint = LookPrograms.postTint();
         GlUniform lookParams = LookPrograms.postLook();
-        if (program == null || params == null || tint == null || lookParams == null) {
+        if (program == null || params == null || lookParams == null) {
             return;
+        }
+        LookPrograms.bindLutSampler();
+        GlUniform style = LookPrograms.postStyle();
+        if (style != null) {
+            VisualPreset preset = LookSettings.current().preset();
+            style.set(preset.tape(), preset.bars());
         }
         Framebuffer screen = client.getFramebuffer();
         Vec3d listener = client.gameRenderer.getCamera().getPos();
@@ -189,8 +199,7 @@ public final class LookPost {
                     float pulse = CueTracker.screenPulse(look.dimension(), listener.x, listener.y, listener.z);
                     params.set(Math.min(1.0f, post.vignette() + pulse), post.chromatic(), stageOneInShaders ? 0.0f : 1.0f,
                             bloom != null && post.bloom() ? post.bloomStrength() : 0.0f);
-                    tint.set(look.tintRed(), look.tintGreen(), look.tintBlue(), look.tintStrength());
-                    lookParams.set(look.desaturation(), look.grain(), look.flicker(), LookState.time());
+                    lookParams.set(id, look.grain(), look.flicker(), LookState.time());
                     if (lookBits) {
                         GL11.glStencilFunc(GL11.GL_EQUAL, id << StencilLookMask.LOOK_SHIFT, StencilLookMask.LOOK_MASK);
                     }
@@ -251,8 +260,8 @@ public final class LookPost {
     }
 
     /**
-     * Le bloom de la copie de l'ecran : pixels lumineux a demi-resolution, puis flou en deux passes a quart de
-     * resolution. Le seuil est celui du premier look du masque qui demande le bloom.
+     * Le bloom de la copie de l'ecran : pixels lumineux a demi-resolution, puis flou en passes de plus en plus larges a quart
+     * de resolution. Le seuil est celui du premier look du masque qui demande le bloom.
      *
      * @return le framebuffer qui porte le bloom, ou {@code null} si un programme ou un framebuffer manque
      */
@@ -282,6 +291,17 @@ public final class LookPost {
             RenderSystem.setShaderTexture(0, quarterA.getColorAttachment());
             step.set(0.0f, 1.0f / quarterA.textureHeight);
             FullscreenTriangle.draw(blur);
+            // Deux tours de plus, a pas plus larges sur une image deja floue : une dalle rayonne dans la piece, pas seulement autour d'elle.
+            for (float spread : WIDE_BLURS) {
+                quarterA.beginWrite(true);
+                RenderSystem.setShaderTexture(0, quarterB.getColorAttachment());
+                step.set(spread / quarterA.textureWidth, 0.0f);
+                FullscreenTriangle.draw(blur);
+                quarterB.beginWrite(true);
+                RenderSystem.setShaderTexture(0, quarterA.getColorAttachment());
+                step.set(0.0f, spread / quarterA.textureHeight);
+                FullscreenTriangle.draw(blur);
+            }
             GpuTimer.end(GpuTimer.BLOOM);
         }
         return quarterB;

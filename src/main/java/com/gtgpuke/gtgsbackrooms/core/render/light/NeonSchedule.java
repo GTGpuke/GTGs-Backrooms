@@ -7,7 +7,9 @@ import net.minecraft.util.math.BlockPos;
  * Etat de chaque neon, calculable par n'importe quel client a partir de sa position, de la graine de sa dimension et du
  * temps du monde : la meme fonction pour la lumiere qu'il projette, sa face, et son bourdonnement. Chaque neon tire son
  * caractere de sa position : la plupart brillent sans faillir, une part vacille (des coupures de quatre ticks, un
- * cinquieme de seconde, jamais plus de cinq par seconde, voisins decorreles), une part est morte.
+ * cinquieme de seconde, jamais plus de cinq par seconde, voisins decorreles), une part est morte. Par-dessus, une part des
+ * secteurs de {@value #SECTOR_BLOCKS} blocs de cote est en panne : tous leurs neons sont morts, et le coeur du secteur, hors
+ * de portee de ses voisins, est vraiment noir.
  *
  * <p>La fonction existe deux fois, ici et en GLSL ({@code assets/gtgs_backrooms/shaders/include/neon_schedule.glsl}), et
  * les deux donnent exactement le meme resultat : arithmetique entiere sur 32 bits (multiplications modulo 2^32, decalages
@@ -25,6 +27,8 @@ public final class NeonSchedule {
     public static final int FLICKERING = 1;
     /** Un neon mort. */
     public static final int DEAD = 2;
+    /** Blocs de cote d'un secteur en panne : assez pour que la lumiere des secteurs voisins n'atteigne pas son coeur. */
+    public static final int SECTOR_BLOCKS = 64;
     /** Ticks d'une coupure : le plus court qui se voit. */
     static final int SLOT_TICKS = 4;
     /** Le caractere d'un neon range de 0 a 1023 : la part qui vacille, puis la part morte. */
@@ -36,6 +40,8 @@ public final class NeonSchedule {
     private static final int Y_SALT = 0x85EBCA77;
     private static final int Z_SALT = 0xC2B2AE3D;
     private static final int SLOT_SALT = 0x27D4EB2F;
+    private static final int BLACKOUT_SALT = 0xD3A2646C;
+    private static final int SECTOR_SHIFT = 6;
     private static final int MIX_A = 0x7FEB352D;
     private static final int MIX_B = 0x846CA68B;
     private static final int MIX_SHIFT_A = 16;
@@ -71,6 +77,33 @@ public final class NeonSchedule {
             return flickers(character, tick) ? OFF : 1.0f;
         }
         return kind == DEAD ? OFF : 1.0f;
+    }
+
+    /** {@code true} si le secteur de cette position est en panne, d'apres sa part du profil, de 0 a 1. */
+    public static boolean blackout(int x, int z, int seed, float share) {
+        int roll = mix((x >> SECTOR_SHIFT) * X_SALT ^ mix((z >> SECTOR_SHIFT) * Z_SALT ^ seed ^ BLACKOUT_SALT)) >>> LOT_SHIFT;
+        return roll < (int) (share * LOTS);
+    }
+
+    /**
+     * Intensite d'un neon, de {@value #OFF} a 1, en comptant les secteurs en panne.
+     *
+     * @param x position du bloc
+     * @param y position du bloc
+     * @param z position du bloc
+     * @param seed graine de sa dimension ({@link #seed})
+     * @param tick tick dans la periode de l'horloge commune, positif ({@code CueClock.tick})
+     * @param flickering part des neons qui vacillent, de 0 a 1
+     * @param dead part des neons morts, de 0 a 1 (pris apres ceux qui vacillent)
+     * @param blackout part des secteurs en panne, de 0 a 1
+     */
+    public static float intensity(int x, int y, int z, int seed, int tick, float flickering, float dead, float blackout) {
+        return blackout(x, z, seed, blackout) ? OFF : intensity(x, y, z, seed, tick, flickering, dead);
+    }
+
+    /** {@link #intensity(int, int, int, int, int, float, float, float)} pour une position empaquetee ({@code BlockPos.asLong}). */
+    public static float intensity(long packed, int seed, int tick, float flickering, float dead, float blackout) {
+        return intensity(BlockPos.unpackLongX(packed), BlockPos.unpackLongY(packed), BlockPos.unpackLongZ(packed), seed, tick, flickering, dead, blackout);
     }
 
     /** {@link #intensity(int, int, int, int, int, float, float)} pour une position empaquetee ({@code BlockPos.asLong}). */

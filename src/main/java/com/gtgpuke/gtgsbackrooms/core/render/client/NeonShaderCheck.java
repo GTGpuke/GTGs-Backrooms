@@ -49,14 +49,14 @@ public final class NeonShaderCheck {
     private static final String MAIN = """
             uniform ivec4 gtgs_TestPos[64];
             uniform int gtgs_TestSeed[64];
-            uniform vec2 gtgs_TestShares[64];
+            uniform vec3 gtgs_TestShares[64];
             out vec4 fragColor;
             void main() {
                 int i = int(gl_FragCoord.x);
                 ivec4 p = gtgs_TestPos[i];
                 uint character = gtgs_neonCharacter(p.xyz, gtgs_TestSeed[i]);
                 int kind = gtgs_neonKind(character, gtgs_TestShares[i].x, gtgs_TestShares[i].y);
-                float intensity = gtgs_neonIntensity(p.xyz, gtgs_TestSeed[i], p.w, gtgs_TestShares[i].x, gtgs_TestShares[i].y);
+                float intensity = gtgs_neonIntensity(p.xyz, gtgs_TestSeed[i], p.w, gtgs_TestShares[i].x, gtgs_TestShares[i].y, gtgs_TestShares[i].z);
                 fragColor = vec4(float(kind) / 2.0, intensity, float(character >> 24u) / 255.0, 1.0);
             }
             """;
@@ -133,8 +133,8 @@ public final class NeonShaderCheck {
                     GL20.glUniform4i(GL20.glGetUniformLocation(program, "gtgs_TestPos[" + i + "]"), vector.get("x").getAsInt(), vector.get("y").getAsInt(),
                             vector.get("z").getAsInt(), vector.get("tick").getAsInt());
                     GL20.glUniform1i(GL20.glGetUniformLocation(program, "gtgs_TestSeed[" + i + "]"), vector.get("seed").getAsInt());
-                    GL20.glUniform2f(GL20.glGetUniformLocation(program, "gtgs_TestShares[" + i + "]"), vector.get("flickering").getAsFloat(),
-                            vector.get("dead").getAsFloat());
+                    GL20.glUniform3f(GL20.glGetUniformLocation(program, "gtgs_TestShares[" + i + "]"), vector.get("flickering").getAsFloat(),
+                            vector.get("dead").getAsFloat(), vector.has("blackout") ? vector.get("blackout").getAsFloat() : 0.0f);
                 }
                 GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
                 pixels.clear();

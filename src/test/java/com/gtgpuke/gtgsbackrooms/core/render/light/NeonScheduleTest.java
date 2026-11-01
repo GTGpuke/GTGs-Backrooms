@@ -1,6 +1,7 @@
 package com.gtgpuke.gtgsbackrooms.core.render.light;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -50,11 +51,27 @@ class NeonScheduleTest {
             String expected = vector.get("kind").getAsString();
             assertEquals(expected, name(kind), "Caractere du vecteur " + i + " : " + vector + ".");
             kinds[kind]++;
-            assertEquals(vector.get("intensity").getAsFloat(), NeonSchedule.intensity(x, y, z, seed, tick, flickering, dead), EPSILON,
+            float blackout = vector.has("blackout") ? vector.get("blackout").getAsFloat() : 0.0f;
+            assertEquals(vector.get("intensity").getAsFloat(), NeonSchedule.intensity(x, y, z, seed, tick, flickering, dead, blackout), EPSILON,
                     "Intensite du vecteur " + i + " : " + vector + ".");
         }
         assertTrue(kinds[NeonSchedule.STEADY] > 0 && kinds[NeonSchedule.FLICKERING] > 0 && kinds[NeonSchedule.DEAD] > 0,
                 "Les vecteurs couvrent les trois caracteres.");
+    }
+
+    @Test
+    @DisplayName("Une panne eteint tout son secteur, d'un bord a l'autre, et rien au-dela ; sans part de pannes, rien ne s'eteint")
+    void blackoutCoversItsSector() {
+        int seed = NeonSchedule.seed(Identifier.of("gtgs_backrooms", "backrooms_level_0"));
+        assertFalse(NeonSchedule.blackout(0, 0, seed, 0.25f), "Le secteur de l'arrivee reste eclaire.");
+        assertTrue(NeonSchedule.blackout(64, 0, seed, 0.25f), "Le secteur voisin, a l'est, est en panne.");
+        assertTrue(NeonSchedule.blackout(127, 63, seed, 0.25f), "Jusqu'a son dernier bloc.");
+        assertFalse(NeonSchedule.blackout(63, 0, seed, 0.25f), "Le bloc d'avant n'en est pas.");
+        assertFalse(NeonSchedule.blackout(64, 0, seed, 0.0f), "Sans part de pannes, rien.");
+        assertEquals(NeonSchedule.OFF, NeonSchedule.intensity(64, 5, 0, seed, 3, 0.0f, 0.0f, 0.25f), EPSILON, "Eteint dans la panne.");
+        assertEquals(1.0f, NeonSchedule.intensity(0, 5, 0, seed, 3, 0.0f, 0.0f, 0.25f), EPSILON, "Allume hors de la panne.");
+        long packed = BlockPos.asLong(64, 5, 0);
+        assertEquals(NeonSchedule.OFF, NeonSchedule.intensity(packed, seed, 3, 0.0f, 0.0f, 0.25f), EPSILON, "Position empaquetee : pareil.");
     }
 
     @Test

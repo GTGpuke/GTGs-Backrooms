@@ -20,6 +20,7 @@ import net.minecraft.util.math.Vec3d;
 import com.gtgpuke.gtgsbackrooms.core.render.client.BiomeColors;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookFog;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
+import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
 
 /**
  * Brouillard du profil du monde rendu a la place de celui de vanilla, pour le brouillard du terrain hors de l'eau et sans
@@ -56,6 +57,13 @@ public abstract class MixinBackgroundRenderer {
             @Local(argsOnly = true) ClientWorld world, @Local(argsOnly = true, ordinal = 0) float tickDelta) {
         Vec3d color = BiomeColors.fogColor(world, pos, tickDelta);
         return color != null ? color : original.call(pos, fetcher);
+    }
+
+    /** Le brouillard vient de changer : les shaders du terrain sous lumiere cuite le lisent dans les uniformes du look. */
+    @Inject(method = "applyFog", at = @At("RETURN"))
+    private static void backrooms$fogChanged(Camera camera, BackgroundRenderer.FogType fogType, float viewDistance, boolean thickFog, float tickDelta,
+            CallbackInfo ci) {
+        LookState.touch();
     }
 
     @ModifyArg(method = "applyFog", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderFogStart(F)V"))

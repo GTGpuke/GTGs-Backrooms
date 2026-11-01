@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -36,19 +37,16 @@ class LookProfileTest {
         assertEquals(Identifier.of("gtgs_backrooms", "backrooms_level_0"), profile.dimension(), "Dimension.");
         assertEquals(1, profile.id(), "Identifiant.");
         assertFalse(profile.vanilla(), "Pas vanilla.");
-        assertEquals(1.06f, profile.tintRed(), EPSILON, "Teinte rouge.");
-        assertEquals(0.82f, profile.tintBlue(), EPSILON, "Teinte bleue.");
-        assertEquals(0.35f, profile.tintStrength(), EPSILON, "Force de la teinte.");
-        assertEquals(0.15f, profile.desaturation(), EPSILON, "Desaturation.");
+        assertEquals(0.0f, profile.tintStrength(), EPSILON, "Pas de teinte d'ensemble : la courbe de teinte porte la palette.");
+        assertEquals(0.0f, profile.desaturation(), EPSILON, "Pas de desaturation.");
+        assertTrue(profile.grade().tones().size() >= 3, "Sa courbe de teinte.");
         assertEquals(0.02f, profile.grain(), EPSILON, "Grain.");
         assertEquals(0.0f, profile.flicker(), EPSILON, "Vacillement : mis de cote (decision de l'auteur du 27 octobre 2026).");
         assertEquals(new LookProfile.Lightmap(0.08f, 0.2f, 0.92f), profile.lightmap(), "Lightmap.");
         assertFalse(profile.lightmap().vanilla(), "Courbe active.");
-        assertTrue(profile.fog().enabled(), "Brouillard du profil.");
-        assertEquals(new Vec3d(0.48f, 0.44f, 0.30f), profile.fog().color(), "Couleur du brouillard.");
-        assertEquals(4.0f, profile.fog().start(), EPSILON, "Debut du brouillard.");
-        assertEquals(48.0f, profile.fog().end(), EPSILON, "Fin du brouillard.");
-        assertEquals(new LookProfile.Post(0.25f, 0.0f, true, 0.6f, 0.8f), profile.post(), "Post.");
+        assertFalse(profile.fog().enabled(), "Pas de brouillard dans le Level 0 (demande de l'auteur) : seul celui de vanilla, au bord de la distance de rendu.");
+        assertEquals(new LookProfile.Post(0.25f, 0.0f, true, 0.8f, 1.5f), profile.post(), "Post.");
+        assertTrue(profile.bakedLight().any(), "Le Level 0 cuit sa lumiere.");
         assertFalse(profile.post().none(), "Une vignette a dessiner.");
         assertTrue(profile.neons().any(), "Des neons.");
         assertEquals(Identifier.of("gtgs_backrooms", "level_zero_fluorescent_light"), profile.neons().block(), "Le neon du Level 0.");
@@ -56,6 +54,37 @@ class LookProfileTest {
         assertEquals(0.6f, profile.neons().strength(), EPSILON, "Force.");
         assertEquals(0.0f, profile.neons().flickering(), EPSILON, "Part qui vacille : mise de cote.");
         assertEquals(0.0f, profile.neons().dead(), EPSILON, "Part morte : mise de cote.");
+        assertEquals(0.0f, profile.neons().blackout(), EPSILON, "Aucun secteur en panne : mis de cote (demande de l'auteur du 1er novembre 2026).");
+    }
+
+    @Test
+    @DisplayName("La lumiere tracee remplace ce que le profil lui demande, garde le reste, et reste bornee")
+    void tracedLight() {
+        String neons = "\"neons\": { \"block\": \"m:tube\" }";
+        String head = "{ \"dimension\": \"m:d\", \"id\": 1, " + neons + ", \"baked_light\": ";
+        LookProfile.BakedLight plain = parse(head + "{ \"shadow_size\": 0.5, \"sheen\": 0.75 } }").bakedLight();
+        assertEquals(0.5f, plain.tracedLight().shadowSize(), "Sans section, la lumiere tracee garde les valeurs de la lumiere cuite.");
+        assertEquals(1.0f, plain.traced().detail(), "Et ses textures.");
+        assertEquals(1.0f, plain.traced().exposure(), "Et son exposition.");
+        LookProfile.BakedLight traced = parse(head + "{ \"shadow_size\": 0.5, \"sheen\": 0.75, \"traced\": {"
+                + " \"shadow_size\": 3, \"relief\": 0.25, \"sheen\": 0.5, \"bounce\": 1.5, \"toe\": 0.125, \"detail\": 0.25, \"exposure\": 0.5,"
+                + " \"direct\": 0.75, \"shoulder\": 0.625 } } }").bakedLight();
+        assertEquals(new LookProfile.Traced(3.0f, 0.25f, 0.5f, 1.5f, 0.125f, 0.25f, 0.5f, 0.75f, 0.625f), traced.traced(), "Tout lu.");
+        LookProfile.BakedLight applied = traced.tracedLight();
+        assertEquals(3.0f, applied.shadowSize(), "Ombres.");
+        assertEquals(0.25f, applied.relief(), "Relief.");
+        assertEquals(0.5f, applied.sheen(), "Reflet.");
+        assertEquals(1.5f, applied.bounce(), "Rebond.");
+        assertEquals(0.125f, applied.toe(), "Pied de courbe.");
+        assertEquals(0.625f, applied.shoulder(), "Epaule.");
+        assertEquals(traced.traced(), applied.traced(), "La section reste.");
+        LookProfile.BakedLight empty = parse(head + "{ \"shadow_size\": 0.5, \"traced\": {} } }").bakedLight();
+        assertEquals(0.5f, empty.traced().shadowSize(), "Une section vide ne change rien.");
+        String[] outOfBounds = {"\"shadow_size\": 9", "\"relief\": 5", "\"sheen\": 3", "\"bounce\": 3", "\"toe\": 2", "\"detail\": 2", "\"exposure\": 5", "\"direct\": 2",
+            "\"shoulder\": 2"};
+        for (String key : outOfBounds) {
+            assertThrows(JsonParseException.class, () -> parse(head + "{ \"traced\": { " + key + " } } }"), key + ".");
+        }
     }
 
     @Test
@@ -87,6 +116,93 @@ class LookProfileTest {
         assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"neons\": { \"block\": \"m:tube\", \"color\": [1, 2, 1] } }", "neons.color hors de");
         assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"neons\": { \"block\": \"m:tube\", \"strength\": 3 } }", "neons.strength hors de");
         assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"neons\": { \"block\": \"m:tube\", \"flickering\": 0.6, \"dead\": 0.6 } }", "depassent 1");
+    }
+
+    @Test
+    @DisplayName("La section d'etalonnage se lit avec ses defauts neutres et refuse ses valeurs impossibles")
+    void gradeSection() {
+        assertSame(LookProfile.Grade.NEUTRAL, parse("{ \"dimension\": \"m:d\", \"id\": 1 }").grade(), "Sans section, neutre.");
+        assertEquals(LookProfile.Grade.NEUTRAL, parse("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": {} }").grade(), "Section vide : neutre.");
+        LookProfile.Grade grade = parse("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [1.5, 1, 0.5],"
+                + " \"offset\": [-0.25, 0, 0.125], \"power\": [2, 1, 0.5], \"saturation\": 0.75 } }").grade();
+        assertEquals(new Vec3d(1.5, 1.0, 0.5), grade.slope(), "Pente.");
+        assertEquals(new Vec3d(-0.25, 0.0, 0.125), grade.offset(), "Decalage.");
+        assertEquals(new Vec3d(2.0, 1.0, 0.5), grade.power(), "Puissance.");
+        assertEquals(0.75f, grade.saturation(), "Saturation.");
+        assertEquals(LookProfile.Grade.NEUTRAL, LookProfile.VANILLA.grade(), "Le look vanilla est neutre.");
+        String tones = "{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"tones\": { ";
+        LookProfile.Grade toned = parse(tones + "\"share\": 0.5, \"stops\": [[0.25, 1.5, 0.5], [0.75, 1, 1]] } } }").grade();
+        assertEquals(0.5f, toned.toneShare(), "Part de la courbe.");
+        assertEquals(List.of(new LookProfile.ToneStop(0.25f, 1.5f, 0.5f), new LookProfile.ToneStop(0.75f, 1.0f, 1.0f)), toned.tones(), "Ses points.");
+        assertEquals(1.0f, parse(tones + "\"stops\": [[0.5, 1, 1]] } } }").grade().toneShare(), "Toute la courbe par defaut.");
+        assertRefused(tones + "\"share\": 2, \"stops\": [] } } }", "grade.tones.share hors de");
+        assertRefused(tones + "\"stops\": [[2, 1, 1]] } } }", "grade.tones.luma hors de");
+        assertRefused(tones + "\"stops\": [[0.5, 9, 1]] } } }", "grade.tones.red hors de");
+        assertRefused(tones + "\"stops\": [[0.5, 1, 9]] } } }", "grade.tones.blue hors de");
+        assertRefused(tones + "\"stops\": [[0.5, 1, 1], [0.25, 1, 1]] } } }", "Courbe de teinte pas en luminance croissante");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [1, 1] } }", "slope : 3 valeurs attendues");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [1, 5, 1] } }", "grade.slope hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [-0.1, 1, 1] } }", "grade.slope hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"offset\": [0, 0, 1.5] } }", "grade.offset hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"offset\": [-1.5, 0, 0] } }", "grade.offset hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"power\": [1, 0, 1] } }", "grade.power hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"power\": [1, 1, 5] } }", "grade.power hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"saturation\": 2.5 } }", "grade.saturation hors de");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"saturation\": -1 } }", "grade.saturation hors de");
+        LookProfile full = parse("{ \"dimension\": \"m:d\", \"id\": 2, \"grain\": 0.2, \"grade\": { \"saturation\": 0.5 } }");
+        assertSame(full.grade(), full.comfort(true, true).grade(), "Les options de confort gardent l'etalonnage.");
+    }
+
+    @Test
+    @DisplayName("La section de lumiere cuite se lit avec ses defauts, demande des neons et refuse ses valeurs impossibles")
+    void bakedLightSection() {
+        assertFalse(parse("{ \"dimension\": \"m:d\", \"id\": 1 }").bakedLight().any(), "Sans section, pas de lumiere cuite.");
+        assertSame(LookProfile.BakedLight.NONE, LookProfile.VANILLA.bakedLight(), "Vanilla non plus.");
+        String neons = "\"neons\": { \"block\": \"m:tube\" }";
+        LookProfile.BakedLight minimal = parse("{ \"dimension\": \"m:d\", \"id\": 1, " + neons + ", \"baked_light\": {} }").bakedLight();
+        assertTrue(minimal.any(), "Une section vide suffit.");
+        assertEquals(8.0f, minimal.emission(), "Emission par defaut.");
+        assertEquals(Vec3d.ZERO, minimal.ambient(), "Pas de fond par defaut.");
+        assertEquals(12.0f, minimal.reach(), "Portee par defaut.");
+        assertEquals(1.0f, minimal.size(), "Taille par defaut.");
+        assertEquals(90.0f, minimal.angle(), "Tout le demi-espace devant la dalle par defaut.");
+        assertEquals(1.0f, minimal.shoulder(), "Pas d'epaule par defaut.");
+        LookProfile.BakedLight full = parse("{ \"dimension\": \"m:d\", \"id\": 1, " + neons + ", \"baked_light\": { \"emission\": 3,"
+                + " \"ambient\": [0.5, 0.25, 0.125], \"reach\": 10, \"size\": 2, \"angle\": 70, \"occlusion\": 0.75, \"relief\": 1.5,"
+                + " \"haze\": 0.25, \"sheen\": 1.25, \"shoulder\": 0.5, \"shadow_size\": 0.5, \"toe\": 0.125, \"pixel_light\": 0.25, \"dark_pixels\": 0.75,"
+                + " \"bounce\": 0.5 } }").bakedLight();
+        assertEquals(new LookProfile.BakedLight(3.0f, new Vec3d(0.5, 0.25, 0.125), 10.0f, 2.0f, 70.0f, 0.5f, 0.75f, 1.5f, 0.25f, 1.25f, 0.5f, 0.125f, 0.25f, 0.75f, 0.5f,
+                new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)), full,
+                "Tout lu.");
+        assertEquals(new LookProfile.BakedLight(3.0f, new Vec3d(0.5, 0.25, 0.125), 10.0f, 2.0f, 70.0f, 0.5f, 0.75f, 1.5f, 0.25f, 1.25f, 0.5f, 0.125f, 0.5f, 1.5f, 0.5f,
+                new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)),
+                full.pixels(0.5f, 1.5f), "Les pixels se reglent seuls.");
+        assertEquals(1.0f, minimal.shadowSize(), "Rayons des ombres par defaut.");
+        assertEquals(0.0f, minimal.toe(), "Pas de pied de courbe par defaut.");
+        assertEquals(0.0f, minimal.pixelLight(), "Degrade lisse par defaut.");
+        assertEquals(0.0f, minimal.darkPixels(), "Pas de grain de pixels par defaut.");
+        assertEquals(1.0f, minimal.bounce(), "Rebonds entiers par defaut.");
+        assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"baked_light\": {} }", "demande une section neons");
+        String prefix = "{ \"dimension\": \"m:d\", \"id\": 1, " + neons + ", \"baked_light\": { ";
+        assertRefused(prefix + "\"emission\": 0 } }", "baked_light.emission hors de");
+        assertRefused(prefix + "\"ambient\": [0, 2, 0] } }", "baked_light.ambient hors de");
+        assertRefused(prefix + "\"reach\": 16 } }", "baked_light.reach hors de");
+        assertRefused(prefix + "\"size\": 9 } }", "baked_light.size hors de");
+        assertRefused(prefix + "\"shoulder\": 0 } }", "baked_light.shoulder hors de");
+        assertRefused(prefix + "\"occlusion\": 2 } }", "baked_light.occlusion hors de");
+        assertRefused(prefix + "\"relief\": 5 } }", "baked_light.relief hors de");
+        assertRefused(prefix + "\"haze\": 2 } }", "baked_light.haze hors de");
+        assertRefused(prefix + "\"sheen\": 3 } }", "baked_light.sheen hors de");
+        assertRefused(prefix + "\"shadow_size\": 9 } }", "baked_light.shadow_size hors de");
+        assertRefused(prefix + "\"toe\": 2 } }", "baked_light.toe hors de");
+        assertRefused(prefix + "\"pixel_light\": 2 } }", "baked_light.pixel_light hors de");
+        assertRefused(prefix + "\"dark_pixels\": 3 } }", "baked_light.dark_pixels hors de");
+        assertRefused(prefix + "\"bounce\": 3 } }", "baked_light.bounce hors de");
+        assertEquals(0.0f, minimal.sheen(), "Pas de reflet par defaut.");
+        assertEquals(0.0f, minimal.relief(), "Pas de relief par defaut.");
+        assertEquals(0.0f, minimal.haze(), "Pas de brume par defaut.");
+        LookProfile comfort = parse("{ \"dimension\": \"m:d\", \"id\": 1, \"grain\": 0.2, " + neons + ", \"baked_light\": { \"emission\": 3 } }");
+        assertSame(comfort.bakedLight(), comfort.comfort(true, true).bakedLight(), "Les options de confort gardent la lumiere cuite.");
     }
 
     @Test

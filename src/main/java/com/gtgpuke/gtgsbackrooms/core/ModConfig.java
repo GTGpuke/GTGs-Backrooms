@@ -140,11 +140,26 @@ public final class ModConfig {
             booleanProperty("gtgsbackrooms.look.debugStencil", false);
 
     /**
-     * Qualite du moteur de shaders : {@code light} (huit neons, pas de bloom), {@code full}, ou {@code auto} (complete
-     * sauf sur une carte graphique integree, reconnue a la chaine du pilote).
+     * Palier de depart du moteur de shaders : {@code off}, {@code low}, {@code medium}, {@code high}, {@code ultra}, ou
+     * {@code auto} (High, Low sur une carte graphique integree, reconnue a la chaine du pilote). Le joueur le change dans
+     * le menu, et son choix, enregistre, prime ensuite.
      */
     public static final String LOOK_QUALITY =
             stringProperty("gtgsbackrooms.look.quality", "auto");
+
+    /**
+     * Taille des pixels d'ombre : pas de la grille des texels par bloc sur laquelle se calcule la lumiere, {@code 32} (celui
+     * des textures du mod), {@code 16}, ou {@code 0} pour une lumiere lisse ; toute autre valeur vaut {@code 32}.
+     */
+    public static final int LOOK_PIXEL_SHADOWS =
+            intProperty("gtgsbackrooms.look.pixelShadows", 32);
+
+    /**
+     * Lumiere cuite du terrain, dans les dimensions dont le profil en a une : calculee par cellule sur un thread a part, elle
+     * remplace la lightmap et l'ombrage vanilla par face. Se coupe pour comparer.
+     */
+    public static final boolean LOOK_BAKED_LIGHT =
+            booleanProperty("gtgsbackrooms.look.bakedLight", true);
 
     /**
      * Developpement : chemin du fichier des vecteurs communs du calendrier des neons

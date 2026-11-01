@@ -15,11 +15,11 @@ class AudioQualityTest {
     @Test
     @DisplayName("L'option impose une qualite ; sinon elle suit celle du moteur de shaders")
     void optionOrLookQuality() {
-        assertSame(AudioQuality.LIGHT, AudioQuality.choose("light", LookQuality.FULL), "Legere demandee.");
-        assertSame(AudioQuality.FULL, AudioQuality.choose(" Full ", LookQuality.LIGHT), "Complete demandee, majuscules et espaces ignores.");
-        assertSame(AudioQuality.FULL, AudioQuality.choose("auto", LookQuality.FULL), "Auto : comme le rendu.");
-        assertSame(AudioQuality.LIGHT, AudioQuality.choose("auto", LookQuality.LIGHT), "Auto sur une carte integree : legere.");
-        assertSame(AudioQuality.LIGHT, AudioQuality.choose("n'importe quoi", LookQuality.LIGHT), "Une valeur inconnue vaut auto.");
+        assertSame(AudioQuality.LIGHT, AudioQuality.choose("light", LookQuality.HIGH), "Legere demandee.");
+        assertSame(AudioQuality.FULL, AudioQuality.choose(" Full ", LookQuality.LOW), "Complete demandee, majuscules et espaces ignores.");
+        assertSame(AudioQuality.FULL, AudioQuality.choose("auto", LookQuality.HIGH), "Auto : comme le rendu.");
+        assertSame(AudioQuality.LIGHT, AudioQuality.choose("auto", LookQuality.LOW), "Auto sur une carte integree : legere.");
+        assertSame(AudioQuality.LIGHT, AudioQuality.choose("n'importe quoi", LookQuality.LOW), "Une valeur inconnue vaut auto.");
     }
 
     @Test

@@ -7,7 +7,7 @@
     ],
     "uniforms": [
         { "name": "gtgs_PostParams", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] },
-        { "name": "gtgs_PostTint", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 0.0 ] },
-        { "name": "gtgs_PostLook", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] }
+        { "name": "gtgs_PostLook", "type": "float", "count": 4, "values": [ 0.0, 0.0, 0.0, 0.0 ] },
+        { "name": "gtgs_PostStyle", "type": "float", "count": 2, "values": [ 0.0, 0.0 ] }
     ]
 }

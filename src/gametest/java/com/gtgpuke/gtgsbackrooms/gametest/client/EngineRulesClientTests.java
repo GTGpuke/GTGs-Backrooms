@@ -60,6 +60,7 @@ final class EngineRulesClientTests {
         SoundInstance[] record = new SoundInstance[1];
         float[] gain = {Float.NaN};
         return ClientScenario.named("engine_rules_in_level_zero")
+                .run("palier avec le post", LevelZeroClientTests::highTier)
                 .run("entree dans le Level 0", LevelZeroClientTests::enterLevelZero)
                 .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, 1200)
                 .await("terrain du Level 0 construit", context -> context.client().worldRenderer.getCompletedChunkCount() > 16, 1200)
@@ -110,6 +111,7 @@ final class EngineRulesClientTests {
                     if (record[0] != null) {
                         context.client().getSoundManager().stop(record[0]);
                     }
+                    LevelZeroClientTests.defaultTier(context);
                     LevelZeroClientTests.backToOverworld(context);
                 });
     }

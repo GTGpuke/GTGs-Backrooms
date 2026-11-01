@@ -29,6 +29,7 @@ import com.gtgpuke.gtgsbackrooms.core.audio.cue.Envelope;
 import com.gtgpuke.gtgsbackrooms.core.audio.cue.FlashLimiter;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalViewTransform;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 import com.gtgpuke.gtgsbackrooms.mixin.client.SoundManagerAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.SoundSystemAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.SourceAccessor;
@@ -184,6 +185,7 @@ public final class CueTracker {
             VIEW_DIMENSIONS[i] = null;
         }
         float wanted = FlashLimiter.screenLoad(VIEW_AREAS, VIEW_LOADS, views, DISTURBANCES.load(player));
+        LIMITER.setSoft(LookSettings.current().flashesReduced());
         views = 0;
         float limited = LIMITER.limit(wanted, nowMillis);
         scale = wanted > 0.0f ? Math.min(1.0f, limited / wanted) : 1.0f;
@@ -199,7 +201,7 @@ public final class CueTracker {
      * @param lz camera du joueur
      */
     public static float cameraShake(@Nullable Identifier dimension, double lx, double ly, double lz) {
-        if (!ModConfig.AUDIO_CAMERA_SHAKE || ModConfig.REDUCE_FLASHES) {
+        if (LookSettings.current().motionReduced() || LookSettings.current().flashesReduced()) {
             return 0.0f;
         }
         return DISTURBANCES.cameraShake(dimension, lx, ly, lz) * scale;
@@ -267,7 +269,7 @@ public final class CueTracker {
 
     /** Pulsation de l'ecran d'une dimension, de 0 a 1 ; rien avec l'option de confort. */
     public static float screenPulse(@Nullable Identifier dimension, double lx, double ly, double lz) {
-        return ModConfig.REDUCE_FLASHES ? 0.0f : DISTURBANCES.screenPulse(dimension, lx, ly, lz) * scale;
+        return LookSettings.current().flashesReduced() ? 0.0f : DISTURBANCES.screenPulse(dimension, lx, ly, lz) * scale;
     }
 
     /** Baisse de la lumiere d'une dimension, de 0 a 1, plafond compris. */

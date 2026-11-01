@@ -6,9 +6,20 @@ de compatibilité avec Iris dans `compat/iris/`.
 
 ## En jeu
 
-Un profil de look donne à une dimension une teinte, une désaturation, un grain et, au besoin, un vacillement de la
-lumière. Il lui donne aussi sa courbe de lumière, son brouillard, des néons qui éclairent et un post-traitement.
-Aujourd'hui, seul le Level 0 a un profil.
+Un profil de look donne à une dimension sa palette (teinte, désaturation et étalonnage, tenus dans une LUT), un grain
+et, au besoin, un vacillement de la lumière. Il lui donne aussi sa courbe de lumière, son brouillard, des néons qui
+éclairent et un post-traitement. Aujourd'hui, seul le Level 0 a un profil.
+
+Dans le Level 0, le terrain n'a plus l'éclairage plat de vanilla. Chaque dalle de néon éclaire vers le bas, par sa seule face
+du bas : le sol sous elle, le bas et le milieu des murs, et le plafond ne reçoit que ce qui rebondit. Tous les néons éclairent :
+le noir n'existe que là où la lumière n'arrive pas. Les ombres, leurs pénombres et le noir des coins se dessinent au pixel de
+texture, et le relief des textures accroche la lumière. La lumière prend la couleur des murs en rebondissant. Les dalles ont un
+halo. En High et en Ultra, chaque bloc a sa matière, écrite dans ses textures : la moquette est mate, le fond du papier peint mat
+et rugueux, et seul le sombre de son motif renvoie un peu les dalles. Les entités et la main reçoivent la même lumière que le décor, murs compris. En High et
+en Ultra, le joueur et les créatures portent une ombre sur le terrain. En Ultra, la lumière se trace par rayons et l'image change
+de nature : presque toute la lumière est indirecte, très douce, sans grille de pixels, comme une photo d'un Minecraft aux textures
+calmes. Le Level 0 n'a pas de brouillard : on voit net jusqu'au fond des
+couloirs.
 
 Le rendu d'un pixel dépend de la dimension qu'il montre, pas de celle où se trouve le joueur.
 
@@ -30,8 +41,9 @@ sortant, sans recompilation. Les profils et les patchs se rechargent avec les re
 Le moteur tient en deux étages, dans le stencil existant des portails, sans G-buffer ni rendu différé.
 
 1. L'injection. Les shaders vanilla du monde sont patchés au chargement. La couleur finale de chaque fragment passe
-   par `gtgs_applyLook` (`shaders/include/look.glsl`), qui applique le look courant et la lumière des néons. Quand le
-   look vaut 0, la couleur ressort inchangée.
+   par `gtgs_applyLook` (`shaders/include/look.glsl`), qui applique la lumière cuite ou celle des néons, le brouillard,
+   le tassement des hautes lumières, l'étalonnage du look, le grain et le vacillement. Quand le look vaut 0, la couleur
+   ressort inchangée.
 2. Le post masqué. En fin de rendu du monde, `LookPost` dessine un triangle plein écran par look visible. Le test de
    stencil limite chaque passe aux pixels de son look.
 
@@ -48,12 +60,14 @@ la même dimension ou le même identifiant, le second est ignoré.
 |-------|------|-------|
 | `dimension` | Dimension du profil, obligatoire | Identifiant |
 | `id` | Look porté par le stencil et l'uniforme `gtgs_LookId`, obligatoire | 1 à 7 |
-| `tint` | Teinte et force de l'étalonnage, `[r, g, b, force]` | Couleur de 0 à 4, force de 0 à 1 |
+| `tint` | Teinte et sa force, `[r, g, b, force]` | Couleur de 0 à 4, force de 0 à 1 |
 | `desaturation`, `grain`, `flicker` | Désaturation, grain, vacillement de la lumière de l'écran | 0 à 1 |
+| `grade` | Étalonnage : `slope`, `offset`, `power` (`[r, g, b]` chacun), `saturation`, et `tones`, la [courbe de teinte](#étalonnage) | Pente de 0 à 4, décalage de -1 à 1, puissance de 0,1 à 4, saturation de 0 à 2 |
+| `baked_light` | Lumière cuite : `emission`, `ambient`, `reach`, `size`, `angle`, `shadow_size`, `occlusion`, `relief`, `haze`, `sheen`, `shoulder`, `toe`, `pixel_light`, `dark_pixels`, `bounce`, et `traced` pour la [lumière tracée](#lumière-tracée) ; demande `neons` | Émission de 0,1 à 64, fond de 0 à 1, portée de 1 à 15, taille de 0,5 à 8, angle de 10 à 90 degrés, occlusion de 0 à 1, relief de 0 à 4, halo de 0 à 1, reflet de 0 à 2, épaule de 0,1 à 1 |
 | `lightmap` | `floor`, `warmth`, `max_brightness` | 0 à 1, plancher sous le plafond |
 | `fog` | `color`, `start`, `end` | `end` au-delà de `start` |
 | `post` | `vignette`, `chromatic`, `bloom` (booléen), `bloom_threshold`, `bloom_strength` | 0 à 1, force du bloom de 0 à 2 |
-| `neons` | `block`, `radius`, `color`, `strength`, `flickering`, `dead` | Portée de 0,5 à 64, force de 0 à 2, parts de somme au plus 1 |
+| `neons` | `block`, `radius`, `color`, `strength`, `flickering`, `dead`, `blackout` | Portée de 0,5 à 64, force de 0 à 2, parts de somme au plus 1 ; `blackout` : part des secteurs en panne, de 0 à 1 |
 
 Une section absente garde le comportement vanilla. Le profil du Level 0 met à zéro le vacillement de l'écran et les
 parts de tubes qui vacillent ou meurent. La mécanique est complète, et relever ces valeurs suffit.
@@ -68,7 +82,9 @@ Le patch enveloppe la `main` de chaque shader ciblé. La `main` vanilla devient 
 
 Un patch est un fichier `assets/gtgs_backrooms/shader_patches/<nom>.json`, lu en `ShaderPatch`. Son champ `stage` vaut
 `vertex` ou `fragment`. Les champs `targets` et `excludes` désignent les shaders par des motifs à `*`, et une exclusion
-l'emporte. Le champ `imports` liste les bibliothèques insérées en tête, et `inject` les injections.
+l'emporte. Le champ `imports` liste les bibliothèques insérées en tête, et `inject` les injections. Un seul patch
+s'applique par étage : le premier qui vise un shader l'enveloppe, et un patch suivant qui vise le même étage est ignoré,
+journalisé une fois.
 
 | Point d'injection | Effet |
 |-------------------|-------|
@@ -77,14 +93,19 @@ l'emporte. Le champ `imports` liste les bibliothèques insérées en tête, et `
 | `main_after` | Code joué après la `main` vanilla |
 | `output` | Fragment seulement : la sortie passe par la fonction nommée dans `function` |
 
+Le point `terrain_after` joue comme `main_after`, dans les seuls shaders du terrain (ceux qui déclarent `ChunkOffset`), et
+`lit_after` dans ceux qui ont la sortie `lightMapColor` (les entités).
+
 Le mod livre deux patchs, qui visent `rendertype_*` et `particle` sauf le texte, l'interface, le contour des entités et
-les nuages. `world_fragment.json` insère `neon_schedule.glsl` et `look.glsl`, puis fait passer la sortie par
-`gtgs_applyLook`. `world_vertex.json` ajoute cinq sorties aux vertex shaders.
+les nuages. `world_fragment.json` insère `neon_schedule.glsl`, `look_grade.glsl` et `look.glsl`, puis fait passer la
+sortie par `gtgs_applyLook`. `world_vertex.json` ajoute sept sorties aux vertex shaders.
 
 - `gtgs_ViewPos` : la position en espace caméra.
 - `gtgs_WorldRel` : la position relative à la caméra, dans les axes du monde.
 - `gtgs_Uv` et `gtgs_Normal` : les coordonnées de texture et la normale.
 - `gtgs_Terrain` : le drapeau du terrain, en `flat`.
+- `gtgs_Lightmap` : la couleur de la lightmap du sommet, pour le terrain.
+- `gtgs_Lit` : 1 pour une entité sous la lumière cuite, en `flat`.
 
 Le code d'une injection peut contenir des jetons, remplacés selon ce que le shader déclare. `${position}` vaut
 `Position + ChunkOffset` dans un shader du terrain, `Position` ailleurs. `${uv}` vaut `UV0`, ou `vec2(-1.0)` sans lui.
@@ -92,6 +113,190 @@ Le code d'une injection peut contenir des jetons, remplacés selon ce que le sha
 
 Un fragment ne reçoit son patch que si le vertex du même programme a reçu le sien (`PatchedVertexStages`). Sinon, il
 lirait des entrées que rien n'écrit, et le programme ne se lierait plus. Il reste alors vanilla.
+
+### Étalonnage
+
+La palette d'une dimension tient dans une LUT (`LookLut`) : pour chaque couleur d'une grille de 32 pas par composante,
+la couleur qu'en fait le profil. Le calcul désature d'abord vers la luminance (poids 0,299, 0,587 et 0,114), puis
+applique la teinte, puis l'étalonnage de la section `grade` : `pow(max(c × slope + offset, 0), power)` par composante,
+puis la saturation autour de la luminance. Sans section `grade`, l'étalonnage est neutre, et la LUT ne fait que la
+désaturation et la teinte.
+
+`LookLuts` range toutes les LUT dans une seule texture 3D de 32 × 32 × 256, en demi-flottants (`RGB16F`), car une
+teinte peut dépasser 1. Elle a un étage de 32 par identifiant de look, l'identité pour vanilla et pour les identifiants
+sans profil. Elle se refait à chaque rechargement des profils. Elle se relie à l'unité de texture 7 au début de chaque
+rendu du monde, et les shaders patchés comme le post la lisent par l'échantillonneur `gtgs_LookLut`. La fonction
+`gtgs_grade` (`shaders/include/look_grade.glsl`) lit l'étage du look entre les centres de ses texels extrêmes, si bien
+que l'interpolation ne déborde jamais sur l'étage voisin. Une opération linéaire (désaturation, teinte, pente, décalage)
+est exacte entre les pas, et une puissance y est approchée.
+
+L'étalonnage s'applique en fin de calcul du fragment, après le brouillard et la lumière des néons, avant le grain et le
+vacillement. La couleur y entre bornée à 1. Le shader du post en garde une copie à l'identique, pour le cas où l'étage 1
+passe par lui (pack de shaders, mod de terrain). La même LUT vaut à toutes les qualités.
+
+La courbe de teinte (`grade.tones`) donne sa couleur à chaque luminance. Une image ne garde pas sa teinte du sombre au clair : l'image de
+référence de l'auteur a des sombres ambrés, des tons moyens dorés et des clairs citron pâle. Chaque point de `stops` vaut `[luminance,
+rouge, bleu]`, rouge et bleu en parts du vert ; `share` dit quelle part de la couleur suit la courbe, le reste gardant la différence
+entre un mur et un sol. La luminance ne change pas. Le dernier point du Level 0 ramène les dalles vers le blanc.
+
+### Lumière cuite
+
+Un profil avec une section `baked_light` remplace, sur le terrain, la lightmap et l'ombrage vanilla par face
+(`ClientWorld.getBrightness` rend 1 dans ce monde) par une lumière calculée sur les blocs du monde. Tout est en forward,
+sans G-buffer : le fragment lit une valeur dans une texture 3D, ce qui ne coûte qu'un échantillon.
+
+La cuisson tourne sur un fil à part (`LightWorker`), sur une copie compacte du monde. `LightCopy` copie les sections autour
+de la caméra, ou autour de l'arrivée du premier portail visible vers un tel monde depuis un monde qui n'en a pas : huit
+par tick au plus, chaque état de bloc classé une fois (albédo moyen de sa texture, émission si c'est le bloc de néon du
+profil). `LightZone` cuit une fenêtre de sept sections de côté et deux de haut, la plus proche d'abord, en trois passes.
+
+1. La lumière directe (`SectionBaker`). Seules les faces d'une cellule d'air posées contre un bloc opaque portent une
+   valeur. Une dalle est un rectangle orienté de `size` blocs de côté, qui n'éclaire que par la face du bas de son bloc, si
+   elle est libre : rien au-dessus de son plan, rien par ses côtés. Chaque dalle à portée compte pour ce qu'elle donne
+   depuis le point de son rectangle le plus proche de la surface (`AreaLight`) : le cosinus côté surface, celui côté dalle
+   ramené à `angle` (l'angle où elle cesse d'éclairer, depuis sa normale), et une chute douce sur `reach`, sans carré de la
+   distance qui brûlerait ce qu'elle frôle. Le tout est multiplié par la part de la dalle que la surface voit (quatre rayons
+   sur la grille des blocs, `BlockRay`) : la lumière s'arrête aux murs. Les néons morts du calendrier ne cuisent pas.
+2. Un premier rebond. Vingt-quatre rayons répartis sur la demi-sphère de chaque surface vont lire l'éclairement des
+   surfaces qu'ils touchent, teinté par leur albédo.
+3. Un second rebond, qui lit le premier chez les sections voisines. Ses rayons notent aussi les blocs à moins de 1,5 bloc :
+   `occlusion` retire ce qu'ils cachent, d'où les coins sombres.
+
+Une section ne cuit que lorsque tout ce dont elle dépend est copié, deux sections autour d'elle. Un bloc changé remet à
+cuire sa section et ses voisines, plus le dernier rebond des voisines de celles-ci. Une colonne absente du client compte
+comme opaque et ne fait rien attendre (`LightBlocks.UNLOADED`).
+
+`LightVolume` tient le résultat dans une texture `RGB10_A2` de 128 × 384 × 128 : 32 blocs de haut par face de cellule pour la
+lumière complète, puis autant sans la lumière directe. X et Z sont en répétition. Une section garde sa place tant que la
+zone avance, et seules celles qui entrent s'envoient, quatre par image. Au shader, `gtgs_zoneLight` lit la cellule d'air devant la surface, sur la tranche de sa face, au centre de son
+texel. La couleur et la validité vont ensemble : divisée par la validité, l'interpolation ne compte que les surfaces
+voisines, sans fuite par un bloc plein. Une surface hors de la grille ou pas encore cuite prend la lightmap, à
+l'exposition de la zone.
+
+Dans le noir, chaque pixel de texture tire un petit écart de lumière, fixe (`dark_pixels`) : c'est l'effet sombre pixelisé. Il
+s'efface en pleine lumière et entre 8 et 20 blocs, où il ne ferait que du bruit. La face d'un néon brille d'elle-même, et les
+cris retirent à la surface ce qu'ils retirent aux tubes proches.
+
+La lumière d'une dalle s'éteint sans cassure à sa portée (`AreaLight.falloff`, le même calcul dans le shader du cache) : une
+coupure nette dessinerait un arc sur le sol. `bounce` règle la part de lumière que les surfaces se renvoient : plus basse, ce
+que les néons n'atteignent pas reste sombre.
+
+Sous la lumière cuite, le vertex du terrain ne porte ni lightmap ni brouillard (point `terrain_after`) : le fragment pose
+sa lumière, puis le brouillard de vanilla, ses distances et sa couleur lues dans `gtgs_FogRange` et `gtgs_FogTint`. Le
+brouillard ne s'assombrit donc plus avec la surface. `gtgs_tone` applique ensuite la courbe de l'image : son pied (`toe`)
+enfonce ce qui est presque noir vers le vrai noir sans toucher au reste, et `shoulder` tasse les hautes lumières vers 1 au lieu
+de les saturer d'un coup. Le grain s'efface avec la lumière : il ne remonte pas le noir.
+
+#### Cache de surfaces
+
+La zone ne connaît la lumière qu'au bloc près. En qualité complète, le cache de surfaces (`LightSurfaces`) la complète au
+pixel de texture : c'est une lightmap, une tuile de 32 × 32 par face de bloc, calculée par le processeur graphique dans une
+texture de 4096 × 8192 (`SurfaceAtlas` : 32 768 tuiles, 128 Mio, rendues quand une section sort).
+
+La section cuite donne ses surfaces et ses neons, et ses tuiles se calculent à 96 par image, la plus proche d'abord, avec le
+shader `shaders/bake/surface.fsh`. Chaque tuile reçoit ses propres néons, les 24 plus proches parmi ceux de sa section
+(`LightSurfaces.tileLights`). Pour chaque pixel de texture d'une face, le shader écrit quatre valeurs séparées :
+
+| Canal | Valeur | Lecture par le terrain |
+|-------|--------|------------------------|
+| `r` | Racine de la lumière qui arrive, sans obstacle | Lisse, interpolée entre les pixels de la tuile ; `pixel_light` en garde une part sur la grille |
+| `g` | Part de cette lumière que le pixel voit : ses ombres portées | Par pixel de texture |
+| `b` | Part du ciel de la surface que rien ne cache | Par pixel de texture |
+| `a` | Ce que le relief de la texture ajoute ou retire, autour de 1 (divisé par 2) | Par pixel de texture |
+
+Les corps s'ajoutent à la lecture, à chaque image (voir [Ombres des corps](#ombres-des-corps)).
+
+C'est ce qui donne des ombres portées pixelisées sur une lumière lisse : le dégradé ne suit pas la grille, le bord des ombres
+oui, en marches de la taille d'un pixel de texture. Les rayons vont aux mêmes points de la dalle, dans un disque de
+`shadow_size` blocs de côté (toute la dalle en Ultra) : rien n'est tiré au hasard, le bord d'une ombre passe d'une tuile à la suivante sans couture, et
+recalculer une tuile sans que rien ait changé donne les mêmes valeurs. Une dalle très faible n'a droit qu'à deux rayons.
+Plusieurs dalles se partagent une surface : le terrain met la part vue au carré, sans quoi l'ombre d'une seule serait à peine
+lisible. Sans pixels d'ombre, tout se lit lissé. Le coût ne se paie qu'une fois par tuile : ensuite, le terrain ne fait que
+quelques lectures.
+
+Une texture d'indirection (`R16UI`, de la forme de la zone) donne la tuile de chaque surface. Un fragment ne lit jamais la tuile
+d'un autre : une surface nouvelle n'y entre qu'une fois calculée, et sans tuile, le terrain garde la lumière complète de la
+zone.
+
+Une surface garde sa tuile tant qu'elle existe. Une section recuite ne recalcule que ce qui a changé (`SurfaceAtlas.accept`),
+et une tuile à recalculer montre son ancienne valeur jusqu'à la nouvelle, écrite d'un seul dessin : rien ne disparaît, rien ne
+clignote. Un bloc changé arrive à la lumière par `LightCopy.onBlockChanged`, que la prédiction du joueur et les paquets du
+serveur appellent tous deux. Dès l'image suivante, il est posé sur la grille, ses faces et celles de ses voisins apparaissent
+ou s'en vont sans attendre la cuisson, et seules les surfaces qu'il peut assombrir repartent (`SurfaceAtlas.blockChanged`) :
+celles à moins de trois blocs, et celles dont un rayon vers un néon passe par lui. Un bloc que la lumière traverse avant comme
+après (une torche) ne coûte rien. Une section cuite avant le dernier bloc de sa section (`Baked.stamp`) ne touche plus aux
+surfaces. Plus de 32 blocs changés en une image repartent par sections entières.
+
+Une tuile ne se calcule que si la grille des blocs est complète autour de l'ancrage : ses ombres ne s'écrivent jamais d'après
+d'autres blocs. Seules les sections à moins de deux sections de l'ancrage ont des tuiles, et seulement à sept blocs au plus
+au-dessus ou au-dessous de la caméra : un layer et ce qui le borde. La bande suit la caméra dès qu'elle monte ou descend de plus
+de deux blocs, sans rien recalculer de ce qui y reste, et la fenêtre de la zone ne se déplace que si la caméra approche à moins
+de quatre blocs de ses bords (`LightZone.baseFor`). Une autre fenêtre vide la texture de zone d'un seul envoi : ce qu'elle tenait se
+relirait à la mauvaise hauteur.
+
+Une grande salle ouverte demande dix-huit mille tuiles sur ce rayon. S'il en manquait, les surfaces en trop garderaient la lumière de
+la zone, et leur section se verrait en carré de près. Une section sortie du rayon rend donc ses tuiles avant que les autres n'en
+prennent, les sections se servent de la plus proche de l'ancrage à la plus loin, une section en manque reprend les tuiles des plus loin
+et une section servie à moitié est reprise dès que des tuiles se libèrent : seul ce qui est assez loin pour se fondre dans la zone
+attend.
+
+La lumière d'une surface vient de trois niveaux, qui se fondent l'un dans l'autre selon la distance à la caméra : les tuiles jusqu'à
+24 blocs, puis la texture de zone de 32 à 40, puis la lightmap vanilla au-delà de 48, ramenée à l'exposition de la zone et corrigée
+selon l'orientation de la surface. Une section qui prend ses tuiles, ou une pièce qui entre dans la zone, ne se voit donc pas : c'est
+ce qui faisait « s'allumer » les néons au loin. Une section qui quitte la fenêtre est oubliée par la zone (`LightZone.forget`), et
+repart quand la fenêtre revient sur elle.
+
+Trois effets dépendent de la vue et se calculent au fragment, pour les dix néons les plus proches, chacun selon sa part
+(`NeonSelection.nearShare`) : elle tombe à zéro avant qu'il ne quitte la liste, et un halo ne saute jamais.
+
+- Le halo (`gtgs_airGlow`) : la lumière que l'air renvoie vers la caméra, l'intégrale exacte d'une source ponctuelle sur le
+  rayon, sans marche, pesée par `haze`. Il ne vaut que pour les rayons qui passent à moins de trois blocs d'une dalle : un
+  voile sur toute l'image ferait un brouillard.
+- Le reflet (`gtgs_gloss`), en High et en Ultra, sur toute face dont la [matière](#matière-des-blocs) le demande, pesé par `sheen`.
+- La lumière des entités et de la main (`gtgs_entityLight`). Sous la lumière cuite, leur vertex ne porte plus la lightmap
+  (point `lit_after`) : elles reçoivent le fond du profil et la direction réelle des néons proches, le dessus plus clair que
+  le dessous. Ce sont les shaders à `lightMapColor` : blocs tenus et objets au sol gardent la lightmap.
+
+Le bloom ajoute deux tours de flou à pas larges : une dalle rayonne dans la pièce, pas seulement autour d'elle.
+
+La texture de zone se répète : au-delà de 48 blocs de la caméra, elle montrerait autre chose. Entre 40 et 48 blocs, le terrain
+passe en fondu à la lightmap, à l'exposition de la zone. Le Level 0 n'ayant pas de brouillard, ce relais se voit dans les très
+longues lignes de vue.
+
+Une vue lit la zone si sa dimension est celle de la zone et que sa caméra en est à moins de 48 blocs, dans sa hauteur
+(`LightVolume.covers`). Sinon, elle garde la lightmap et la lumière des néons : il n'y a qu'une zone à la fois.
+
+### Matière des blocs
+
+Ce qui brille et ce qui accroche la lumière s'écrit dans les textures du bloc, au pixel, jamais dans le code. À côté de `x.png` :
+
+| Fichier | Rouge | Vert | Bleu |
+|---------|-------|------|------|
+| `x_s.png` | Lissage : 0 mat, 255 miroir | Rien | Rien |
+| `x_n.png` | Pente vers la droite de la texture, 128 pour plat | Pente vers le bas de la texture, 128 pour plat | Reste de la normale |
+
+L'alpha de `x_n.png` porte la hauteur du pixel : 255 en haut, et une texture toute à 255 n'a pas d'épaisseur. Les deux fichiers font la
+taille de la texture, se retouchent comme elle, et F3+T les recharge et recalcule les tuiles. Un bloc sans fichier reste mat, et son
+relief se devine d'après la luminance de sa texture. Seuls les blocs du mod en ont, en 32 pixels pour une épaisseur.
+
+| Texture | Matière |
+|---------|---------|
+| `level_zero_damp_carpet`, `level_zero_damp_carpet_aged` | Moquette : lissage nul partout, et une hauteur qui est le bruit de sa texture : un pixel clair est une pointe, un pixel sombre un creux |
+| `level_zero_wallpaper`, `level_zero_wallpaper_aged` | Le sombre du motif : un peu lisse (115 sur 255), légèrement en relief. Le papier dessous : lissage nul, grain fin |
+
+`BlockMaterials` recopie ces fichiers dans une table de la taille de l'atlas des blocs, chaque pixel à la place du sien dans l'atlas :
+un shader la lit aux mêmes coordonnées que sa texture (`gtgs_BlockMaterial`), sans savoir quel bloc il dessine. Elle n'existe qu'à
+partir de High, comme le veut `QUALITE_ET_PRESETS` §5.6.
+
+- Le relief du cache de surfaces lit la pente de la table, multipliée par `relief`.
+- L'épaisseur (`gtgs_enterPile`) : sur une matière qui a une hauteur, le regard entre par le haut, dix pas sur 0,08 bloc, et s'arrête au
+  premier pixel qui dépasse. Le fragment prend la couleur et la lumière de ce pixel : les brins se cachent les uns les autres et bougent
+  avec la caméra. Les creux perdent un peu de lumière et les pointes en gagnent, plus en Ultra, où la texture calmée ne porte plus ce
+  contraste. Elle s'efface de 10 à 16 blocs, et l'option de relief la coupe.
+- Le reflet (`gtgs_gloss`) lit le lissage, et penche sa normale selon la pente du pixel. Sur un pixel mat, il s'arrête là : ni boucle
+  ni rayon. Sinon, chaque dalle proche se voit au point de son rectangle le plus proche du miroir, avec le lobe de ce lissage, plus
+  fort en rasant. Un rayon dans la grille vérifie qu'elle est visible, quatre sur sa surface en Ultra : un mur ou un corps coupe le
+  reflet. Il s'éteint de 16 à 32 blocs de la caméra.
 
 ### Lightmap et brouillard
 
@@ -125,11 +330,84 @@ Chaque fragment ajoute la lumière des néons retenus, qui décroît avec le car
 Cette lumière est multiplicative. Elle relève la couleur déjà éclairée par la lightmap, sans éclairer le noir complet.
 La somme est plafonnée à +80 %, pour qu'un couloir dense ne vire pas au blanc.
 
-#### Calendrier des néons
+#### Lumière au texel
+
+Sur un bloc du terrain, la distance aux néons se mesure depuis le centre du texel du fragment, pas depuis sa position
+exacte (`gtgs_lightPosition`). Sur les deux axes de sa face, la position est ramenée à `(floor(p × N) + 0,5) / N`, et
+l'axe de la normale la garde (à égalité, x, puis y, puis z). N vaut 32, le pas des textures du mod, 16, ou 0 pour une
+lumière lisse (option `pixelShadows`). La position est reprise depuis le bloc entier de la caméra (`gtgs_CameraFract`
+plus `gtgs_WorldRel`), si bien que la grille reste alignée sur les blocs loin de l'origine. Elle repasse ensuite en
+espace caméra par `ModelViewMat`. Les entités, les particules et le reste gardent la position exacte. `TexelGrid` est le
+jumeau Java de ce calcul.
+
+#### Ombres des corps
+
+En High et en Ultra, le joueur et les créatures portent une ombre sur le terrain. Chaque tick, `EntityShadows` retient les huit
+corps vivants les plus proches de l'ancrage de la zone ; à chaque image, leur position affichée part dans le bloc d'uniformes,
+sous forme de cylindres debout (`ShadowCasters` : jambes, torse et tête pour un corps debout, un seul pour un corps bas). Le
+joueur en fait partie, y compris à la première personne.
+
+Le terrain lit l'ombre au pixel de texture (`gtgs_casterShade`) : pour chaque dalle à portée, des rayons vers toute sa surface.
+L'ombre est donc nette au contact et se dilue en s'éloignant. Un rayon arrêté par un corps ne compte que si la grille des blocs
+le laissait passer : un corps ne fait pas d'ombre à une dalle qu'on ne voit pas d'ici. Le retrait se fait après la courbe du cache,
+en part de ce que la surface reçoit vraiment. Un préfiltre garde le coût : seuls les corps à moins de 10 blocs comptent, et seul
+un rayon vers le centre de la dalle qui frôle un corps lance les autres.
+
+Les entités et la main reçoivent le même calcul de dalle que le terrain, à sa même échelle. En High et en Ultra, un rayon par dalle
+dans la grille les laisse dans l'ombre des murs : l'ombre d'un bloc les traverse, en marches sur une grille de seize par bloc.
+
+## Lumière tracée
+
+Le palier Ultra trace sa lumière dans la grille des blocs, sans rien accumuler à l'écran : tout ce qui se calcule en rayons se
+range sur les surfaces, et ne se voit qu'une fois fini. Il vise une image éclairée comme une photo : lumière presque toute indirecte,
+pas de noir tant que la lumière peut arriver, ombres très larges, sol mat. Une pièce fermée reste noire. La matière reste celle du
+jeu : ses pixels restent, leur contraste baisse.
+
+La section `traced` de `baked_light` porte ce qui change, et tout ce qu'elle ne dit pas garde la valeur de la lumière cuite :
+
+| Clé | Rôle |
+|-----|------|
+| `shadow_size` | Ce que visent les rayons des ombres : plus grand que la dalle, les ombres s'étalent |
+| `direct` | Part de la lumière directe gardée à l'image, les rebonds restant entiers : plus basse, la lumière s'égalise |
+| `bounce` | Part de la lumière que renvoient les surfaces |
+| `exposure` | Multiplie toute la lumière des surfaces : les rebonds apportent bien plus que la lumière cuite |
+| `detail` | Part du contraste des textures gardée : 0 rend la couleur moyenne de chaque bloc |
+| `relief`, `sheen`, `toe`, `shoulder` | Comme dans `baked_light` |
+
+Sous cette lumière, le terrain n'a plus de grille des texels : tout se lit lissé, quelle que soit la taille des pixels d'ombre choisie,
+qui ne vaut que pour les autres paliers. La part vue d'une dalle n'est plus mise au carré : les rebonds font le gros de la lumière.
+
+- **Pénombres vraies** : 32 rayons par dalle, sur un disque de `shadow_size` blocs.
+- **Rebonds** (`LightBounces`, `shaders/bake/bounce.fsh`) : une tuile de 8 pixels par surface, dans un cache de 1024 × 2048 pixels
+  (16 Mio avec le premier tour). Chaque pixel lance 64 rayons sur 24 blocs, répartis selon le cosinus de sa normale : un rayon qui touche une surface y reprend
+  sa lumière directe (sa tuile, ou la zone hors des tuiles), dans la couleur de son bloc. Le premier tour écrit dans une texture à
+  part, le second le relit et écrit le cache que lit le terrain, en comptant les rebonds suivants par une part fixe de ce qu'il
+  ajoute : un résultat qui ne dépend pas de ce qui était là avant, et aucun état intermédiaire à l'écran. Rien n'est tiré au hasard : après un bloc posé, chaque rebond est identique, au bit
+  près, à un recalcul complet. Une surface neuve reçoit un premier rebond dans l'image où elle apparaît, la lumière directe qu'il relit
+  comptant pour tous les rebonds à venir : elle a presque sa valeur finale. Un balayage repasse ensuite
+  partout une fois le cache de surfaces au repos, 96 tuiles par image. Les coins s'assombrissent d'eux-mêmes : seul le fond du profil
+  garde encore l'ouverture.
+- **Reflets** : ceux de la [matière](#matière-des-blocs), qui visent toute la dalle par quatre rayons au lieu d'un.
+
+La grille des blocs porte l'indice de la matière, et `gtgs_Materials` sa couleur moyenne et si elle émet. Cette grille ne couvre que la
+zone et se répète au-delà : hors d'elle, à plus de 48 blocs ou à une autre hauteur, le contraste d'une texture se calme d'après le plus
+petit niveau de la texture elle-même, sans quoi il changerait par carrés de sections. Tout tient dans des shaders en GLSL 150, sans calcul GPU ni G-buffer : l'Ultra n'est jamais grisé. Il ne s'applique
+qu'à la vue du joueur : une vue de portail garde les rebonds de la zone et le reflet du palier High. Un shader refusé par le pilote
+coupe les rebonds pour la session, et le terrain garde ceux de la zone.
+
+Mesure du 1er novembre 2026, marche réelle sur 437 blocs d'une grande salle ouverte, sur une copie d'un monde de l'auteur, distance de vue 12,
+1080p, RTX 5070 Ti, calcul des tuiles et des rebonds compris : 325 images par seconde en Ultra, 6 ms au 99e centile. À l'arrêt : High 0,8 ms, Ultra 1,5 ms de GPU. Le chronomètre de `GpuTimer` démarre après ce calcul : ce pic a été mesuré en le déplaçant,
+sur une copie. Une seule machine : ni les paliers de la spec ni les cartes visées ne sont vérifiés.
+
+## Calendrier des néons
 
 L'état d'un néon dépend de sa position, de la graine de sa dimension et du tick du monde (`NeonSchedule`). La plupart
 des tubes brillent sans faillir, et les parts du profil fixent ceux qui vacillent et ceux qui sont morts. Un tube qui
 vacille a des coupures de quatre ticks, tirées au sort par créneau. Éteint, il garde 12 % de son intensité.
+
+Par-dessus, `blackout` fixe la part des secteurs de 64 blocs de côté qui sont en panne : tous leurs néons sont morts, et le
+cœur d'un tel secteur ne reçoit plus rien de ses voisins. L'image, la lumière cuite et le bourdonnement lisent le même calendrier.
+Le Level 0 le laisse à 0 pour le moment : tous ses néons éclairent.
 
 La même fonction existe en GLSL, dans `shaders/include/neon_schedule.glsl`. Les deux reposent sur un hachage entier de
 32 bits, sans flottant dans la décision. L'image lit la version GLSL, le son la version Java.
@@ -161,12 +439,42 @@ persistant (`FullscreenTriangle`).
 L'image figée d'une vue lointaine (`FrozenViews`) prend les bits de look de sa dimension. Le post la traite comme la vue
 qu'elle remplace.
 
-### Qualité
+### Paliers de qualité
 
-La qualité légère retient huit néons par vue, sans bloom. La qualité complète en retient trente-deux et dessine le
-bloom. En mode `auto`, `LookQuality` choisit la qualité légère sur une carte graphique intégrée, reconnue à la chaîne
-`GL_RENDERER` du pilote (`intel`, `llvmpipe`, `swiftshader`). Le choix est journalisé, et le calcul acoustique le suit
-par défaut.
+Le palier (`LookQuality`) se choisit dans le menu, ou par l'option `quality`.
+
+| Palier | Néons par vue | Lumière | Post | Halos et reflets |
+|--------|---------------|---------|------|------------------|
+| Low | 8 | Lumière cuite de zone | Aucun | Non |
+| Medium | 8 | Lumière cuite de zone | Vignette et aberration | Halos seuls |
+| High | 32 | Cache de surfaces, relief, matières des blocs, ombres des corps | Plus le bloom | Oui |
+| Ultra | 32 | High, plus la lumière tracée : pénombres, rebonds | Plus le bloom | Oui, quatre rayons par dalle |
+| Désactivé | Aucun | Lightmap et ombrage vanilla | Aucun | Non |
+
+La lumière cuite garde la même émission à tous les paliers : seul le réalisme change, jamais ce qu'on voit des dangers. En mode
+`auto`, `LookQuality` prend High, ou Low sur une carte graphique intégrée, reconnue à la chaîne `GL_RENDERER` du pilote
+(`intel`, `llvmpipe`, `swiftshader`). Le choix est journalisé, et le calcul acoustique le suit par défaut. Les anciens noms
+`light` et `full` valent Medium et High.
+
+### Menu
+
+Dans une dimension à look, le menu pause a un petit bouton carré à gauche de sa première rangée, une icône sans texte
+(`PauseMenuButton`). Ailleurs, le menu pause reste vanilla. Le bouton ouvre un panneau à gauche de l'écran, sans flou ni
+assombrissement : le jeu tourne derrière, et chaque choix se voit aussitôt.
+
+- **Qualité** : Auto, Low, Medium, High, Ultra.
+- **Style** : Fidèle, Pixel, Réaliste, VHS, Cinématique, Confort (`VisualPreset`). Un preset ne touche ni à la lumière ni au
+  brouillard. Choisir un preset pose aussi sa taille de pixels d'ombre.
+- **Ombres pixelisées** : 16, 32, ou lisses. Lisses, la lumière s'interpole entre les pixels de la tuile.
+- **Confort** : sans flash, sans secousse, sans grain.
+- **Avancé** : chaque effet un par un, le palier désactivé, et le temps GPU du monde, du bloom et du post sur la dernière
+  seconde, mesuré tant que cet écran est ouvert (`GpuTimer`).
+
+`LookSettings` tient les réglages, enregistrés dans `config/gtgs_backrooms.json` (`LookSettingsStore`) : les options de
+lancement ne donnent que les valeurs de départ. `LookResources` garde les looks tels que les fichiers les décrivent, et refait
+à chaque changement le look en vigueur : options de confort, puis preset, puis ce que le palier et les options retirent
+(`LookSettings.effective`). Le cache de surfaces se recalcule alors depuis ce qui est déjà cuit, et le terrain se reconstruit
+seulement si l'ombrage de ses faces change (palier désactivé).
 
 ### Stencil
 
@@ -195,7 +503,8 @@ l'image.
 ### Une image de bout en bout
 
 1. En tête du rendu du joueur, `LookFrame` ouvre l'image. `LookState.beginWorld` pose le profil du monde du joueur, la
-   caméra et l'horloge commune avec l'audio (`CueClock`). Le stencil est effacé au niveau 0 avec le look du joueur.
+   caméra et l'horloge commune avec l'audio (`CueClock`). Le stencil est effacé au niveau 0 avec le look du joueur,
+   et la LUT est reliée à son unité.
 2. Les perturbations des sons liés sont mises à jour, et `NeonLights` remplit le bloc des néons proches du joueur.
 3. La lightmap et le brouillard prennent les réglages du profil.
 4. Les couches opaques et les entités se dessinent. `ShaderProgram.bind` ne renvoie le look que si sa version a changé.
@@ -233,8 +542,8 @@ jeu se voit. Les 55 fragment shaders ont une seule sortie `fragColor`, une seule
 conditionnelle. Tous sont patchables, comme les 55 vertex shaders, et les 39 qui font `discard` le gardent.
 
 Une source hors de cette forme reste vanilla, journalisée une fois. C'est le cas d'une version autre que 150, de deux
-`main` ou deux sorties, d'une directive conditionnelle ou inconnue, ou d'une macro dans la sortie ou la signature de
-`main`. Il n'y a jamais de patch « au mieux », même pour un shader remplacé par un pack de ressources.
+`main`, d'un fragment qui déclare une autre sortie que sa seule `out vec4` (de tout type, tableau compris), d'une
+directive conditionnelle ou inconnue, ou d'une macro dans la sortie ou la signature de `main`. Il n'y a jamais de patch « au mieux », même pour un shader remplacé par un pack de ressources.
 
 `PatchedShadersGoldenTest` passe chaque shader de base par la découpe des portails puis par les patchs. Il compare
 l'empreinte des 90 sources changées à `src/test/resources/patched_shaders_1_21_1.json`. Un changement voulu se recopie
@@ -249,6 +558,24 @@ lui.
 `NeonScheduleTest` vérifie `NeonSchedule` sur les 573 vecteurs de `src/test/resources/neon_schedule_vectors.json`,
 écrits par un programme indépendant. Le client vérifie `neon_schedule.glsl` sur les mêmes vecteurs, sur le processeur
 graphique, quand l'option `verifyNeonShader` donne le chemin du fichier.
+
+`LookLutTest` vérifie la LUT (identité, désaturation puis teinte, étalonnage, ordre de la table) et que le shader du post
+garde la même `gtgs_grade` que `look_grade.glsl`. `TexelGridTest` vérifie la grille des texels sur les six faces, sous
+zéro et aux égalités de la normale. Dans un vrai client, `LookGradeClientTests` compile les fonctions des bibliothèques
+telles que le jeu les charge dans un shader de test, et compare ce que rend le processeur graphique à `LookLut` et à
+`TexelGrid`. Il vérifie aussi que les étages patchés compilent tous, que la LUT est liée à son unité et lue par le
+terrain et le post, que le pas de la grille arrive au terrain, que le terrain lit la zone dans le Level 0, et qu'il
+l'ignore dans l'Overworld, où l'ombrage vanilla reste.
+
+`LookSettingsTest` vérifie les réglages : fichier, options, presets, et ce que chaque palier retire au look, sans jamais toucher
+à la lumière. `SurfaceAtlasTest` vérifie la vie des tuiles : bande de hauteur, file, section recuite qui garde ses tuiles, faces
+qui suivent un bloc, ombres touchées par un bloc et rien d'autre, cache plein, section servie à moitié puis reprise, premier néon d'une
+section.
+
+`LightBakeBasicsTest` vérifie le stockage, la copie du monde, le facteur de forme contre sa formule et les rayons sur les
+six directions. `LightBakeSceneTest` cuit une pièce connue : sol sous la dalle, plafond sans lumière directe, ombre d'un mur,
+néon mort, rebond teinté par un mur jaune, coins assombris, puis l'ordre de cuisson, le recuit après un bloc changé et le
+déplacement de la zone.
 
 ## Compatibilité
 
@@ -321,6 +648,32 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
 ## Limites
 
 - Sous un pack, chaque bascule reconstruit le terrain, et les sections réapparaissent en quelques images.
+- La lumière cuite n'atteint que le terrain des shaders patchés, et un mod de terrain garde la lightmap. En Low et en Medium, la lumière
+  des entités ignore les murs : un néon derrière une cloison les éclaire. Il n'y a qu'une zone à la fois : une vue vers un autre endroit du même
+  monde, loin de la caméra, garde la lightmap, et son image change à la traversée.
+- Seuls les corps vivants portent une ombre (ni objets, ni véhicules, ni invisibles), huit au plus, sur le terrain seulement : un
+  corps n'en porte pas sur un autre, et il n'y en a pas en Low ni en Medium, ni dans une vue de portail, plafonnée sous ce palier.
+  Sa silhouette est faite de cylindres : l'ombre ne suit ni ses bras ni sa pose. Sous ses pieds, elle retire au plus 80 %.
+- Le vacillement du calendrier n'entre pas dans la lumière cuite : seuls les néons morts et les secteurs en panne sont retirés, et
+  les cris modulent la surface. Une ombre de bloc non opaque (dalle,
+  escalier, vitre) n'existe pas : seuls les blocs pleins arrêtent la lumière. Le relief suppose l'orientation d'un cube simple : une face
+  tournée par son modèle garde un relief décalé.
+- La zone et les tuiles ne donnent pas tout à fait la même lumière (en Ultra, la zone vaut environ 0,9 fois les tuiles) : le passage
+  de 24 à 32 blocs se fond, sans disparaître tout à fait.
+- Les rebonds et les surfaces des paliers sans cache de surfaces suivent un bloc changé avec la cuisson, quelques dixièmes de
+  seconde plus tard.
+- Au-delà de 40 à 48 blocs, la lightmap prend le relais : elle ne connaît ni les ombres ni les pannes, et son orientation est une
+  correction d'ensemble, pas un calcul.
+- En Ultra, un rayon ne voit que la grille des blocs : un bloc non plein n'arrête pas les rebonds, les corps ne font pas d'ombre aux
+  rebonds. Un reflet ne montre que les dalles : ni les murs ni les corps, qui lui coupent seulement une dalle. Un rebond suit un bloc posé une fois le cache au repos, en environ une seconde. Pas de rendu réduit
+  ni de TAA : rien n'est accumulé à l'écran. Le coût vient de chaque carte : mesuré sur une seule machine (ci-dessus). Les dalles restent
+  des carrés d'un bloc, celles de la génération : une dalle en longue bande demanderait de toucher au Level 0. Au-delà de la zone
+  des tuiles, à 40 blocs environ, la lumière retombe sur celle de la lightmap.
+- Une surface hors de la grille (plinthe rentrée dans son bloc) n'a pas de tuile et prend la lightmap.
+- Une surface au-dessus ou au-dessous de la hauteur de la zone, vue par un puits entre deux couches, prend la lightmap.
+- Le cache de surfaces a une taille fixe : une salle de plus de trente-deux mille surfaces sur le rayon des tuiles laisserait ses sections
+  les plus loin à la lumière de la zone. Le Level 0 en demande dix-huit mille au pire de ce qui a été mesuré.
+- Le Level 0 a de vrais couloirs sans dalle : ils restent très sombres. Les éclairer demanderait de toucher à sa génération.
 - Hors des Backrooms, aucun mode ne rend les vues en vanilla sous un pack, car deux pipelines dans la même image
   dessineraient le terrain en éclats.
 - Sous un pack, une vue du Level 0 vue de l'Overworld n'a ni la lumière des néons ni la lightmap du profil. Son post
@@ -352,8 +705,10 @@ La logique pure a ses tests unitaires, de `ShaderPatcherTest` à `NeonMapTest`. 
 couleur des biomes à celle de vanilla, au bit près, sur des milliers de points et pour chaque effet de dimension. `MixinTargetsTest` vérifie
 que les mixins du moteur s'appliquent. Dans un vrai client, `LevelZeroClientTests` vérifie le look du Level 0, les néons
 envoyés, la couleur du brouillard et le jumeau GLSL, et que la couleur des biomes du mod est celle de vanilla dans
-l'Overworld comme dans le Level 0 (`biome_colors_match_vanilla`). `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
-framebuffer recréé et le sampler du dessin plein écran. `PortalViewClientTests` vérifie le look dans un cadre et
+l'Overworld comme dans le Level 0 (`biome_colors_match_vanilla`). `SettingsMenuClientTests` vérifie le menu : icône absente hors des Backrooms, à l'écran et juste à gauche de la première rangée dans
+le Level 0, et chaque choix appliqué en direct. `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
+framebuffer recréé et le sampler du dessin plein écran. `LookGradeClientTests` compare l'étalonnage et la lumière au
+texel du processeur graphique à leurs jumeaux Java. `PortalViewClientTests` vérifie le look dans un cadre et
 l'absence de couture à la traversée.
 
 Avant de mesurer une image à la main, on vérifie deux preuves : le bilan des étages patchés dans le journal, et le

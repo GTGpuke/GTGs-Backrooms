@@ -3,7 +3,9 @@
   "targets": ["rendertype_*", "particle"],
   "excludes": ["rendertype_text*", "rendertype_gui*", "rendertype_outline", "rendertype_clouds"],
   "inject": [
-    { "point": "head", "code": "out vec3 gtgs_ViewPos; out vec3 gtgs_WorldRel; out vec2 gtgs_Uv; out vec3 gtgs_Normal; flat out float gtgs_Terrain;" },
-    { "point": "main_after", "code": "gtgs_ViewPos = (ModelViewMat * vec4(${position}, 1.0)).xyz; gtgs_WorldRel = ${position}; gtgs_Uv = ${uv}; gtgs_Normal = ${normal}; gtgs_Terrain = ${terrain};" }
+    { "point": "head", "code": "out vec3 gtgs_ViewPos; out vec3 gtgs_WorldRel; out vec2 gtgs_Uv; out vec3 gtgs_Normal; flat out float gtgs_Terrain; out vec3 gtgs_Lightmap; flat out float gtgs_Lit; uniform float gtgs_BakedLight;" },
+    { "point": "main_after", "code": "gtgs_ViewPos = (ModelViewMat * vec4(${position}, 1.0)).xyz; gtgs_WorldRel = ${position}; gtgs_Uv = ${uv}; gtgs_Normal = ${normal}; gtgs_Terrain = ${terrain}; gtgs_Lit = 0.0;" },
+    { "point": "terrain_after", "code": "gtgs_Lightmap = minecraft_sample_lightmap(Sampler2, UV2).rgb; if (gtgs_BakedLight > 0.5) { vertexColor = Color; vertexDistance = 0.0; }" },
+    { "point": "lit_after", "code": "if (gtgs_BakedLight > 0.5) { lightMapColor = vec4(1.0); gtgs_Lit = 1.0; }" }
   ]
 }

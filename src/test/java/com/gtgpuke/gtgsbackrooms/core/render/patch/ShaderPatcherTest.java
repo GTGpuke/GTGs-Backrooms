@@ -119,6 +119,30 @@ class ShaderPatcherTest {
     }
 
     @Test
+    @DisplayName("Le code reserve au terrain ne va que dans les shaders qui declarent ChunkOffset, apres main_after")
+    void terrainInjectionOnlyInTerrain() {
+        List<ShaderPatch.Injection> injections = List.of(new ShaderPatch.Injection(InjectionPoint.TERRAIN_AFTER, "terrain();"),
+                new ShaderPatch.Injection(InjectionPoint.MAIN_AFTER, "after();"));
+        String vertex = "#version 150\nin vec3 Position;\nvoid main() {\n    gl_Position = vec4(Position, 1.0);\n}\n";
+        String plain = ShaderPatcher.apply(ShaderKind.VERTEX, vertex, List.of(), injections).source();
+        assertFalse(plain.contains("terrain();"), "Hors du terrain : rien.");
+        assertTrue(plain.contains("after();"), "Le reste s'insere.");
+        String terrainVertex = vertex.replace("in vec3 Position;", "in vec3 Position;\nuniform vec3 ChunkOffset;");
+        String terrain = ShaderPatcher.apply(ShaderKind.VERTEX, terrainVertex, List.of(), injections).source();
+        assertTrue(terrain.indexOf("after();") < terrain.indexOf("terrain();"), "Apres main_after : " + terrain + ".");
+    }
+
+    @Test
+    @DisplayName("Le code reserve aux entites ne va que dans les shaders qui ont une couleur de lightmap en sortie")
+    void litInjectionOnlyInEntities() {
+        List<ShaderPatch.Injection> injections = List.of(new ShaderPatch.Injection(InjectionPoint.LIT_AFTER, "entity();"));
+        String vertex = "#version 150\nin vec3 Position;\nvoid main() {\n    gl_Position = vec4(Position, 1.0);\n}\n";
+        assertFalse(ShaderPatcher.apply(ShaderKind.VERTEX, vertex, List.of(), injections).source().contains("entity();"), "Sans sortie : rien.");
+        String lit = vertex.replace("in vec3 Position;", "in vec3 Position;\nout vec4 lightMapColor;");
+        assertTrue(ShaderPatcher.apply(ShaderKind.VERTEX, lit, List.of(), injections).source().contains("entity();"), "Avec sa sortie, le code s'insere.");
+    }
+
+    @Test
     @DisplayName("Les points head, main_before, main_after et output s'inserent dans cet ordre")
     void injectionPointsAreOrdered() {
         List<ShaderPatch.Injection> injections = List.of(
@@ -179,6 +203,11 @@ class ShaderPatcherTest {
         assertRefused(ShaderPatcher.REFUSAL_OUTPUT, FRAGMENT.replace("out vec4 fragColor;", "out vec3 fragColor;"), "Sortie d'un autre type.");
         assertRefused(ShaderPatcher.REFUSAL_OUTPUT, FRAGMENT.replace("out vec4 fragColor;", "out vec4 fragColor;\nout vec4 normal;"),
                 "Deux sorties.");
+        assertRefused(ShaderPatcher.REFUSAL_OUTPUT, FRAGMENT.replace("out vec4 fragColor;", "out vec4 fragColor;\nout float depth;"),
+                "Une seconde sortie d'un autre type compte aussi.");
+        assertRefused(ShaderPatcher.REFUSAL_OUTPUT, FRAGMENT.replace("out vec4 fragColor;", "out vec4 fragColor;\nlayout(location = 1) out vec2 motion[2];"),
+                "Une seconde sortie en tableau, placee, compte aussi.");
+        assertEquals(1, ShaderPatcher.analyze(FRAGMENT).declaredOutputs(), "Une seule sortie declaree.");
     }
 
     @Test

@@ -28,10 +28,15 @@ public final class GpuTimer {
     public static final Section POST = new Section("client.look.post.gpu");
 
     private static final int RING = 4;
+    private static final float NANOS_PER_MILLISECOND = 1.0e6f;
+    /** Part de chaque mesure dans la moyenne : un temps de reponse d'environ une seconde a soixante images. */
+    private static final float SMOOTHING = 0.03f;
     private static final Section[] SECTIONS = {WORLD, COPY, BLOOM, POST};
     private static int supported = -1;
     /** La section dont la requete est ouverte : une seule a la fois, une seconde ouverte dedans ne serait pas mesuree. */
     private static @Nullable Section openSection;
+    /** L'ecran des reglages avances lit les durees : les requetes tournent le temps qu'il est ouvert, moniteur inactif ou non. */
+    private static boolean measuring;
 
     private GpuTimer() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -39,7 +44,7 @@ public final class GpuTimer {
 
     /** Ouvre la requete d'une passe ; rien si le moniteur est inactif, sous un pack, ou sans requetes de temps. */
     public static void begin(Section section) {
-        if (!ModPerformanceMonitor.isEnabled() || ShaderPackState.inUse() || !supported() || openSection != null) {
+        if (!ModPerformanceMonitor.isEnabled() && !measuring || ShaderPackState.inUse() || !supported() || openSection != null) {
             return;
         }
         if (section.queries == null) {
@@ -79,10 +84,22 @@ public final class GpuTimer {
             if (GL15.glGetQueryObjecti(query, GL15.GL_QUERY_RESULT_AVAILABLE) == 0) {
                 break;
             }
-            ModPerformanceMonitor.record(section.name, GL33.glGetQueryObjectui64(query, GL15.GL_QUERY_RESULT));
+            long nanos = GL33.glGetQueryObjectui64(query, GL15.GL_QUERY_RESULT);
+            ModPerformanceMonitor.record(section.name, nanos);
+            section.milliseconds += (nanos / NANOS_PER_MILLISECOND - section.milliseconds) * SMOOTHING;
             section.pending[section.read] = false;
             section.read = (section.read + 1) % RING;
         }
+    }
+
+    /** L'ecran des reglages avances s'ouvre ou se ferme. */
+    public static void measure(boolean on) {
+        measuring = on;
+    }
+
+    /** Duree d'une passe par image, moyennee sur la derniere seconde environ, en millisecondes. */
+    public static float milliseconds(Section section) {
+        return section.milliseconds;
     }
 
     /** Fin de partie : les requetes sont rendues au pilote. */
@@ -116,6 +133,7 @@ public final class GpuTimer {
         private int write;
         private int read;
         private boolean open;
+        private float milliseconds;
 
         private Section(String name) {
             this.name = name;

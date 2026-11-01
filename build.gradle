@@ -38,6 +38,8 @@ def passthroughProperties = [
         lookEnabled                       : 'gtgsbackrooms.look.enabled',
         lookDebugStencil                  : 'gtgsbackrooms.look.debugStencil',
         lookQuality                       : 'gtgsbackrooms.look.quality',
+        lookPixelShadows                  : 'gtgsbackrooms.look.pixelShadows',
+        lookBakedLight                    : 'gtgsbackrooms.look.bakedLight',
         lookVerifyNeonShader              : 'gtgsbackrooms.look.verifyNeonShader',
         lookCheckGlState                  : 'gtgsbackrooms.look.checkGlState',
         lookReplaceShaderPack             : 'gtgsbackrooms.look.replaceShaderPack',
@@ -79,6 +81,8 @@ loom {
             vmArg "-Dgtgsbackrooms.clientTest.report=${project.layout.buildDirectory.get().asFile}/client-junit.xml"
             // Le jumeau GLSL du calendrier des neons, confronte au fichier de vecteurs communs sur le processeur graphique.
             vmArg "-Dgtgsbackrooms.look.verifyNeonShader=${project.file('src/test/resources/neon_schedule_vectors.json').absolutePath}"
+            // Le calcul d'une dalle, confronte a ses vecteurs communs sur le processeur graphique.
+            vmArg "-Dgtgsbackrooms.clientTest.areaVectors=${project.file('src/test/resources/area_light_vectors.json').absolutePath}"
             // Un monde distant sans portail est libere en cinq secondes (le plancher du delai), pas en une minute.
             vmArg '-Dgtgsbackrooms.portal.remoteWorldReleaseSeconds=5'
             activeSystemProperties.each { key, value -> vmArg "-D${key}=${value}" }
@@ -227,6 +231,7 @@ afterEvaluate {
         doFirst {
             // Monde neuf et options figees a chaque lancement : les images ne dependent que des tests.
             delete new File(runDir, 'saves/clienttest')
+            delete new File(runDir, 'config/gtgs_backrooms.json')
             delete layout.buildDirectory.file('client-junit.xml')
             runDir.mkdirs()
             new File(runDir, 'options.txt').text = [

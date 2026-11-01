@@ -11,6 +11,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -37,10 +38,12 @@ final class EntityContinuityClientTests {
 
     /** Vitesse du corps, en blocs par tick : celle d'un mob qui marche. */
     private static final double SPEED = 0.1;
-    /** Ticks laisses au corps pour traverser et s'eloigner de l'arrivee. */
-    private static final int TRAVEL_TICKS = 70;
+    /** Ticks laisses au corps pour traverser et s'eloigner de l'arrivee, sans atteindre le mur en face : un arret contre lui passerait pour un gel. */
+    private static final int TRAVEL_TICKS = 60;
     /** Plus long pas tolere, en pas medians : au-dela, la copie saute. */
     private static final double MAX_STEP_RATIO = 4.0;
+    /** Sous ce pas, en blocs (un tick et demi de marche), jamais un saut : une seule image plus longue suffit a l'expliquer. */
+    private static final double MIN_JUMP = 1.5 * SPEED;
     /** Pas sous cette part du pas median : la copie semble arretee. */
     private static final double STILL_RATIO = 0.25;
     /** Plus longue suite d'images ou la copie semble arretee : un peu plus d'un tick a 120 images par seconde. */
@@ -79,6 +82,12 @@ final class EntityContinuityClientTests {
             for (ServerWorld world : server.getWorlds()) {
                 Entity entity = world.getEntity(body);
                 if (entity != null) {
+                    if (entity instanceof MobEntity mob) {
+                        // Une creature qui erre manque le cadre, ou y retourne une fois recreee a l'arrivee : ses buts tombent a chaque
+                        // tick, et elle garde sa gravite, que setAiDisabled lui retirerait.
+                        mob.clearGoals(goal -> true);
+                        mob.getNavigation().stop();
+                    }
                     Vec3d velocity = entity.getVelocity();
                     double horizontal = Math.hypot(velocity.x, velocity.z);
                     if (horizontal > 1.0e-3) {
@@ -156,7 +165,7 @@ final class EntityContinuityClientTests {
                 what, moving.length, String.format(Locale.ROOT, "%.4f", median), String.format(Locale.ROOT, "%.4f", longest), longestStill, worldSwitches);
         ClientTestContext.require(worldSwitches == 1, what + " : la copie a change " + worldSwitches + " fois de monde au lieu d'une.");
         ClientTestContext.require(missingFrames == 0, what + " : la copie a manque " + missingFrames + " image(s).");
-        ClientTestContext.require(longest <= MAX_STEP_RATIO * median, String.format(Locale.ROOT,
+        ClientTestContext.require(longest <= Math.max(MAX_STEP_RATIO * median, MIN_JUMP), String.format(Locale.ROOT,
                 "%s : la copie saute de %.3f bloc en une image (pas median %.4f).", what, longest, median));
         ClientTestContext.require(longestStill <= MAX_STILL_FRAMES, what + " : la copie reste arretee " + longestStill + " images de suite.");
     }

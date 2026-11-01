@@ -24,10 +24,12 @@ import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalSettings;
 import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalTargets;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.render.client.BiomeColors;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonFaces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonShaderCheck;
-import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
 
 /**
@@ -88,6 +90,16 @@ final class LevelZeroClientTests {
         }
     }
 
+    /** Le palier High, quel que soit le choix automatique : une carte integree tombe sur Low, qui n'a ni post ni cache de surfaces. */
+    static void highTier(ClientTestContext context) {
+        LookResources.applySettings(LookSettings.current().withQuality(LookQuality.HIGH.key()), context.client());
+    }
+
+    /** Les reglages de depart. */
+    static void defaultTier(ClientTestContext context) {
+        LookResources.applySettings(LookSettings.defaults(), context.client());
+    }
+
     /** Le joueur dans le Level 0, a l'arrivee d'un portail pres de l'origine. */
     static void enterLevelZero(ClientTestContext context) {
         context.onServer(server -> {
@@ -125,13 +137,8 @@ final class LevelZeroClientTests {
                     ClientTestContext.require(LookState.shadersCarryLook(), "L'etage 1 du look n'est pas dans les shaders.");
                     ClientTestContext.require(LookState.lastFrameNeons() > 0, "Aucun neon envoye dans le Level 0.");
                 })
-                .check("brouillard de la couleur du profil", context -> {
-                    float[] fog = RenderSystem.getShaderFogColor();
-                    Vec3d expected = LookProfiles.of(BackroomsConstants.LEVEL_ZERO_WORLD).fog().color();
-                    ClientTestContext.require(Math.abs(fog[0] - expected.x) < 0.02 && Math.abs(fog[1] - expected.y) < 0.02 && Math.abs(fog[2] - expected.z) < 0.02,
-                            String.format(Locale.ROOT, "Brouillard (%.3f, %.3f, %.3f) au lieu de la couleur du profil (%.3f, %.3f, %.3f).",
-                                    fog[0], fog[1], fog[2], expected.x, expected.y, expected.z));
-                })
+                .check("pas de brouillard, sauf au bord de la distance de rendu", context -> ClientTestContext.require(RenderSystem.getShaderFogStart() > 64.0f,
+                        String.format(Locale.ROOT, "Brouillard des %.1f blocs.", RenderSystem.getShaderFogStart())))
                 .check("jumeau GLSL du calendrier des neons accorde a Java", context -> {
                     ClientTestContext.require(NeonShaderCheck.identicalVectors() > 0, "Le jumeau GLSL n'a pas ete verifie sur le processeur graphique (journal [Look]).");
                     ClientTestContext.require(!NeonFaces.disabled(), "Les faces des neons sont coupees : le shader et NeonSchedule divergent.");

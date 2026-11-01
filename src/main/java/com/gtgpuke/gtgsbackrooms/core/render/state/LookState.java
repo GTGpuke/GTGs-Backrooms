@@ -96,6 +96,11 @@ public final class LookState {
         TICK[at] = tick;
     }
 
+    /** Quelque chose que les uniformes du look portent a change hors de la pile (le brouillard) : ils repartent. */
+    public static void touch() {
+        version++;
+    }
+
     /** Sortie d'une vue : le profil de la vue qui la contient reprend. */
     public static void pop() {
         if (depth == 0) {

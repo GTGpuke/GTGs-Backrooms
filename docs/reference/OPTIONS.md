@@ -106,7 +106,9 @@ Le fonctionnement des portails est dans [PORTAILS.md](../systemes/PORTAILS.md).
 |----------------|-------------|--------|-------|
 | `gtgsbackrooms.look.enabled` | `-PlookEnabled` | `true` | Active le moteur de shaders ; coupé, rien n'est patché ni chargé et le rendu reste vanilla partout. |
 | `gtgsbackrooms.look.replaceShaderPack` | `-PlookReplaceShaderPack` | `true` | Sous un pack de shaders, dans une dimension à look, remplace le rendu du pack par celui du mod. |
-| `gtgsbackrooms.look.quality` | `-PlookQuality` | `auto` | Qualité du moteur : `light`, `full` ou `auto`. |
+| `gtgsbackrooms.look.quality` | `-PlookQuality` | `auto` | Palier de départ du moteur : `off`, `low`, `medium`, `high`, `ultra` ou `auto` (`light` et `full`, anciens noms, valent `medium` et `high`). Le choix du joueur, enregistré dans `config/gtgs_backrooms.json`, prime ensuite. |
+| `gtgsbackrooms.look.bakedLight` | `-PlookBakedLight` | `true` | Lumière cuite du terrain, dans les dimensions dont le profil en a une ; coupée, la lightmap et l'ombrage vanilla reviennent. |
+| `gtgsbackrooms.look.pixelShadows` | `-PlookPixelShadows` | `32` | Taille des pixels d'ombre : pas de la grille des texels par bloc sur laquelle se calcule la lumière des néons, `32` (celui des textures du mod), `16`, ou `0` pour une lumière lisse. |
 | `gtgsbackrooms.look.reduceNoise` | `-PreduceNoise` | `false` | Confort : retire du look le grain, le vacillement de la lumière de l'écran et l'aberration chromatique. |
 | `gtgsbackrooms.look.debugStencil` | `-PlookDebugStencil` | `false` | Remplace l'image par le stencil, une couleur par niveau d'imbrication. |
 | `gtgsbackrooms.look.checkGlState` | `-PlookCheckGlState` | `false` | Vérifie que chaque passe du moteur rend l'état GL tel qu'elle l'a trouvé. |
@@ -115,9 +117,8 @@ Le fonctionnement des portails est dans [PORTAILS.md](../systemes/PORTAILS.md).
 Quelques précisions :
 
 - `replaceShaderPack` coupée, le pack rend aussi les Backrooms et le look se pose sur son image.
-- La qualité `light` éclaire par huit néons par vue, sans bloom. La qualité `full` éclaire par trente-deux néons, avec
-  le bloom.
-- En `auto`, une carte graphique intégrée reçoit `light`, et toute autre `full`. La carte est jugée intégrée si la
+- Les paliers `low` et `medium` éclairent par huit néons par vue, `high` et `ultra` par trente-deux, avec le bloom.
+- En `auto`, une carte graphique intégrée reçoit `low`, et toute autre `high`. La carte est jugée intégrée si la
   chaîne `GL_RENDERER` du pilote contient `intel`, `llvmpipe` ou `swiftshader`. Toute valeur inconnue vaut `auto`, et
   le journal note le choix.
 - `reduceNoise` garde la teinte, la lumière, le brouillard, la vignette et le bloom.

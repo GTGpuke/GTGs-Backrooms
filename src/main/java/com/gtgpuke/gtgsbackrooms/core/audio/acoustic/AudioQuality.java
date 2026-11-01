@@ -55,6 +55,6 @@ public enum AudioQuality {
         if (wanted.equals("full")) {
             return FULL;
         }
-        return look == LookQuality.FULL ? FULL : LIGHT;
+        return look.surfaceLight() ? FULL : LIGHT;
     }
 }

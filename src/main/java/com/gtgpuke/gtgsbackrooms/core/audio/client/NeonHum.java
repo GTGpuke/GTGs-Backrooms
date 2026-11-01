@@ -165,7 +165,7 @@ public final class NeonHum {
         Map<SoundInstance, Channel.SourceManager> playing = system.backrooms$getSources();
         for (int i = 0; i < count; i++) {
             LookProfile.Neons neons = LookProfiles.of(HUM_DIMENSIONS[i]).neons();
-            float state = NeonSchedule.intensity(HUMMING[i], NeonSchedule.seed(HUM_DIMENSIONS[i]), tick, neons.flickering(), neons.dead());
+            float state = NeonSchedule.intensity(HUMMING[i], NeonSchedule.seed(HUM_DIMENSIONS[i]), tick, neons.flickering(), neons.dead(), neons.blackout());
             if (Math.abs(state - STATES[i]) < STATE_STEP) {
                 continue;
             }

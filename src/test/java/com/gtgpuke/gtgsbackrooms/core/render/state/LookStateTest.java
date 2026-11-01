@@ -123,6 +123,6 @@ class LookStateTest {
 
     private static LookProfile profile(int id) {
         return new LookProfile(Identifier.of("m", "d" + id), id, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, LookProfile.Lightmap.VANILLA,
-                LookProfile.Fog.VANILLA, LookProfile.Post.NONE, LookProfile.Neons.NONE);
+                LookProfile.Fog.VANILLA, LookProfile.Post.NONE, LookProfile.Neons.NONE, LookProfile.Grade.NEUTRAL, LookProfile.BakedLight.NONE);
     }
 }

@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -16,6 +17,7 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.CubicSampler;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.entity.EntityLookup;
 
@@ -24,6 +26,7 @@ import com.gtgpuke.gtgsbackrooms.core.audio.client.SolidityIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.sound.FrameSoundPlayer;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.transition.EntityHandover;
 import com.gtgpuke.gtgsbackrooms.core.render.client.BiomeColors;
+import com.gtgpuke.gtgsbackrooms.core.render.client.LightCopy;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 
 /**
@@ -31,9 +34,10 @@ import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
  * a leurs coordonnees brutes (voir {@link FrameSoundPlayer}). Tous les sons positionnes d'un monde client aboutissent
  * a la meme methode privee, ceux des paquets du serveur comme ceux des blocs (feu, lave) et des entities. Une entity
  * renvoyee alors que sa copie est encore la remplace cette copie et en reprend l'etat visible (voir
- * {@link EntityHandover#replaceStaleCopy} et {@link EntityHandover#replaceSameCopy}). Tout changement de bloc d'un monde client
- * (paquets, mondes distants, prediction du joueur) passe par {@code setBlockState} : l'index des neons et la copie du
- * monde du calcul acoustique le suivent.
+ * {@link EntityHandover#replaceStaleCopy} et {@link EntityHandover#replaceSameCopy}). Un bloc change d'un monde client arrive
+ * par deux chemins : la prediction du joueur et les mondes distants passent par {@code setBlockState}, les paquets du serveur
+ * par {@code handleBlockUpdate}, qui appelle directement la methode de {@code World}. L'index des neons, la copie du monde
+ * du calcul acoustique et celle de la lumiere suivent les deux.
  */
 @Mixin(ClientWorld.class)
 public abstract class MixinClientWorld {
@@ -93,8 +97,28 @@ public abstract class MixinClientWorld {
     @Inject(method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z", at = @At("RETURN"))
     private void backrooms$trackBlockChange(BlockPos pos, BlockState state, int flags, int maxUpdateDepth, CallbackInfoReturnable<Boolean> cir) {
         if (cir.getReturnValueZ()) {
-            NeonIndex.onBlockChanged((ClientWorld) (Object) this, pos, state);
-            SolidityIndex.onBlockChanged((ClientWorld) (Object) this, pos);
+            backrooms$blockChanged(pos, state);
+        }
+    }
+
+    /** Un bloc recu du serveur : vanilla ne passe pas par {@code setBlockState} de cette classe. Un bloc inchange ne coute rien. */
+    @Inject(method = "handleBlockUpdate", at = @At("TAIL"))
+    private void backrooms$trackServerBlock(BlockPos pos, BlockState state, int flags, CallbackInfo ci) {
+        backrooms$blockChanged(pos, ((ClientWorld) (Object) this).getBlockState(pos));
+    }
+
+    @Unique
+    private void backrooms$blockChanged(BlockPos pos, BlockState state) {
+        NeonIndex.onBlockChanged((ClientWorld) (Object) this, pos, state);
+        SolidityIndex.onBlockChanged((ClientWorld) (Object) this, pos);
+        LightCopy.onBlockChanged((ClientWorld) (Object) this, pos, state);
+    }
+
+    /** Sous la lumiere cuite, les blocs se construisent sans l'ombrage vanilla par face : la lumiere suit leur vraie orientation. */
+    @Inject(method = "getBrightness", at = @At("HEAD"), cancellable = true)
+    private void backrooms$flatFaces(Direction direction, boolean shaded, CallbackInfoReturnable<Float> cir) {
+        if (LightCopy.flatFaces((ClientWorld) (Object) this)) {
+            cir.setReturnValue(1.0f);
         }
     }
 

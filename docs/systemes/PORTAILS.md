@@ -530,7 +530,6 @@ Les options des portails, en `gtgsbackrooms.portal.*`, sont décrites dans la [r
 ### Problèmes ouverts
 
 - Sous Linux avec les pilotes Mesa, l'image du joueur se fige après une traversée, puis ne change plus en marchant. La cause n'est pas trouvée, et la CI échoue sur `portal_view_and_seamless_crossings` tant que ce n'est pas corrigé.
-- Rarement, à la fermeture d'une partie solo, le serveur intégré boucle dans `MinecraftServer.shutdown`, sans code du mod dans la pile. D'après le code, les tickets du mod ne sont pas en cause. Le test `end_of_game` journalise les tickets restants au prochain blocage.
 
 ## Tests
 

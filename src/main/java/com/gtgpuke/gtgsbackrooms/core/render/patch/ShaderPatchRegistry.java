@@ -84,7 +84,8 @@ public final class ShaderPatchRegistry {
 
     /**
      * Applique au shader les patchs qui le ciblent, dans l'ordre des fichiers. Un seul patch s'applique par etage : le
-     * premier enveloppe le {@code main}, et les suivants, trouvant un {@code main} deja enveloppe, ne changent rien.
+     * premier enveloppe le {@code main}, et les suivants, trouvant un {@code main} deja enveloppe, ne changent rien
+     * (journalise une fois par patch et par shader).
      *
      * @param kind etage du shader
      * @param name nom du shader, sans extension ({@code rendertype_solid})
@@ -93,9 +94,16 @@ public final class ShaderPatchRegistry {
      */
     public String patch(ShaderKind kind, String name, String source) {
         String current = source;
+        ShaderPatch applied = null;
         for (int i = 0; i < this.patches.size(); i++) {
             ShaderPatch patch = this.patches.get(i);
             if (patch.kind() != kind || !patch.appliesTo(name)) {
+                continue;
+            }
+            if (applied != null) {
+                if (this.logged.add(patch.id() + ':' + name)) {
+                    ModConstants.LOGGER.warn("[Look] Shader {} deja patche par {} : {} ignore, un seul patch par etage.", name, applied.id(), patch.id());
+                }
                 continue;
             }
             List<String> texts = new ArrayList<>(patch.imports().size());
@@ -108,6 +116,9 @@ public final class ShaderPatchRegistry {
                     ModConstants.LOGGER.warn("[Look] Shader {} non patche par {} ({}) : rendu vanilla.", name, patch.id(), result.refusal());
                 }
                 continue;
+            }
+            if (result.source() != current) {
+                applied = patch;
             }
             current = result.source();
         }
