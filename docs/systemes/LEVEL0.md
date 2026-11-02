@@ -11,7 +11,10 @@ labyrinthe. Rien n'y apparaît naturellement.
 
 Deux biomes cosmétiques changent la palette sans toucher au labyrinthe.
 
-- Le biome de base a des murs jaunis, une moquette humide et les néons de la trame.
+- Le biome de base a des murs jaunis, une moquette humide et les néons de la trame. La moquette a quatre textures, que vanilla
+  tire au hasard par bloc d'après sa position (blockstate) : de courtes mèches de fil doré, olive ou sombre, sans rien à l'échelle
+  du bloc (moins de 1 % de leur variance a une période de 8 pixels ou plus, `BlockMaterialTexturesTest`), et la même couleur moyenne.
+  De loin, les mipmaps effacent le grain et ne gardent que ce qui est large : une tache, identique à chaque bloc, y dessinait une grille.
 - Le biome rouge a des murs blancs, une moquette rouge et aucun néon. Il n'existe que sur les layers 1 et 3, par
   régions de 48 cellules, et reste rare.
 

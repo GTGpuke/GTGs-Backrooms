@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import javax.imageio.ImageIO;
@@ -19,8 +20,16 @@ class BlockMaterialTexturesTest {
 
     private static final String WALLPAPER = "level_zero_wallpaper";
     private static final String WHITE_WALLPAPER = "level_zero_wallpaper_aged";
-    private static final String[] CARPETS = {"level_zero_damp_carpet", "level_zero_damp_carpet_aged"};
-    private static final String[] ALL = {WALLPAPER, WHITE_WALLPAPER, CARPETS[0], CARPETS[1]};
+    /** Les variantes de la moquette, tirees au hasard par bloc (blockstate). */
+    private static final String[] CARPET_VARIANTS = {"level_zero_damp_carpet", "level_zero_damp_carpet_1", "level_zero_damp_carpet_2", "level_zero_damp_carpet_3"};
+    private static final String[] CARPETS = {CARPET_VARIANTS[0], CARPET_VARIANTS[1], CARPET_VARIANTS[2], CARPET_VARIANTS[3], "level_zero_damp_carpet_aged"};
+    private static final String[] ALL = {WALLPAPER, WHITE_WALLPAPER, CARPETS[0], CARPETS[1], CARPETS[2], CARPETS[3], CARPETS[4]};
+    /** Periode, en pixels, a partir de laquelle un motif de la moquette se verrait d'un bloc a l'autre : les mipmaps gardent ce qui est plus large. */
+    private static final int BLOCK_SCALE = 8;
+    /** Part de la variance de la moquette qu'elle peut avoir a cette echelle. */
+    private static final double MAX_BLOCK_SCALE = 0.01;
+    /** Ecart de couleur moyenne permis entre les variantes, par composante. */
+    private static final double SAME_MEAN = 0.5;
     /** Part des pixels les plus sombres de chaque cote : le coeur de l'encre et le coeur du papier. */
     private static final double CORE = 0.25;
     private static final int SMOOTH_INK = 80;
@@ -53,6 +62,83 @@ class BlockMaterialTexturesTest {
                 assertEquals(block.getWidth(), material.getWidth(), name + suffix + ".");
                 assertEquals(block.getHeight(), material.getHeight(), name + suffix + ".");
             }
+        }
+    }
+
+    @Test
+    @DisplayName("La moquette n'a presque rien a l'echelle du bloc : de loin, seul ce qui est large reste, et il se repeterait en grille")
+    void carpetHasNoBlockScalePattern() throws IOException {
+        for (String name : CARPET_VARIANTS) {
+            BufferedImage block = image(name);
+            int size = block.getWidth();
+            double[] lum = new double[size * size];
+            double mean = 0.0;
+            for (int i = 0; i < lum.length; i++) {
+                lum[i] = luminance(block.getRGB(i % size, i / size));
+                mean += lum[i] / lum.length;
+            }
+            double wide = 0.0;
+            double all = 0.0;
+            for (int v = 0; v < size; v++) {
+                for (int u = 0; u < size; u++) {
+                    double re = 0.0;
+                    double im = 0.0;
+                    for (int i = 0; i < lum.length; i++) {
+                        double angle = -2.0 * Math.PI * ((double) u * (i % size) + (double) v * (i / size)) / size;
+                        re += (lum[i] - mean) * Math.cos(angle);
+                        im += (lum[i] - mean) * Math.sin(angle);
+                    }
+                    double power = re * re + im * im;
+                    int ku = u <= size / 2 ? u : u - size;
+                    int kv = v <= size / 2 ? v : v - size;
+                    all += power;
+                    if ((u != 0 || v != 0) && Math.sqrt(ku * ku + kv * kv) <= (double) size / BLOCK_SCALE) {
+                        wide += power;
+                    }
+                }
+            }
+            assertTrue(wide / all < MAX_BLOCK_SCALE, name + " : " + Math.round(wide / all * 1000.0) / 10.0 + " % de sa variance a l'echelle du bloc.");
+        }
+    }
+
+    @Test
+    @DisplayName("Les variantes de la moquette ont la meme couleur moyenne : le bloc n'a qu'un albedo, lu sur la premiere")
+    void carpetVariantsShareTheirColor() throws IOException {
+        double[] first = meanColor(image(CARPET_VARIANTS[0]));
+        for (String name : CARPET_VARIANTS) {
+            double[] mean = meanColor(image(name));
+            for (int c = 0; c < 3; c++) {
+                assertEquals(first[c], mean[c], SAME_MEAN, name + ", composante " + c + ".");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Le blockstate de la moquette tire chacune de ses variantes, et chaque modele porte la sienne")
+    void blockstateDrawsEveryVariant() throws IOException {
+        String state = text("/assets/gtgs_backrooms/blockstates/level_zero_damp_carpet.json");
+        for (String name : CARPET_VARIANTS) {
+            assertTrue(state.contains("\"gtgs_backrooms:block/" + name + "\""), "Variante absente du blockstate : " + name + ".");
+            assertTrue(text("/assets/gtgs_backrooms/models/block/" + name + ".json").contains("\"gtgs_backrooms:block/" + name + "\""), "Modele de " + name + ".");
+        }
+    }
+
+    private static double[] meanColor(BufferedImage image) {
+        double[] mean = new double[3];
+        int count = image.getWidth() * image.getHeight();
+        for (int i = 0; i < count; i++) {
+            int rgb = image.getRGB(i % image.getWidth(), i / image.getWidth());
+            mean[0] += (rgb >> 16 & 0xFF) / (double) count;
+            mean[1] += (rgb >> 8 & 0xFF) / (double) count;
+            mean[2] += (rgb & 0xFF) / (double) count;
+        }
+        return mean;
+    }
+
+    private static String text(String path) throws IOException {
+        try (InputStream in = BlockMaterialTexturesTest.class.getResourceAsStream(path)) {
+            assertNotNull(in, "Fichier absent : " + path + ".");
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 

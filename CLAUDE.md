@@ -588,6 +588,18 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   calcul. Un mob lancé vers un cadre erre et le manque une fois sur cinq, ou, recréé à l'arrivée avec une IA neuve, y retourne : ses
   buts tombent à chaque tick (`clearGoals(goal -> true)`, qui garde sa gravité, à la différence de `setAiDisabled`). Un corps lancé dans le Level 0 finit contre un mur : un relevé de
   continuité s'arrête avant, sinon cet arrêt passe pour un gel.
+- Lumière par niveaux : la zone (`SectionBaker`) compte deux rebonds exacts, les tuiles tracées en estiment les suivants (`bounce.fsh`,
+  `FOLLOWING`) ; sous la lumière tracée, la zone en compte une part mesurée, sinon une surface s'éclaircit en prenant sa tuile. Une surface
+  neuve garde les rebonds de la zone jusqu'au balayage : un gain fixe la rend trop claire puis la fait retomber. Un « flash » en marchant
+  se mesure en filmant une recuisson caméra fixe (`LightVolume.rebake`, chaque image contre la dernière) : d'une image à l'autre en
+  marchant, la caméra avance par tick et cela ressemble à des sauts de lumière. Vanilla tire à chaque tick un vacillement de torche
+  (`LightmapTextureManager.flickerIntensity`) qui entre dans la lumière de bloc de la lightmap ; la lumière forte, saturée, ne bouge pas.
+- Grille des blocs des shaders (`gtgs_Blocks`, `gtgs_trace`) : elle n'existe qu'avec le cache de surfaces (High, Ultra, uniforme
+  `gtgs_SurfaceLight`) ; en Low et Medium, l'unité de texture n'est pas liée et un rayon y lit n'importe quoi.
+- Texture d'un bloc à relief (`x_n.png`) : l'épaisseur (`gtgs_enterPile`) suppose la texture posée dans un sens fixe sur chaque face ;
+  un modèle tourné par le blockstate (`"y": 90`) lui ferait lire une autre texture de l'atlas. Contre la répétition : des variantes de
+  texture tirées par le blockstate, de même couleur moyenne (l'albédo du bloc se lit sur la première), sans motif à l'échelle du bloc :
+  de loin, les mipmaps effacent le grain fin et ne gardent que les taches, identiques à chaque bloc.
 
 ## Avant de push
 

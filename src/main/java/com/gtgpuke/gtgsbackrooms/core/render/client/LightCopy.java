@@ -128,7 +128,8 @@ public final class LightCopy {
         if (target == null) {
             RegistryKey<World> key = world.getRegistryKey();
             LookProfile profile = LookProfiles.of(key);
-            target = new Target(new LightZone(new LightBlocks(), LightBakeSettings.of(profile, key.getValue()), world.getBottomSectionCoord(),
+            target = new Target(new LightZone(new LightBlocks(), LightBakeSettings.of(profile, key.getValue(), LookResources.quality().traced()),
+                    world.getBottomSectionCoord(),
                     world.getTopSectionCoord()));
             TARGETS.put(world, target);
         }
@@ -335,6 +336,22 @@ public final class LightCopy {
             LightWorker.target(null);
             EntityShadows.clear();
         }
+    }
+
+    /** Les reglages du joueur ont change : une zone cuite d'apres les anciens repart de zero, sinon ses rebonds restent ceux de l'ancien palier. */
+    public static void refreshSettings() {
+        for (World world : List.copyOf(TARGETS.keySet())) {
+            RegistryKey<World> key = world.getRegistryKey();
+            if (!LightBakeSettings.of(LookProfiles.of(key), key.getValue(), LookResources.quality().traced()).equals(TARGETS.get(world).zone.settings())) {
+                forget(world);
+            }
+        }
+    }
+
+    /** Les reglages de la zone d'un monde (tests du client). */
+    public static @Nullable LightBakeSettings settings(World world) {
+        Target target = TARGETS.get(world);
+        return target == null ? null : target.zone.settings();
     }
 
     /** Fin de partie, ou profils recharges : plus rien n'est copie ni cuit. */

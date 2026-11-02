@@ -61,4 +61,11 @@ class DimensionLightmapTest {
         assertEquals(argb(255, 255, 255), DimensionLightmap.apply(LookProfile.Lightmap.VANILLA, argb(255, 255, 255), 0.5f),
                 "Vanilla : jamais touche, meme pendant un cri.");
     }
+
+    @Test
+    @DisplayName("Un monde a courbe ne vacille pas comme une torche ; vanilla garde son vacillement")
+    void curveKeepsBlockLightSteady() {
+        assertEquals(0.0f, DimensionLightmap.blockFlicker(new LookProfile.Lightmap(0.2f, 0.0f, 0.8f), 0.04f), "Courbe : lumiere fixe.");
+        assertEquals(0.04f, DimensionLightmap.blockFlicker(LookProfile.Lightmap.VANILLA, 0.04f), "Vanilla : son tirage.");
+    }
 }

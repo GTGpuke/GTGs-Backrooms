@@ -26,48 +26,24 @@ class LookLutTest {
     private static final String GRADE_END = "return texture(gtgs_LookLut, p / size).rgb;\n}";
 
     @Test
-    @DisplayName("La courbe de teinte donne sa couleur a chaque luminance sans la changer, jusqu'au bout de la courbe")
-    void toneCurve() {
-        LookProfile look = parse("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"tones\": { \"stops\": [[0.25, 1.5, 0.25], [0.75, 1.0, 1.0]] } } }");
-        double[] out = new double[3];
-        LookLut.grade(look, 0.25, 0.25, 0.25, out);
-        assertEquals(1.5, out[0] / out[1], 1.0e-9, "Sombre : le rouge du premier point.");
-        assertEquals(0.25, out[2] / out[1], 1.0e-9, "Sombre : son bleu.");
-        assertEquals(0.25, 0.299 * out[0] + 0.587 * out[1] + 0.114 * out[2], 1.0e-9, "Sa luminance ne change pas.");
-        LookLut.grade(look, 0.5, 0.5, 0.5, out);
-        assertEquals(1.25, out[0] / out[1], 1.0e-9, "Entre deux points, la moitie de chacun.");
-        LookLut.grade(look, 0.1, 0.1, 0.1, out);
-        assertEquals(1.5, out[0] / out[1], 1.0e-9, "Sous la courbe : le premier point.");
-        LookLut.grade(look, 0.9, 0.9, 0.9, out);
-        assertEquals(1.0, out[0] / out[1], 1.0e-9, "Au-dessus : le dernier.");
-        LookProfile half = parse("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"tones\": { \"share\": 0.5, \"stops\": [[0.5, 2.0, 1.0]] } } }");
-        LookLut.grade(half, 0.5, 0.5, 0.5, out);
-        assertTrue(out[0] / out[1] > 1.0 && out[0] / out[1] < 2.0, "Une part de la courbe garde une part de la couleur.");
-    }
-
-    @Test
-    @DisplayName("Le Level 0 suit son image de reference : sombres ambres, tons moyens dores, clairs citron, et un neon reste blanc")
-    void levelZeroPalette() throws IOException {
+    @DisplayName("Le Level 0 n'a pas de filtre : un gris reste presque gris, une couleur garde la sienne, le noir et le blanc ne bougent pas")
+    void levelZeroHasNoFilter() throws IOException {
         LookProfile look;
         try (InputStream in = LookLutTest.class.getClassLoader().getResourceAsStream("assets/gtgs_backrooms/look_profiles/level_0.json")) {
             assertNotNull(in, "Profil du Level 0.");
             look = LookProfile.fromJson(JsonParser.parseString(new String(in.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject());
         }
         double[] out = new double[3];
-        LookLut.grade(look, 0.38, 0.33, 0.14, out);
-        assertTrue(hue(out) < 48.0, "Sombre ambre : " + hue(out) + ".");
-        LookLut.grade(look, 0.5, 0.44, 0.17, out);
-        assertTrue(hue(out) > 47.0 && hue(out) < 51.0, "Ton moyen dore : " + hue(out) + ".");
-        LookLut.grade(look, 0.73, 0.66, 0.33, out);
-        assertTrue(hue(out) > 52.0, "Clair citron : " + hue(out) + ".");
-        LookLut.grade(look, 1.0, 0.98, 0.9, out);
-        assertTrue(out[2] / out[1] > 0.85, "Une dalle reste presque blanche : " + out[2] / out[1] + ".");
-    }
-
-    private static double hue(double[] color) {
-        double max = Math.max(color[0], Math.max(color[1], color[2]));
-        double min = Math.min(color[0], Math.min(color[1], color[2]));
-        return 60.0 * (color[1] - color[2]) / (max - min);
+        LookLut.grade(look, 0.5, 0.5, 0.5, out);
+        assertTrue((out[0] - out[2]) / out[0] < 0.1, "Un gris reste presque gris : " + Arrays.toString(out) + ".");
+        LookLut.grade(look, 0.6, 0.1, 0.1, out);
+        assertTrue(out[0] > out[1] * 4.0, "Un rouge reste rouge : " + Arrays.toString(out) + ".");
+        LookLut.grade(look, 0.1, 0.2, 0.6, out);
+        assertTrue(out[2] > out[1] * 2.0, "Un bleu reste bleu : " + Arrays.toString(out) + ".");
+        LookLut.grade(look, 1.0, 1.0, 1.0, out);
+        assertEquals(1.0, out[2], EPSILON, "Le blanc d'une dalle reste blanc.");
+        LookLut.grade(look, 0.0, 0.0, 0.0, out);
+        assertEquals(0.0, out[0], EPSILON, "Le noir reste noir.");
     }
 
     @Test

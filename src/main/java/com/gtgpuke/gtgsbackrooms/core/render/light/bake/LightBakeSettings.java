@@ -21,22 +21,35 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
  * @param shadowSize cote de ce que les rayons des ombres visent, en blocs : plus petit, le bord des ombres est plus net
  * @param occlusion ce qu'une surface perd dans un coin ferme, de 0 a 1
  * @param bounce part de la lumiere que renvoient les surfaces : plus basse, ce que les neons n'atteignent pas reste sombre
+ * @param bounceRed ce que les surfaces ajoutent a la couleur de leur bloc dans ce qu'elles renvoient, a chaque rebond
+ * @param bounceGreen pareil
+ * @param bounceBlue pareil
+ * @param following ce que valent tous les rebonds a partir du second, en parts du second : 1 sans lumiere tracee, ou les tuiles
+ *     prennent les rebonds de la zone ; plus sous la lumiere tracee, pour valoir ses tuiles
  * @param seed graine du calendrier des neons de la dimension
  * @param flickering part des neons qui vacillent
  * @param dead part des neons morts
  * @param blackout part des secteurs en panne
  */
 public record LightBakeSettings(float red, float green, float blue, float ambientRed, float ambientGreen, float ambientBlue, float reach, float size, float cone, float shadowSize,
-        float occlusion, float bounce, int seed, float flickering, float dead, float blackout) {
+        float occlusion, float bounce, float bounceRed, float bounceGreen, float bounceBlue, float following, int seed, float flickering, float dead, float blackout) {
 
-    /** Les reglages d'un profil a lumiere cuite. */
-    public static LightBakeSettings of(LookProfile profile, Identifier dimension) {
+    /**
+     * Les reglages d'un profil a lumiere cuite.
+     *
+     * @param profile profil de la dimension, au palier du joueur
+     * @param dimension dimension
+     * @param traced {@code true} si les rebonds des tuiles se tracent
+     */
+    public static LightBakeSettings of(LookProfile profile, Identifier dimension, boolean traced) {
         LookProfile.Neons neons = profile.neons();
         LookProfile.BakedLight baked = profile.bakedLight();
         return new LightBakeSettings(neons.red() * baked.emission(), neons.green() * baked.emission(), neons.blue() * baked.emission(),
                 (float) baked.ambient().x, (float) baked.ambient().y, (float) baked.ambient().z, baked.reach(), baked.size(),
                 (float) Math.cos(Math.toRadians(baked.angle())), baked.shadowSize(), baked.occlusion(), baked.bounce(),
-                NeonSchedule.seed(dimension), neons.flickering(), neons.dead(), neons.blackout());
+                (float) baked.bounceColor().x, (float) baked.bounceColor().y, (float) baked.bounceColor().z, traced ? SectionBaker.FOLLOWING : 1.0f,
+                NeonSchedule.seed(dimension), neons.flickering(),
+                neons.dead(), neons.blackout());
     }
 
     /** {@code true} si le neon de cette position n'est pas mort, ni son secteur en panne. */

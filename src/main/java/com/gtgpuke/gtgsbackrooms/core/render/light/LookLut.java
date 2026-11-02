@@ -1,12 +1,10 @@
 package com.gtgpuke.gtgsbackrooms.core.render.light;
 
-import java.util.List;
-
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 
 /**
  * LUT d'etalonnage d'un look : pour chaque couleur d'une grille de {@value #SIZE} pas par composante, la couleur qu'en fait
- * le profil, desaturation, teinte, puis son etalonnage ({@link LookProfile.Grade}) et sa courbe de teinte. Le shader du monde la lit dans une
+ * le profil, desaturation, teinte, puis son etalonnage ({@link LookProfile.Grade}). Le shader du monde la lit dans une
  * texture 3D, interpolee entre les pas, et l'applique a la couleur finale de chaque pixel du look : toute la palette d'une
  * dimension tient dans cette table, la meme a tous les paliers de qualite. Une operation lineaire (desaturation, teinte,
  * pente, decalage) y est exacte entre les pas ; une puissance y est approchee.
@@ -51,28 +49,6 @@ public final class LookLut {
         out[0] = Math.max(graded + (r - graded) * grade.saturation(), 0.0);
         out[1] = Math.max(graded + (g - graded) * grade.saturation(), 0.0);
         out[2] = Math.max(graded + (b - graded) * grade.saturation(), 0.0);
-        if (!grade.tones().isEmpty()) {
-            tone(grade, out);
-        }
-    }
-
-    /** La teinte de la courbe a la luminance de cette couleur, sans changer sa luminance. */
-    private static void tone(LookProfile.Grade grade, double[] color) {
-        double luma = luma(color[0], color[1], color[2]);
-        List<LookProfile.ToneStop> stops = grade.tones();
-        int next = 0;
-        while (next < stops.size() && stops.get(next).luma() < luma) {
-            next++;
-        }
-        LookProfile.ToneStop high = stops.get(Math.min(next, stops.size() - 1));
-        LookProfile.ToneStop low = stops.get(Math.max(next - 1, 0));
-        double along = high.luma() > low.luma() ? (luma - low.luma()) / (high.luma() - low.luma()) : 0.0;
-        double red = low.red() + (high.red() - low.red()) * along;
-        double blue = low.blue() + (high.blue() - low.blue()) * along;
-        double green = luma / (LUMA_RED * red + LUMA_GREEN + LUMA_BLUE * blue);
-        color[0] += (red * green - color[0]) * grade.toneShare();
-        color[1] += (green - color[1]) * grade.toneShare();
-        color[2] += (blue * green - color[2]) * grade.toneShare();
     }
 
     /**

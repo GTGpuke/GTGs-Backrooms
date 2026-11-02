@@ -1,8 +1,5 @@
 package com.gtgpuke.gtgsbackrooms.core.render.profile;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -55,14 +52,18 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
      * @param haze force des halos autour des neons, de 0 (aucun) a 1
      * @param sheen force de ce que les matieres lisses renvoient des dalles, de 0 (rien) a 2
      * @param shoulder niveau au-dessus duquel les hautes lumieres se tassent vers 1 ; 1 pour un simple plafond
+     * @param bounceColor ce que les surfaces ajoutent a la couleur de leur bloc dans ce qu'elles renvoient, a chaque rebond : la lumiere qui a
+     *         tourne dans une piece y prend sa couleur, sans toucher a ce qu'une dalle eclaire directement
+     * @param lightLimit ce que vaut au plus la lumiere d'une surface, composante par composante, 0 sans limite : sous une dalle, toute lumiere finit
+     *         par valoir cette limite, et la surface a la couleur de sa texture ; ce qui n'a que des rebonds garde leur couleur
      * @param traced ce que change la lumiere tracee
      */
     public record BakedLight(float emission, Vec3d ambient, float reach, float size, float angle, float shadowSize, float occlusion, float relief, float haze, float sheen,
-            float shoulder, float toe, float pixelLight, float darkPixels, float bounce, Traced traced) {
+            float shoulder, float toe, float pixelLight, float darkPixels, float bounce, Vec3d bounceColor, float lightLimit, Traced traced) {
 
         /** Aucune lumiere cuite : la lightmap reste. */
         public static final BakedLight NONE = new BakedLight(0.0f, Vec3d.ZERO, 0.0f, 1.0f, 90.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                new Traced(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f));
+                new Vec3d(1.0, 1.0, 1.0), 0.0f, new Traced(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f));
 
         /** {@code true} si ce profil cuit sa lumiere. */
         public boolean any() {
@@ -72,25 +73,28 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
         /** Cette lumiere, relief, halos et reflet multiplies. */
         public BakedLight scaled(float reliefFactor, float hazeFactor, float sheenFactor) {
             return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.shadowSize, this.occlusion, this.relief * reliefFactor,
-                    this.haze * hazeFactor, this.sheen * sheenFactor, this.shoulder, this.toe, this.pixelLight, this.darkPixels, this.bounce, this.traced);
+                    this.haze * hazeFactor, this.sheen * sheenFactor, this.shoulder, this.toe, this.pixelLight, this.darkPixels, this.bounce, this.bounceColor,
+                    this.lightLimit, this.traced);
         }
 
         /** Cette lumiere, avec cette part du degrade sur la grille des texels et ce grain de pixels dans le noir. */
         public BakedLight pixels(float nextPixelLight, float nextDarkPixels) {
             return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.shadowSize, this.occlusion, this.relief, this.haze, this.sheen,
-                    this.shoulder, this.toe, nextPixelLight, nextDarkPixels, this.bounce, this.traced);
+                    this.shoulder, this.toe, nextPixelLight, nextDarkPixels, this.bounce, this.bounceColor, this.lightLimit, this.traced);
         }
 
         /** Cette lumiere, sans le relief, les halos ou le reflet que le palier et les options retirent. */
         public BakedLight masked(boolean keepRelief, boolean keepHaze, boolean keepSheen) {
             return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.shadowSize, this.occlusion, keepRelief ? this.relief : 0.0f,
-                    keepHaze ? this.haze : 0.0f, keepSheen ? this.sheen : 0.0f, this.shoulder, this.toe, this.pixelLight, this.darkPixels, this.bounce, this.traced);
+                    keepHaze ? this.haze : 0.0f, keepSheen ? this.sheen : 0.0f, this.shoulder, this.toe, this.pixelLight, this.darkPixels, this.bounce, this.bounceColor,
+                    this.lightLimit, this.traced);
         }
 
         /** Cette lumiere sous le trace : ce que le profil demande a la lumiere tracee remplace ses valeurs. */
         public BakedLight tracedLight() {
             return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.traced.shadowSize(), this.occlusion, this.traced.relief(), this.haze,
-                    this.traced.sheen(), this.traced.shoulder(), this.traced.toe(), this.pixelLight, this.darkPixels, this.traced.bounce(), this.traced);
+                    this.traced.sheen(), this.traced.shoulder(), this.traced.toe(), this.pixelLight, this.darkPixels, this.traced.bounce(), this.bounceColor,
+                    this.lightLimit, this.traced);
         }
     }
 
@@ -105,7 +109,7 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
      * @param toe pied de la courbe
      * @param detail part du contraste des textures gardee : 1 les garde, 0 rend la couleur moyenne de chaque bloc
      * @param exposure ce qui multiplie la lumiere des surfaces : les rebonds apportent bien plus que la lumiere cuite
-     * @param direct part de la lumiere directe gardee a l'image, les rebonds restant entiers : plus basse, la lumiere s'egalise
+     * @param direct ce que vaut la lumiere directe a l'image, les rebonds restant entiers : plus basse, la lumiere s'egalise
      * @param shoulder epaule des hautes lumieres
      */
     public record Traced(float shadowSize, float relief, float sheen, float bounce, float toe, float detail, float exposure, float direct, float shoulder) {
@@ -120,29 +124,16 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
      * @param offset decalage par composante, de -1 a 1
      * @param power puissance par composante, de 0,1 a 4
      * @param saturation saturation finale, de 0 a 2 (1 : inchangee)
-     * @param toneShare part de la teinte de la courbe dans la couleur finale, de 0 (aucune) a 1
-     * @param tones courbe de teinte, par luminance croissante ; vide sans courbe
      */
-    public record Grade(Vec3d slope, Vec3d offset, Vec3d power, float saturation, float toneShare, List<ToneStop> tones) {
+    public record Grade(Vec3d slope, Vec3d offset, Vec3d power, float saturation) {
 
         /** Cet etalonnage, pente multipliee composante par composante, puissance et saturation multipliees. */
         public Grade adjusted(Vec3d slopeFactor, float powerFactor, float saturationFactor) {
-            return new Grade(this.slope.multiply(slopeFactor), this.offset, this.power.multiply(powerFactor), this.saturation * saturationFactor, this.toneShare, this.tones);
+            return new Grade(this.slope.multiply(slopeFactor), this.offset, this.power.multiply(powerFactor), this.saturation * saturationFactor);
         }
 
         /** Aucun etalonnage. */
-        public static final Grade NEUTRAL = new Grade(new Vec3d(1.0, 1.0, 1.0), Vec3d.ZERO, new Vec3d(1.0, 1.0, 1.0), 1.0f, 0.0f, List.of());
-    }
-
-    /**
-     * Un point de la courbe de teinte d'un etalonnage : a cette luminance, la couleur finale prend ces rapports au vert. Une image ne
-     * garde pas sa teinte du sombre au clair : la courbe fait passer ses ombres, ses tons moyens et ses clairs d'une couleur a l'autre.
-     *
-     * @param luma luminance, de 0 a 1
-     * @param red rouge, en parts du vert
-     * @param blue bleu, en parts du vert
-     */
-    public record ToneStop(float luma, float red, float blue) {
+        public static final Grade NEUTRAL = new Grade(new Vec3d(1.0, 1.0, 1.0), Vec3d.ZERO, new Vec3d(1.0, 1.0, 1.0), 1.0f);
     }
 
     /**
@@ -336,8 +327,15 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
         check("baked_light.dark_pixels", darkPixels, 0.0f, 2.0f);
         float bounce = section.has("bounce") ? section.get("bounce").getAsFloat() : 1.0f;
         check("baked_light.bounce", bounce, 0.0f, 2.0f);
+        float[] bounceColor = floats(section, "bounce_color", 3, new float[] {1.0f, 1.0f, 1.0f});
+        for (float part : bounceColor) {
+            check("baked_light.bounce_color", part, 0.0f, 2.0f);
+        }
+        float lightLimit = section.has("light_limit") ? section.get("light_limit").getAsFloat() : 0.0f;
+        check("baked_light.light_limit", lightLimit, 0.0f, 4.0f);
         return new BakedLight(emission, new Vec3d(ambient[0], ambient[1], ambient[2]), reach, size, angle, shadowSize, occlusion, relief, haze, sheen, shoulder, toe,
-                pixelLight, darkPixels, bounce, traced(section, new Traced(shadowSize, relief, sheen, bounce, toe, 1.0f, 1.0f, 1.0f, shoulder)));
+                pixelLight, darkPixels, bounce, new Vec3d(bounceColor[0], bounceColor[1], bounceColor[2]), lightLimit, traced(section, new Traced(shadowSize, relief,
+                sheen, bounce, toe, 1.0f, 1.0f, 1.0f, shoulder)));
     }
 
     /** La section {@code traced} d'une lumiere cuite ; ce qu'elle ne dit pas garde la valeur de {@code plain}. */
@@ -361,7 +359,7 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
         float exposure = section.has("exposure") ? section.get("exposure").getAsFloat() : 1.0f;
         check("baked_light.traced.exposure", exposure, 0.05f, 4.0f);
         float direct = section.has("direct") ? section.get("direct").getAsFloat() : 1.0f;
-        check("baked_light.traced.direct", direct, 0.0f, 1.0f);
+        check("baked_light.traced.direct", direct, 0.0f, 4.0f);
         float tracedShoulder = section.has("shoulder") ? section.get("shoulder").getAsFloat() : plain.shoulder();
         check("baked_light.traced.shoulder", tracedShoulder, 0.1f, 1.0f);
         return new Traced(tracedShadow, tracedRelief, tracedSheen, tracedBounce, tracedToe, detail, exposure, direct, tracedShoulder);
@@ -382,36 +380,7 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
         }
         float saturation = section.has("saturation") ? section.get("saturation").getAsFloat() : 1.0f;
         check("grade.saturation", saturation, 0.0f, 2.0f);
-        float toneShare = 0.0f;
-        List<ToneStop> tones = List.of();
-        if (section.has("tones")) {
-            JsonObject curve = section.getAsJsonObject("tones");
-            toneShare = curve.has("share") ? curve.get("share").getAsFloat() : 1.0f;
-            check("grade.tones.share", toneShare, 0.0f, 1.0f);
-            tones = toneStops(curve.getAsJsonArray("stops"));
-        }
-        return new Grade(new Vec3d(slope[0], slope[1], slope[2]), new Vec3d(offset[0], offset[1], offset[2]), new Vec3d(power[0], power[1], power[2]),
-                saturation, toneShare, tones);
-    }
-
-    private static List<ToneStop> toneStops(JsonArray stops) {
-        List<ToneStop> tones = new ArrayList<>(stops.size());
-        float previous = -1.0f;
-        for (int i = 0; i < stops.size(); i++) {
-            JsonArray stop = stops.get(i).getAsJsonArray();
-            float luma = stop.get(0).getAsFloat();
-            float red = stop.get(1).getAsFloat();
-            float blue = stop.get(2).getAsFloat();
-            check("grade.tones.luma", luma, 0.0f, 1.0f);
-            check("grade.tones.red", red, 0.0f, 4.0f);
-            check("grade.tones.blue", blue, 0.0f, 4.0f);
-            if (luma <= previous) {
-                throw new JsonParseException("Courbe de teinte pas en luminance croissante : " + luma + ".");
-            }
-            previous = luma;
-            tones.add(new ToneStop(luma, red, blue));
-        }
-        return List.copyOf(tones);
+        return new Grade(new Vec3d(slope[0], slope[1], slope[2]), new Vec3d(offset[0], offset[1], offset[2]), new Vec3d(power[0], power[1], power[2]), saturation);
     }
 
     private static Neons neons(JsonObject json) {

@@ -53,11 +53,11 @@ public final class Images {
     }
 
     /**
-     * Une couleur du Level 0 : jaune ou jaune-gris (papier peint, moquette, brouillard du profil), rouge au moins egal au
-     * vert et au-dessus du bleu, et pas noire. L'herbe (vert au-dessus du rouge) et le ciel (bleu au-dessus) n'y passent pas.
+     * Une couleur du Level 0 : jaune ou jaune-gris (papier peint, moquette), rouge au moins a hauteur du vert et bleu bien en dessous, et
+     * pas noire. L'herbe (vert au-dessus du rouge) et le ciel (bleu au-dessus du rouge) ne le sont pas.
      */
     public static boolean yellowish(double[] rgb) {
-        return rgb[0] >= rgb[1] && rgb[0] > rgb[2] && luminance(rgb) > 15.0;
+        return rgb[0] >= rgb[1] * 0.97 && rgb[2] < rgb[1] * 0.9 && luminance(rgb) > 15.0;
     }
 
     /** Luminance moyenne (0 a 255) d'une couleur moyenne. */

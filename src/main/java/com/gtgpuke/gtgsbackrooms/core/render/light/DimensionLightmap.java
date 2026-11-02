@@ -45,6 +45,19 @@ public final class DimensionLightmap {
         return 0xFF000000 | channel(blue) << 16 | channel(green) << 8 | channel(red);
     }
 
+    /**
+     * Le vacillement que vanilla tire a chaque tick pour la lumiere de bloc, celui d'une torche. Un monde a courbe n'a que
+     * sa propre lumiere : ce tirage ferait trembler a chaque tick tout ce que la lightmap eclaire, comme le fond d'une
+     * grande salle.
+     *
+     * @param curve courbe du profil
+     * @param flicker vacillement tire par vanilla
+     * @return 0 pour un monde a courbe, le vacillement recu sinon
+     */
+    public static float blockFlicker(LookProfile.Lightmap curve, float flicker) {
+        return curve.vanilla() ? flicker : 0.0f;
+    }
+
     private static int channel(float value) {
         return Math.round(Math.clamp(value, 0.0f, 1.0f) * SCALE);
     }

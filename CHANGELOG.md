@@ -20,14 +20,30 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 - **Changement de couche** : la texture de zone se vide d'un coup, au lieu de montrer quelques images de lumière à la mauvaise hauteur, et
   le dessous du monde est bien opaque pour les rayons.
 - Une section sans aucun néon se recalcule quand elle reçoit le premier.
+- **Lumière qui change en approchant** : en Ultra, une surface encore sans tuile était 10 % plus sombre que sa valeur finale, et une
+  surface neuve un peu trop claire jusqu'à la fin du balayage des rebonds ; elles s'accordent maintenant à quelques niveaux près.
+- Au-delà de 48 blocs, la lumière des zones peu éclairées suivait le vacillement de torche que vanilla tire à chaque tick.
 
 ### Added
 - **Matière des blocs** : à partir de High, ce qui brille et ce qui accroche la lumière s'écrit dans les textures du bloc, au pixel
   (`x_s.png`, `x_n.png`). La moquette est mate à tous les paliers, n'a plus de reflet de sol humide et a une vraie épaisseur, tirée du
   bruit de sa texture ; le fond du papier peint est mat et rugueux, et seul le sombre de son motif renvoie un peu les dalles. Medium n'a
   plus de reflets ([rendu](docs/systemes/RENDU.md)).
-- **Palette du Level 0** : une courbe de teinte par luminance (`grade.tones`) reprend les couleurs de l'image de référence de l'auteur :
-  sombres ambrés, tons moyens dorés, clairs citron. L'Ultra gagne son épaule (`traced.shoulder`) et un plafond éclairé comme ses murs.
+- **Plafond du Level 0** : la dalle a un fin rail métallique mat, plus clair qu'elle et très légèrement surélevé, avec une arête et une ombre
+  de contact d'un pixel, visible à tous les paliers.
+- **Lumière sans raccord** : dans une grande salle, plus d'anneau sombre autour du joueur, et ce qui est sombre de près ne paraît plus clair et
+  gris de loin : les trois niveaux de lumière donnent la même valeur et la même couleur. Changer de palier en jeu recuit la lumière de la zone,
+  qui gardait sinon les rebonds de l'ancien palier.
+- **Corps** : le joueur, les entités et la main prennent la lumière du décor, sa couleur et son exposition : près d'un mur, ils prennent son jaune.
+- **Moquette** : un grain de courtes mèches de fil, en quatre textures tirées au hasard par bloc ; le motif qui se répétait en grille d'un
+  bloc à l'autre a disparu, sans changer la couleur du sol.
+- **Murs crème** : le papier peint est plus clair, et en Ultra la lumière des dalles éclaire les murs jusqu'à leur pied ; un mur bien
+  éclairé prend la couleur crème de sa texture, sans que deux dalles proches saturent l'image.
+- **Palette du Level 0** : la lumière des néons est blanche, et le jaune vient de la lumière, sans filtre sur l'image. Ce qui a tourné dans
+  une pièce devient ambré et colore ce qu'il touche (`baked_light.bounce_color`), et sous une dalle toute lumière blanchit jusqu'à montrer
+  la couleur de la texture (`baked_light.light_limit`) : la teinte va de l'ambre des ombres au jaune pâle des zones éclairées, comme sur
+  l'image de référence, aux quatre paliers. Le papier peint ne tire plus vers le vert, la moquette est plus claire et les plinthes prennent une teinte chaude. La
+  peau ou une tache gardent leur couleur. L'Ultra gagne son épaule (`traced.shoulder`) et un plafond éclairé par ses murs.
 - **Moteur de shaders** : chaque dimension à profil de look, aujourd'hui le Level 0, reçoit sa teinte, sa désaturation,
   son grain, sa courbe de lumière et son brouillard, par les shaders vanilla patchés au chargement. Option
   `gtgsbackrooms.look.enabled` ([rendu](docs/systemes/RENDU.md)).

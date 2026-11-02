@@ -22,9 +22,11 @@ uniform int gtgs_Face;
 uniform int gtgs_Rays;
 // Part de la lumiere que renvoient les surfaces.
 uniform float gtgs_Bounce;
-// Ce que vaut la lumiere directe relue : plus de 1 pour une surface neuve, qui n'a qu'un rebond et doit deja valoir tous les autres. La
-// texture de zone n'en a pas besoin : elle porte deja ses rebonds.
-uniform float gtgs_Gain;
+// Ce que les surfaces ajoutent a la couleur de leur bloc dans ce qu'elles renvoient.
+uniform vec3 gtgs_BounceColor;
+// 1 pour une surface neuve : elle garde les rebonds que la texture de zone lui donnait, et sa tuile arrive sans que sa lumiere change.
+// Le balayage suivant les trace.
+uniform float gtgs_Fresh;
 
 out vec4 fragColor;
 
@@ -48,7 +50,7 @@ vec3 lightAt(ivec3 cell, int face, vec3 at) {
     uint tile = gtgs_tileAt(cell, face);
     if (tile != 0u) {
         vec2 st = gtgs_faceSt(at, face);
-        return gtgs_directAt(tile, st) * gtgs_Gain + previousAt(tile, st) * gtgs_PreviousShare;
+        return gtgs_directAt(tile, st) + previousAt(tile, st) * gtgs_PreviousShare;
     }
     vec3 where = vec3(float(cell.x & 127), float(cell.y - gtgs_LightBase), float(cell.z & 127)) + vec3(0.5);
     vec4 zone = gtgs_zoneRead(where, float(face));
@@ -60,6 +62,12 @@ void main() {
     vec3 normal = GTGS_FACE_NORMAL[gtgs_Face];
     vec3 u = GTGS_FACE_U[gtgs_Face];
     vec3 v = GTGS_FACE_V[gtgs_Face];
+    if (gtgs_Fresh > 0.5) {
+        vec3 where = vec3(float(gtgs_Cell.x & 127), float(gtgs_Cell.y - gtgs_LightBase), float(gtgs_Cell.z & 127)) + vec3(0.5) + u * (st.x - 0.5) + v * (st.y - 0.5);
+        vec4 around = gtgs_zoneRead(where, float(gtgs_Face) + 6.0);
+        fragColor = vec4(sqrt(clamp(around.rgb / max(around.a, 0.001) * 4.0 / MAX_BOUNCE, 0.0, 1.0)), 1.0);
+        return;
+    }
     vec3 start = vec3(0.5) - normal * (0.5 - OFFSET) + u * (st.x - 0.5) + v * (st.y - 0.5);
     vec3 sum = vec3(0.0);
     for (int r = 0; r < gtgs_Rays; r++) {
@@ -74,7 +82,7 @@ void main() {
             vec4 material = texelFetch(gtgs_Materials, ivec2(int(gtgs_material(gtgs_Cell + hit)), 0), 0);
             // La lumiere d'une dalle a deja ete comptee par le cache de surfaces.
             if (material.a < 0.5) {
-                sum += material.rgb * lightAt(gtgs_Cell + hit + ivec3(GTGS_FACE_NORMAL[face]), face, vec3(gtgs_Cell) + start + direction * t);
+                sum += material.rgb * gtgs_BounceColor * lightAt(gtgs_Cell + hit + ivec3(GTGS_FACE_NORMAL[face]), face, vec3(gtgs_Cell) + start + direction * t);
             }
         }
     }

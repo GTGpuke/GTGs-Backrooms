@@ -38,6 +38,7 @@ import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBlocks;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightCell;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.SurfaceAtlas;
+import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 
@@ -70,6 +71,11 @@ final class LightContinuityClientTests {
     private static final double MAX_FRESH = 1.25;
     /** Surfaces neuves qu'il faut au moins pour juger. */
     private static final int MIN_FRESH_SURFACES = 100;
+    /** Ce que vaut la meme surface dans la zone, en parts de ce qu'elle vaut en tuiles : au-dela, un anneau se voit autour de la camera. */
+    private static final double MIN_ZONE = 0.8;
+    private static final double MAX_ZONE = 1.2;
+    /** Le plus petit cache : presque tout est lu dans la zone. */
+    private static final int NO_TILES = 1;
     /** Y de la dalle du puits : sa section est hors de ce que voit la derniere section de la zone. */
     private static final int SHAFT_TOP = 34;
     /** Anneau de l'image ou se voient les murs du haut du puits, en pixels autour de son centre. */
@@ -102,6 +108,7 @@ final class LightContinuityClientTests {
             uniform vec3 gtgs_CameraFract;
             uniform sampler2D gtgs_Materials;
             uniform sampler2D gtgs_BlockAtlas;
+            uniform sampler2D gtgs_BlockMaterial;
             uniform vec3 gtgs_TracedLook;
             vec3 gtgs_WorldRel;
             vec3 gtgs_Normal = vec3(0.0, 1.0, 0.0);
@@ -133,6 +140,8 @@ final class LightContinuityClientTests {
     private static final int QUIET_FRAMES = 40;
     private static final int SETTLE_TICKS = 2400;
     private static final Map<BlockPos, BlockState> REPLACED = new HashMap<>();
+    private static double ceilingTiles;
+    private static double floorTiles;
     private static int quiet;
     private static Vec3d origin;
     private static double far;
@@ -147,8 +156,8 @@ final class LightContinuityClientTests {
     }
 
     static List<ClientScenario> scenarios() {
-        return List.of(sectionsComeBack(), freshSurfacesAreBright(), farRoomStaysLit(), shortCacheServesTheNearest(), otherHeightStartsClean(), texturesStayCalmBeyondTheGrid(),
-                reloadedColumnIsCopiedAgain(), shaftAboveTheZone());
+        return List.of(sectionsComeBack(), freshSurfacesAreBright(), farRoomStaysLit(), zoneMeetsTheTiles(), shortCacheServesTheNearest(),
+                otherHeightStartsClean(), texturesStayCalmBeyondTheGrid(), reloadedColumnIsCopiedAgain(), shaftAboveTheZone());
     }
 
     private static boolean settled(ClientTestContext context) {
@@ -271,6 +280,54 @@ final class LightContinuityClientTests {
                     LevelZeroClientTests.defaultTier(context);
                     LevelZeroClientTests.backToOverworld(context);
                 });
+    }
+
+    /**
+     * La zone prend le relais des tuiles a 24 blocs : elle doit valoir la meme chose, surtout pour ce qui ne vit que de rebonds. Le plafond et le
+     * sol, vus avec leurs tuiles, puis presque sans : la zone seule montre ce qu'on verrait au loin dans une grande salle.
+     */
+    private static ClientScenario zoneMeetsTheTiles() {
+        return arrival("zone_meets_the_tiles", LookQuality.HIGH)
+                .run("palier Ultra, en jeu", context -> tier(context, LookQuality.ULTRA))
+                .ticks(40)
+                .await("repos en Ultra", LightContinuityClientTests::settled, SETTLE_TICKS)
+                .check("la zone suit le palier", context -> {
+                    float wanted = LookProfiles.of(context.world().getRegistryKey()).bakedLight().bounce();
+                    float baked = LightCopy.settings(context.world()).bounce();
+                    ClientTestContext.require(baked == wanted, "La zone garde les rebonds de l'ancien palier : " + baked + " contre " + wanted + ".");
+                })
+                .run("regard au plafond, tuiles", context -> look(context, 200.0f, -70.0f))
+                .frames(8)
+                .capture("le plafond en tuiles", image -> ceilingTiles = Images.luminance(Images.mean(image, 0.2, 0.2, 0.8, 0.8)))
+                .run("regard au sol, tuiles", context -> look(context, 200.0f, 50.0f))
+                .frames(8)
+                .capture("le sol en tuiles", image -> floorTiles = Images.luminance(Images.mean(image, 0.2, 0.2, 0.8, 0.8)))
+                .run("presque plus de tuiles", context -> {
+                    LightSurfaces.limitTiles(NO_TILES);
+                    LightVolume.rebake();
+                })
+                .ticks(40)
+                .await("repos sans tuiles", LightContinuityClientTests::settled, SETTLE_TICKS)
+                .frames(8)
+                .capture("le sol dans la zone", image -> requireZone("sol", floorTiles, Images.luminance(Images.mean(image, 0.2, 0.2, 0.8, 0.8))))
+                .run("regard au plafond, zone", context -> look(context, 200.0f, -70.0f))
+                .frames(8)
+                .capture("le plafond dans la zone", image -> requireZone("plafond", ceilingTiles, Images.luminance(Images.mean(image, 0.2, 0.2, 0.8, 0.8))))
+                .cleanup(context -> {
+                    LightSurfaces.limitTiles(SurfaceAtlas.CAPACITY);
+                    LightVolume.rebake();
+                })
+                .cleanup(context -> {
+                    LevelZeroClientTests.defaultTier(context);
+                    LevelZeroClientTests.backToOverworld(context);
+                });
+    }
+
+    private static void requireZone(String surface, double tiles, double zone) {
+        ModConstants.LOGGER.info("[Test client] Zone contre tuiles, {} : {} contre {}.", surface, String.format(Locale.ROOT, "%.1f", zone),
+                String.format(Locale.ROOT, "%.1f", tiles));
+        ClientTestContext.require(zone >= tiles * MIN_ZONE && zone <= tiles * MAX_ZONE,
+                String.format(Locale.ROOT, "La zone ne vaut pas les tuiles au %s : %.1f contre %.1f.", surface, zone, tiles));
     }
 
     /**

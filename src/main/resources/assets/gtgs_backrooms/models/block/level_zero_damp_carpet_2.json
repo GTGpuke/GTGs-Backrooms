@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "gtgs_backrooms:block/level_zero_damp_carpet_2"
+  }
+}

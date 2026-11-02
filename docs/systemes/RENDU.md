@@ -62,9 +62,9 @@ la même dimension ou le même identifiant, le second est ignoré.
 | `id` | Look porté par le stencil et l'uniforme `gtgs_LookId`, obligatoire | 1 à 7 |
 | `tint` | Teinte et sa force, `[r, g, b, force]` | Couleur de 0 à 4, force de 0 à 1 |
 | `desaturation`, `grain`, `flicker` | Désaturation, grain, vacillement de la lumière de l'écran | 0 à 1 |
-| `grade` | Étalonnage : `slope`, `offset`, `power` (`[r, g, b]` chacun), `saturation`, et `tones`, la [courbe de teinte](#étalonnage) | Pente de 0 à 4, décalage de -1 à 1, puissance de 0,1 à 4, saturation de 0 à 2 |
-| `baked_light` | Lumière cuite : `emission`, `ambient`, `reach`, `size`, `angle`, `shadow_size`, `occlusion`, `relief`, `haze`, `sheen`, `shoulder`, `toe`, `pixel_light`, `dark_pixels`, `bounce`, et `traced` pour la [lumière tracée](#lumière-tracée) ; demande `neons` | Émission de 0,1 à 64, fond de 0 à 1, portée de 1 à 15, taille de 0,5 à 8, angle de 10 à 90 degrés, occlusion de 0 à 1, relief de 0 à 4, halo de 0 à 1, reflet de 0 à 2, épaule de 0,1 à 1 |
-| `lightmap` | `floor`, `warmth`, `max_brightness` | 0 à 1, plancher sous le plafond |
+| `grade` | Étalonnage : `slope`, `offset`, `power` (`[r, g, b]` chacun), `saturation` | Pente de 0 à 4, décalage de -1 à 1, puissance de 0,1 à 4, saturation de 0 à 2 |
+| `baked_light` | Lumière cuite : `emission`, `ambient`, `reach`, `size`, `angle`, `shadow_size`, `occlusion`, `relief`, `haze`, `sheen`, `shoulder`, `toe`, `pixel_light`, `dark_pixels`, `bounce`, `bounce_color`, `light_limit`, et `traced` pour la [lumière tracée](#lumière-tracée) ; demande `neons` | Émission de 0,1 à 64, fond de 0 à 1, portée de 1 à 15, taille de 0,5 à 8, angle de 10 à 90 degrés, occlusion de 0 à 1, relief de 0 à 4, halo de 0 à 1, reflet de 0 à 2, épaule de 0,1 à 1, couleur des rebonds de 0 à 2, limite de 0 à 4 |
+| `lightmap` | `floor`, `warmth`, `max_brightness` ; un monde à courbe n'a pas le vacillement de torche que vanilla tire à chaque tick pour la lumière de bloc (`DimensionLightmap.blockFlicker`), qui ferait trembler, à chaque tick, ce que la lightmap éclaire faiblement au loin | 0 à 1, plancher sous le plafond |
 | `fog` | `color`, `start`, `end` | `end` au-delà de `start` |
 | `post` | `vignette`, `chromatic`, `bloom` (booléen), `bloom_threshold`, `bloom_strength` | 0 à 1, force du bloom de 0 à 2 |
 | `neons` | `block`, `radius`, `color`, `strength`, `flickering`, `dead`, `blackout` | Portée de 0,5 à 64, force de 0 à 2, parts de somme au plus 1 ; `blackout` : part des secteurs en panne, de 0 à 1 |
@@ -134,10 +134,19 @@ L'étalonnage s'applique en fin de calcul du fragment, après le brouillard et l
 vacillement. La couleur y entre bornée à 1. Le shader du post en garde une copie à l'identique, pour le cas où l'étage 1
 passe par lui (pack de shaders, mod de terrain). La même LUT vaut à toutes les qualités.
 
-La courbe de teinte (`grade.tones`) donne sa couleur à chaque luminance. Une image ne garde pas sa teinte du sombre au clair : l'image de
-référence de l'auteur a des sombres ambrés, des tons moyens dorés et des clairs citron pâle. Chaque point de `stops` vaut `[luminance,
-rouge, bleu]`, rouge et bleu en parts du vert ; `share` dit quelle part de la couleur suit la courbe, le reste gardant la différence
-entre un mur et un sol. La luminance ne change pas. Le dernier point du Level 0 ramène les dalles vers le blanc.
+Le Level 0 n'a pas de filtre sur son image : sa teinte vient du chemin de la lumière. Sur l'image de référence de l'auteur, elle suit la
+lumière, de l'ambre profond des ombres (teinte 43) au jaune pâle sous les dalles (teinte 57). Deux réglages de `baked_light` la donnent, aux
+quatre paliers. `bounce_color` (`[1.03, 1.0, 0.72]`) s'ajoute à la couleur des blocs dans ce que les surfaces se renvoient, à chaque
+rebond : la lumière qui a tourné dans une pièce devient ambrée, et colore ce qu'elle touche, si bien que le plafond, presque blanc dans sa
+texture, est ambre. `light_limit` (0,96) tasse la lumière d'une surface vers sa limite, composante par composante, à partir des trois quarts de
+celle-ci : un sol, qui reçoit bien plus de lumière qu'un mur, ne blanchit donc pas : sous une dalle, toute lumière finit blanche et la surface a la couleur de sa texture, alors que ce qui n'a que des rebonds garde
+leur couleur. La lumière des dalles reste blanche. L'étalonnage se réduit à une réponse de film, une puissance par composante (`power`,
+`[0.95, 1.0, 1.08]`), qui réchauffe les sombres sans toucher au noir ni au blanc. Toute autre couleur garde la sienne : la peau, un objet,
+une tache de la moquette. L'exposition de l'Ultra (`traced.exposure`, 0,6) et sa lumière directe (`traced.direct`, 1,3) éclairent les
+murs jusqu'à leur pied, et la limite tasse ce qui reçoit plusieurs dalles : un mur bien éclairé tend vers la couleur crème de sa texture,
+sans que deux dalles proches ne saturent l'image. La limite vaut pour l'image : une exposition
+plus basse seule assombrit ce qui est loin des dalles sans éteindre ce qui est dessous, et monte le contraste ; pour baisser toute l'image
+au même contraste, les deux baissent ensemble.
 
 ### Lumière cuite
 
@@ -242,7 +251,13 @@ attend.
 
 La lumière d'une surface vient de trois niveaux, qui se fondent l'un dans l'autre selon la distance à la caméra : les tuiles jusqu'à
 24 blocs, puis la texture de zone de 32 à 40, puis la lightmap vanilla au-delà de 48, ramenée à l'exposition de la zone et corrigée
-selon l'orientation de la surface. Une section qui prend ses tuiles, ou une pièce qui entre dans la zone, ne se voit donc pas : c'est
+selon l'orientation de la surface. Les trois doivent donner la même lumière. Sous la lumière tracée, la lumière directe de la zone a la même part que
+celle des tuiles, et la zone compte, après ses deux rebonds, une part des suivants (`SectionBaker.FOLLOWING`, 1,55, mesurée dans une
+grande salle d'un monde de l'auteur) : les tuiles les estiment, et sans elle la zone était 10 % plus sombre, si bien qu'une surface
+s'éclaircissait en approchant, entre 32 et 24 blocs. Sans lumière tracée, tuiles et zone ont les mêmes rebonds, et la zone garde les
+deux seuls. La lightmap, qui ne connaît ni le noir d'un coin ni la couleur des rebonds, en donne moins quand il y en a peu, et jaune
+(`gtgs_farLight`). Sinon, un anneau se voit autour de la caméra dans une grande salle, et ce qui est sombre de près paraît clair et gris de
+loin. La zone suit le palier du joueur : changer de palier en jeu la recuit (`LightCopy.refreshSettings`). Une section qui prend ses tuiles, ou une pièce qui entre dans la zone, ne se voit donc pas : c'est
 ce qui faisait « s'allumer » les néons au loin. Une section qui quitte la fenêtre est oubliée par la zone (`LightZone.forget`), et
 repart quand la fenêtre revient sur elle.
 
@@ -254,8 +269,10 @@ Trois effets dépendent de la vue et se calculent au fragment, pour les dix néo
   voile sur toute l'image ferait un brouillard.
 - Le reflet (`gtgs_gloss`), en High et en Ultra, sur toute face dont la [matière](#matière-des-blocs) le demande, pesé par `sheen`.
 - La lumière des entités et de la main (`gtgs_entityLight`). Sous la lumière cuite, leur vertex ne porte plus la lightmap
-  (point `lit_after`) : elles reçoivent le fond du profil et la direction réelle des néons proches, le dessus plus clair que
-  le dessous. Ce sont les shaders à `lightMapColor` : blocs tenus et objets au sol gardent la lightmap.
+  (point `lit_after`) : elles reçoivent le fond du profil, la direction réelle des néons proches, et ce que la pièce leur
+  renvoie : un rayon par fragment, selon sa normale, lit la surface qu'il touche, dans la couleur de son bloc (`gtgs_roomLight`). Un corps
+  près d'un mur prend son jaune, et dans le noir il ne reçoit rien. Sa lumière passe par la même limite et la même exposition que le décor.
+  Ce sont les shaders à `lightMapColor` : blocs tenus et objets au sol gardent la lightmap.
 
 Le bloom ajoute deux tours de flou à pas larges : une dalle rayonne dans la pièce, pas seulement autour d'elle.
 
@@ -281,8 +298,9 @@ relief se devine d'après la luminance de sa texture. Seuls les blocs du mod en 
 
 | Texture | Matière |
 |---------|---------|
-| `level_zero_damp_carpet`, `level_zero_damp_carpet_aged` | Moquette : lissage nul partout, et une hauteur qui est le bruit de sa texture : un pixel clair est une pointe, un pixel sombre un creux |
+| `level_zero_damp_carpet` et ses variantes `_1` à `_3`, `level_zero_damp_carpet_aged` | Moquette : lissage nul partout, et une hauteur qui est le bruit de sa texture : un pixel clair est une pointe, un pixel sombre un creux |
 | `level_zero_wallpaper`, `level_zero_wallpaper_aged` | Le sombre du motif : un peu lisse (115 sur 255), légèrement en relief. Le papier dessous : lissage nul, grain fin |
+| `level_zero_ceiling_tile` | Le rail, un pixel sur chaque bord : métal mat, plus clair que la dalle, à peine plus haut qu'elle (255 contre 204, moins de deux centimètres pour un bloc d'un mètre), avec une arête d'un pixel. La dalle : plate, et une ombre de contact d'un pixel dans sa couleur, qui dit le relief en Low et en Medium. Sans `x_s.png` : mat |
 
 `BlockMaterials` recopie ces fichiers dans une table de la taille de l'atlas des blocs, chaque pixel à la place du sien dans l'atlas :
 un shader la lit aux mêmes coordonnées que sa texture (`gtgs_BlockMaterial`), sans savoir quel bloc il dessine. Elle n'existe qu'à
@@ -292,7 +310,9 @@ partir de High, comme le veut `QUALITE_ET_PRESETS` §5.6.
 - L'épaisseur (`gtgs_enterPile`) : sur une matière qui a une hauteur, le regard entre par le haut, dix pas sur 0,08 bloc, et s'arrête au
   premier pixel qui dépasse. Le fragment prend la couleur et la lumière de ce pixel : les brins se cachent les uns les autres et bougent
   avec la caméra. Les creux perdent un peu de lumière et les pointes en gagnent, plus en Ultra, où la texture calmée ne porte plus ce
-  contraste. Elle s'efface de 10 à 16 blocs, et l'option de relief la coupe.
+  contraste ; un pixel plat n'est ni l'un ni l'autre. Elle s'efface de 10 à 16 blocs, et l'option de relief la coupe.
+- Le calme des textures de la lumière tracée (`gtgs_calmed`) laisse leur couleur aux pixels tout en haut d'une matière presque plate :
+  le rail d'une dalle est une pièce à part, pas du grain, comme le sont les brins d'une moquette. Sans cela, un rail mat disparaît en Ultra.
 - Le reflet (`gtgs_gloss`) lit le lissage, et penche sa normale selon la pente du pixel. Sur un pixel mat, il s'arrête là : ni boucle
   ni rayon. Sinon, chaque dalle proche se voit au point de son rectangle le plus proche du miroir, avec le lobe de ce lissage, plus
   fort en rasant. Un rayon dans la grille vérifie qu'elle est visible, quatre sur sa surface en Ultra : un mur ou un corps coupe le
@@ -368,7 +388,7 @@ La section `traced` de `baked_light` porte ce qui change, et tout ce qu'elle ne 
 | Clé | Rôle |
 |-----|------|
 | `shadow_size` | Ce que visent les rayons des ombres : plus grand que la dalle, les ombres s'étalent |
-| `direct` | Part de la lumière directe gardée à l'image, les rebonds restant entiers : plus basse, la lumière s'égalise |
+| `direct` | Ce que vaut la lumière directe à l'image, de 0 à 4, les rebonds restant entiers : plus basse, la lumière s'égalise |
 | `bounce` | Part de la lumière que renvoient les surfaces |
 | `exposure` | Multiplie toute la lumière des surfaces : les rebonds apportent bien plus que la lumière cuite |
 | `detail` | Part du contraste des textures gardée : 0 rend la couleur moyenne de chaque bloc |
@@ -383,8 +403,10 @@ qui ne vaut que pour les autres paliers. La part vue d'une dalle n'est plus mise
   sa lumière directe (sa tuile, ou la zone hors des tuiles), dans la couleur de son bloc. Le premier tour écrit dans une texture à
   part, le second le relit et écrit le cache que lit le terrain, en comptant les rebonds suivants par une part fixe de ce qu'il
   ajoute : un résultat qui ne dépend pas de ce qui était là avant, et aucun état intermédiaire à l'écran. Rien n'est tiré au hasard : après un bloc posé, chaque rebond est identique, au bit
-  près, à un recalcul complet. Une surface neuve reçoit un premier rebond dans l'image où elle apparaît, la lumière directe qu'il relit
-  comptant pour tous les rebonds à venir : elle a presque sa valeur finale. Un balayage repasse ensuite
+  près, à un recalcul complet. Une surface neuve garde, dans l'image où elle apparaît, les rebonds que la zone lui donnait : sa tuile
+  arrive sans que sa lumière change, et le balayage suivant lui donne ses rebonds tracés, à 1 % près dans une grande salle. Un gain
+  fixe sur la lumière directe relue la laissait 2 à 15 % trop claire selon les réglages, puis la faisait retomber à la fin du balayage.
+  Un balayage repasse ensuite
   partout une fois le cache de surfaces au repos, 96 tuiles par image. Les coins s'assombrissent d'eux-mêmes : seul le fond du profil
   garde encore l'ouverture.
 - **Reflets** : ceux de la [matière](#matière-des-blocs), qui visent toute la dalle par quatre rayons au lieu d'un.

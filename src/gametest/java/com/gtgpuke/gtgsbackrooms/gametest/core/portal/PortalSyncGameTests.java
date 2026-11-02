@@ -2158,8 +2158,11 @@ public final class PortalSyncGameTests implements FabricGameTest {
                     int netherIndex = indexOf(announced, World.NETHER.getValue());
                     int endIndex = indexOf(announced, World.END.getValue());
                     for (RemoteBlockUpdatePayload update : blocks) {
-                        context.assertTrue(update.dimension() == (update.pos().equals(netherBlock) ? netherIndex : endIndex),
-                                "Un bloc relaye porte l'index de sa dimension : " + update + ".");
+                        // Le reste vit de lui-meme : sur un monde neuf, une coulee de lave du Nether se relaie aussi.
+                        if (update.pos().equals(netherBlock) || update.pos().equals(endBlock)) {
+                            context.assertTrue(update.dimension() == (update.pos().equals(netherBlock) ? netherIndex : endIndex),
+                                    "Un bloc relaye porte l'index de sa dimension : " + update + ".");
+                        }
                     }
                     context.assertTrue(weatherUnder(entities, netherIndex) && weatherUnder(entities, endIndex),
                             "La meteo de chaque dimension est envoyee sous son index.");

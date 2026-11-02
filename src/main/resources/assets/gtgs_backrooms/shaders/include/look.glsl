@@ -36,8 +36,9 @@ uniform vec3 gtgs_TracedLook;
 uniform vec2 gtgs_Air;
 // Lumiere de fond du profil.
 uniform vec3 gtgs_Ambient;
-// Pied de la courbe (x), part du degrade sur la grille des texels (y), grain de pixels dans le noir (z).
-uniform vec3 gtgs_Tone;
+// Pied de la courbe (x), part du degrade sur la grille des texels (y), grain de pixels dans le noir (z), limite de la lumiere d'une
+// surface (w, 0 sans limite).
+uniform vec4 gtgs_Tone;
 // 1 si la zone couvre cette vue.
 uniform float gtgs_BakedLight;
 // Debut (x) et fin (y) du brouillard, forme (z, 1 pour un cylindre), epaule des hautes lumieres (w, 1 pour aucune).
@@ -75,6 +76,8 @@ flat in float gtgs_Lit;
 
 // Ce que le regard a parcouru dans l'epaisseur de la matiere, le long de sa face, en blocs.
 vec3 gtgs_Shift = vec3(0.0);
+// La part de la lumiere d'une surface que les corps lui laissent : elle se retire apres la limite, qui effacerait leur ombre sous une dalle.
+float gtgs_BodyLight = 1.0;
 
 // Point d'un bloc ou se calcule sa lumiere, depuis le bloc de la camera : le centre du texel du fragment sur sa face
 // (gtgs_LookParams.x pas par bloc, l'axe de la normale garde la position), pour que la lumiere suive les pixels des textures.
@@ -238,6 +241,13 @@ vec3 gtgs_darkPixels(vec3 light) {
     return light * (1.0 + pick * gtgs_Tone.z * dark * near);
 }
 
+// La lumiere d'une surface avant ce que les corps lui retirent, et la part qu'ils lui laissent, gardee a part.
+vec3 gtgs_underBodies(vec3 direct, vec3 around, float kept) {
+    vec3 light = direct + around;
+    gtgs_BodyLight = dot(direct * kept + around, vec3(1.0)) / max(dot(light, vec3(1.0)), 1.0e-3);
+    return light;
+}
+
 // La tuile d'une surface : la lumiere qui arrive reste lisse d'un pixel d'ecran a l'autre, sauf la part du degrade que le profil
 // veut sur la grille ; l'ombre portee, le relief et les coins se lisent par pixel de texture, comme la texture elle-meme. Plus
 // tard, sans pixels d'ombre, tout se lisse.
@@ -264,13 +274,13 @@ vec3 gtgs_tileLight(uint tile, vec3 exact, vec3 at, float face, vec3 axis) {
         vec4 traced = gtgs_bounceAt(gtgs_BounceAtlas, tile, smoothSt);
         if (traced.a > 0.5) {
             // Les rebonds font le gros de la lumiere : plus de courbe pour creuser les ombres, plus de grille.
-            return gtgs_NeonTint * arriving * arriving * 4.0 * shadow * kept * pixel.a * 2.0 * gtgs_TracedLook.z + traced.rgb + gtgs_Ambient * open;
+            return gtgs_underBodies(gtgs_NeonTint * arriving * arriving * 4.0 * shadow * pixel.a * 2.0 * gtgs_TracedLook.z, traced.rgb + gtgs_Ambient * open, kept);
         }
     }
-    shadow *= shadow * kept;
+    shadow *= shadow;
     vec3 direct = gtgs_NeonTint * arriving * arriving * 4.0 * shadow * pixel.a * 2.0;
     vec4 bounced = gtgs_zoneRead(at, face + 6.0);
-    return direct + bounced.rgb / max(bounced.a, 0.001) * 4.0 * open;
+    return gtgs_underBodies(direct, bounced.rgb / max(bounced.a, 0.001) * 4.0 * open, kept);
 }
 
 // Distances, en blocs, ou la lumiere passe d'un niveau au suivant : des tuiles a la zone, de la zone a la lightmap. Les tuiles couvrent
@@ -279,12 +289,24 @@ const float GTGS_TILE_FADE = 24.0;
 const float GTGS_TILE_END = 32.0;
 const float GTGS_ZONE_FADE = 40.0;
 const float GTGS_ZONE_END = 48.0;
-const float GTGS_ZONE_WALLS = 0.14;
 
-// La lightmap vanilla, ramenee a l'exposition de la zone : une piece eclairee au loin l'est autant que de pres. Elle ne connait pas
-// l'orientation des surfaces, et les dalles eclairent d'abord les sols.
+// Le niveau de la lightmap ou elle dit vrai : en dessous, elle donne bien plus que ce que recoit la surface, et de la mauvaise couleur.
+const float GTGS_FAR_FULL = 0.85;
+// Le bleu de la lumiere qui n'a que des rebonds, et celui de la lumiere sous une dalle, en parts du vert de la lightmap.
+const float GTGS_FAR_BOUNCES = 0.45;
+const float GTGS_FAR_DIRECT = 0.8;
+
+// La lightmap vanilla, ramenee a la lumiere des surfaces : une piece eclairee au loin l'est autant que de pres. Elle ne connait pas
+// l'orientation des surfaces, et les dalles eclairent d'abord les sols. Sous la lumiere tracee, ou presque tout vient des rebonds, elle ne
+// connait pas non plus le noir d'un coin ni leur couleur : peu de lumiere en donne moins, et jaune, sans quoi ce qui est sombre de pres
+// serait clair et gris de loin.
 vec3 gtgs_farLight() {
-    return gtgs_Lightmap * (1.25 + 2.75 * max(gtgs_Normal.y, 0.0) - 0.35 * max(-gtgs_Normal.y, 0.0)) * (gtgs_Traced > 0.5 ? 1.0 : 0.85);
+    vec3 far = gtgs_Lightmap * (1.25 + 2.75 * max(gtgs_Normal.y, 0.0) - 0.35 * max(-gtgs_Normal.y, 0.0)) * (gtgs_Traced > 0.5 ? 0.5 + 0.8 * gtgs_TracedLook.z : 0.85);
+    if (gtgs_Traced < 0.5) {
+        return far;
+    }
+    float level = clamp(dot(far, vec3(0.333)) / GTGS_FAR_FULL, 0.0, 1.0);
+    return far * level * vec3(1.0, 1.0, mix(GTGS_FAR_BOUNCES, GTGS_FAR_DIRECT, level));
 }
 
 // La face d'un fragment du terrain, d'apres sa normale.
@@ -342,6 +364,9 @@ void gtgs_enterPile(inout vec3 color) {
     vec2 origin = (floor(texel) - floor(inside + 0.5 - fract(texel))) / size;
     vec2 at = start;
     float height = material.a;
+    // Un pixel plat n'est ni une pointe ni un creux : une dalle basse sous son rail ne s'eclaircit pas de pres.
+    vec2 tilt = material.rg * 255.0 - 128.0;
+    float shade = dot(tilt, tilt) > 0.25 ? (gtgs_Traced > 0.5 ? GTGS_PILE_SHADE_TRACED : GTGS_PILE_SHADE) : 0.0;
     for (int i = 1; i <= GTGS_PILE_STEPS && height < 1.0 - float(i) / float(GTGS_PILE_STEPS); i++) {
         at += pace;
         height = textureLod(gtgs_BlockMaterial, gtgs_inTexture(at, flip, origin, span), 0.0).a;
@@ -356,7 +381,7 @@ void gtgs_enterPile(inout vec3 color) {
     vec2 dy = dFdy(gtgs_Uv);
     vec3 seen = textureGrad(gtgs_BlockAtlas, gtgs_inTexture(at, flip, origin, span), dx, dy).rgb;
     vec3 flat_ = textureGrad(gtgs_BlockAtlas, gtgs_Uv, dx, dy).rgb;
-    color *= seen / max(flat_, vec3(0.02)) * (1.0 + (gtgs_Traced > 0.5 ? GTGS_PILE_SHADE_TRACED : GTGS_PILE_SHADE) * (height - 0.5) * near);
+    color *= seen / max(flat_, vec3(0.02)) * (1.0 + shade * (height - 0.5) * near);
 }
 
 // L'eclairement de la surface de ce fragment, lu dans la cellule d'air devant elle, sur la tranche de sa face. Quand elle a
@@ -378,9 +403,13 @@ vec3 gtgs_zoneLight() {
         return gtgs_farLight();
     }
     vec4 zone = gtgs_zoneRead(at, face);
-    // Sous la lumiere tracee, les rebonds des tuiles eclairent les murs un peu plus que ceux de la zone : un mur qui attend ses tuiles ne se
-    // decoupe pas sur ses voisins.
-    vec3 zoned = zone.rgb / max(zone.a, 0.001) * 4.0 * (gtgs_Traced > 0.5 ? 1.0 + GTGS_ZONE_WALLS * (1.0 - abs(axis.y)) : 1.0);
+    vec3 zoned = zone.rgb / max(zone.a, 0.001) * 4.0;
+    // Sous la lumiere tracee, la lumiere directe de la zone a la meme part que celle des tuiles : sinon, un anneau se voit autour de la camera.
+    if (gtgs_Traced > 0.5) {
+        vec4 around = gtgs_zoneRead(at, face + 6.0);
+        vec3 bounces = around.rgb / max(around.a, 0.001) * 4.0;
+        zoned = (zoned - bounces) * gtgs_TracedLook.z + bounces;
+    }
     // Une surface hors de la grille (plinthe rentree dans son bloc) ou pas encore cuite : la lightmap, a l'exposition de la zone.
     vec3 light = mix(gtgs_farLight(), zoned, clamp(zone.a * 8.0, 0.0, 1.0) * (1.0 - smoothstep(GTGS_ZONE_FADE, GTGS_ZONE_END, reach)));
     // Les tuiles couvrent toujours ce qui est proche, et se fondent dans la zone avant le bord de ce qu'elles couvrent : une section qui
@@ -390,7 +419,10 @@ vec3 gtgs_zoneLight() {
         if (cell.y >= 0 && cell.y < 32) {
             uint tile = texelFetch(gtgs_SurfaceTiles, ivec3(cell.x & 127, cell.y + int(face) * 32, cell.z & 127), 0).r;
             if (tile != 0u) {
-                return mix(gtgs_tileLight(tile, gtgs_CameraFract + gtgs_WorldRel + gtgs_Shift + toZone, at, face, axis), light, smoothstep(GTGS_TILE_FADE, GTGS_TILE_END, reach));
+                vec3 lit = gtgs_tileLight(tile, gtgs_CameraFract + gtgs_WorldRel + gtgs_Shift + toZone, at, face, axis);
+                float fade = smoothstep(GTGS_TILE_FADE, GTGS_TILE_END, reach);
+                gtgs_BodyLight = mix(gtgs_BodyLight, 1.0, fade);
+                return mix(lit, light, fade);
             }
         }
     }
@@ -416,13 +448,35 @@ vec3 gtgs_airGlow() {
     return glow * gtgs_Air.x;
 }
 
+// La part de sa limite ou la lumiere d'une surface commence a se tasser.
+const float GTGS_LIGHT_KNEE = 0.75;
+
+// La lumiere d'une surface se tasse vers sa limite, composante par composante : sous une dalle, toute lumiere finit blanche et la surface
+// a la couleur de sa texture, alors que ce qui n'a que des rebonds garde leur couleur. La limite vaut pour l'image, exposition comprise.
+vec3 gtgs_limited(vec3 light) {
+    float limit = gtgs_Tone.w / (gtgs_Traced > 0.5 ? gtgs_TracedLook.y : 1.0);
+    if (limit <= 0.0) {
+        return light;
+    }
+    float knee = limit * GTGS_LIGHT_KNEE;
+    return min(light, vec3(knee)) + (limit - knee) * (1.0 - exp(-max(light - knee, vec3(0.0)) / (limit - knee)));
+}
+
 // Le niveau de la texture d'un bloc ou elle ne fait plus qu'une couleur : le plus petit, que la lecture ne depasse pas.
 const float GTGS_WHOLE_TEXTURE = 16.0;
+// La hauteur moyenne d'une matiere presque plate.
+const float GTGS_NEARLY_FLAT = 0.7;
 
 // La couleur d'une texture, ramenee vers celle de son bloc : sous une lumiere de photo, une texture trop contrastee prend le dessus.
 // Ses pixels restent. Un bloc que la grille ne connait pas garde sa texture. La grille ne couvre que la zone et se repete au-dela : hors
 // d'elle, la couleur du bloc se lit dans le plus petit niveau de sa texture, sans quoi le contraste changerait par carres de sections.
 vec3 gtgs_calmed(vec3 color) {
+    // Un pixel tout en haut d'une matiere presque plate (le rail d'une dalle) est une piece a part, pas du grain : il garde sa couleur. Les
+    // brins d'une moquette, eux, en sont le grain : sa hauteur moyenne est bien plus basse.
+    float whole = textureLod(gtgs_BlockMaterial, gtgs_Uv, GTGS_WHOLE_TEXTURE).a;
+    if (whole > GTGS_NEARLY_FLAT && whole < 1.0 && textureLod(gtgs_BlockMaterial, gtgs_Uv, 0.0).a >= 1.0) {
+        return color;
+    }
     ivec3 block = gtgs_CameraBlock + ivec3(floor(gtgs_CameraFract + gtgs_WorldRel - gtgs_Normal * 0.01));
     int row = block.y - gtgs_LightBase;
     float beyond = row < 0 || row >= 32 ? 1.0 : smoothstep(GTGS_ZONE_FADE, GTGS_ZONE_END, max(abs(gtgs_WorldRel.x), abs(gtgs_WorldRel.z)));
@@ -504,8 +558,45 @@ vec3 gtgs_gloss() {
     return gtgs_NeonTint * gtgs_CasterLight.w * sum * gtgs_Air.y * distant;
 }
 
+// La longueur du rayon qu'un corps envoie, et la couleur de ce qu'il voit sous un palier sans table des matieres.
+const float GTGS_ROOM_RAY = 24.0;
+const vec3 GTGS_ROOM_SEEN = vec3(0.6);
+// Sans grille des blocs pour voir la piece, la part des dalles proches qui revient d'elle.
+const float GTGS_ROOM_AROUND = 0.15;
+
+// La lumiere d'un point d'une surface, relatif au bloc de la camera : celle de sa tuile sous la lumiere tracee, ou celle de la zone.
+vec3 gtgs_lightSeen(vec3 at, int side) {
+    vec3 axis = GTGS_FACE_NORMAL[side];
+    if (gtgs_Traced > 0.5) {
+        uint tile = gtgs_tileAt(gtgs_CameraBlock + ivec3(floor(at + axis * 0.5)), side);
+        if (tile != 0u) {
+            vec2 st = gtgs_faceSt(at, side);
+            vec4 bounced = gtgs_bounceAt(gtgs_BounceAtlas, tile, st);
+            if (bounced.a > 0.5) {
+                return gtgs_directAt(tile, st) * gtgs_TracedLook.z + bounced.rgb;
+            }
+        }
+    }
+    vec4 zone = gtgs_zoneRead(at + axis * 0.5 + vec3(float(gtgs_CameraBlock.x & 127), float(gtgs_CameraBlock.y - gtgs_LightBase), float(gtgs_CameraBlock.z & 127)), float(side));
+    return zone.rgb / max(zone.a, 0.001) * 4.0;
+}
+
+// Ce qui revient a un corps de la piece, de ce cote : la surface qu'il voit, sa lumiere, dans la couleur de son bloc. Un corps pres d'un mur
+// jaune prend son jaune, et dans le noir il ne recoit rien.
+vec3 gtgs_roomLight(vec3 start, vec3 normal) {
+    vec3 ray = normal * GTGS_ROOM_RAY;
+    ivec3 hit;
+    int side;
+    float t = gtgs_trace(gtgs_CameraBlock, start, ray, hit, side);
+    if (t >= 2.0) {
+        return vec3(0.0);
+    }
+    vec3 color = gtgs_Traced > 0.5 ? texelFetch(gtgs_Materials, ivec2(int(gtgs_material(gtgs_CameraBlock + hit)), 0), 0).rgb : GTGS_ROOM_SEEN;
+    return color * gtgs_lightSeen(start + ray * t, side);
+}
+
 // La lumiere d'une entite ou de la main, sous la meme lumiere que le decor : ce que donne chaque dalle proche, de son cote, s'il n'y a
-// pas de bloc entre elles, et ce qui revient autour d'elle. Sans lightmap : elle ne dit rien de ce qui eclaire vraiment.
+// pas de bloc entre elles, et ce que la piece lui renvoie. Sans lightmap : elle ne dit rien de ce qui eclaire vraiment.
 vec3 gtgs_entityLight() {
     vec3 normal = normalize(gtgs_Normal);
     vec3 point = gtgs_CameraFract + gtgs_WorldRel;
@@ -529,9 +620,11 @@ vec3 gtgs_entityLight() {
             }
         }
     }
-    // Sous la lumiere tracee, presque tout vient des surfaces autour de lui. Une main sous une dalle ne brule pas : la lumiere se tasse.
-    vec3 light = gtgs_Ambient * 2.4 + gtgs_NeonTint * gtgs_CasterLight.w * (direct * (gtgs_Traced > 0.5 ? gtgs_TracedLook.z : 1.0) + around * (gtgs_Traced > 0.5 ? 0.6 : 0.15));
-    return (1.0 - exp(-light / 1.3)) * 1.3;
+    // Sans le cache de surfaces, la grille des blocs n'existe pas : ce que la piece renvoie s'estime d'apres les dalles proches.
+    vec3 room = gtgs_SurfaceLight > 0.5 ? gtgs_roomLight(body, normal) : gtgs_NeonTint * gtgs_CasterLight.w * around * GTGS_ROOM_AROUND;
+    // Une main sous une dalle ne brule pas : la lumiere se tasse comme celle d'une surface, a la meme exposition.
+    vec3 light = gtgs_Ambient * 2.4 + gtgs_NeonTint * gtgs_CasterLight.w * direct * (gtgs_Traced > 0.5 ? gtgs_TracedLook.z : 1.0) + room;
+    return gtgs_limited(light) * (gtgs_Traced > 0.5 ? gtgs_TracedLook.y : 1.0);
 }
 
 // Le brouillard de la vue, pose par-dessus la lumiere : les distances et la couleur de vanilla, calculees au fragment.
@@ -567,7 +660,8 @@ vec4 gtgs_applyLook(vec4 c) {
             if (gtgs_Traced > 0.5) {
                 c.rgb = gtgs_calmed(c.rgb);
             }
-            c.rgb = (c.rgb * gtgs_darkPixels(gtgs_zoneLight()) + gtgs_gloss()) * (1.0 - gtgs_disturbance(gtgs_WorldRel)) * (gtgs_Traced > 0.5 ? gtgs_TracedLook.y : 1.0);
+            vec3 lit = gtgs_limited(gtgs_darkPixels(gtgs_zoneLight()));
+            c.rgb = (c.rgb * lit * gtgs_BodyLight + gtgs_gloss()) * (1.0 - gtgs_disturbance(gtgs_WorldRel)) * (gtgs_Traced > 0.5 ? gtgs_TracedLook.y : 1.0);
         }
         c.rgb = gtgs_fog(c.rgb) + gtgs_airGlow();
     } else if (gtgs_BakedLight > 0.5 && gtgs_Lit > 0.5) {

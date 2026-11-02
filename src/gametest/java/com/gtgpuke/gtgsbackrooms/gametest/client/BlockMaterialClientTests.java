@@ -40,7 +40,23 @@ import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 final class BlockMaterialClientTests {
 
     private static final Identifier WALLPAPER = Identifier.of(ModConstants.MOD_ID, "block/level_zero_wallpaper");
-    private static final Identifier NO_MATERIAL = Identifier.of(ModConstants.MOD_ID, "block/level_zero_ceiling_tile");
+    private static final Identifier NO_MATERIAL = Identifier.of(ModConstants.MOD_ID, "block/level_zero_baseboard");
+    /** Un pixel du rail au bord de la dalle de plafond, et un pixel de la dalle. */
+    private static final int RAIL_PIXEL = 0;
+    private static final int PANEL_PIXEL = 16;
+    /** La dalle est a peine plus basse que son rail. */
+    private static final int MIN_PANEL_HEIGHT = 190;
+    /** Part de l'image que le reflet fait changer, le regard au plafond : le rail est mat. */
+    private static final double MAX_CEILING_SHINE = 0.002;
+    /** Ce dont un pixel du rail depasse ses voisins, a cette distance d'eux, et la part de l'image qui doit le faire : le rail se voit a tous les paliers. */
+    private static final double RIDGE = 4.0;
+    private static final int RIDGE_SPAN = 10;
+    private static final double MIN_RIDGES = 0.12;
+    /** Au-dessus de cette luminance, c'est une dalle. */
+    private static final double MAX_RIDGE = 200.0;
+    /** Part de l'image que le relief des rails fait changer : il se voit, a peine. */
+    private static final double MIN_RAIL_RELIEF = 0.0003;
+    private static final double MAX_RAIL_RELIEF = 0.03;
     /** Ecart de luminance qu'un reflet donne a un pixel, et que le grain du film n'atteint jamais. */
     private static final double SHINING = 10.0;
     /** Ecart de luminance qu'atteint le grain du film sur une part des pixels. */
@@ -85,6 +101,7 @@ final class BlockMaterialClientTests {
     private static int wallFace;
     private static int[] before;
     private static int[] wallBefore;
+    private static int[] ceilingBefore;
     private static double shine;
     private static double pile;
 
@@ -138,9 +155,19 @@ final class BlockMaterialClientTests {
                             String.format(Locale.ROOT, "%.2f", flat));
                     ClientTestContext.require(pile >= flat * MIN_PILE, String.format(Locale.ROOT, "La moquette n'a pas de volume : %.2f contre %.2f.", pile, flat));
                 })
+                .run("regard rasant vers le plafond", context -> look(context, wallYaw + 180.0f, -30.0f))
+                .frames(8)
+                .capture("le plafond sans relief", image -> ceilingBefore = pixels(image))
                 .run("relief remis", context -> LookResources.applySettings(LookSettings.current().with(LookOption.RELIEF, true), context.client()))
                 .ticks(4)
                 .await("repos avec relief", BlockMaterialClientTests::settled, SETTLE_TICKS)
+                .frames(8)
+                .capture("le rail depasse a peine de la dalle", image -> {
+                    double rails = moved(image, ceilingBefore);
+                    ModConstants.LOGGER.info("[Test client] Relief des rails : {} % de l'image.", percent(rails));
+                    ClientTestContext.require(rails >= MIN_RAIL_RELIEF, "Le rail ne depasse pas de la dalle : " + percent(rails) + " % de l'image.");
+                    ClientTestContext.require(rails <= MAX_RAIL_RELIEF, "Le relief du rail n'est plus leger : " + percent(rails) + " % de l'image.");
+                })
                 .run("des blocs sous les dalles", context -> setUnderNeons(context, true))
                 .ticks(4)
                 .await("la copie voit ces blocs", context -> LightCopy.copiedBlock(context.world(), UNDER_NEONS.get(0)) != 0, 100)
@@ -175,9 +202,18 @@ final class BlockMaterialClientTests {
                 .run("regard vers le haut du mur, " + tier, context -> look(context, wallYaw + 25.0f, -38.0f))
                 .frames(8)
                 .capture("le mur avec reflets, " + tier, image -> wallBefore = pixels(image))
+                .run("regard vers le plafond, " + tier, context -> look(context, wallYaw + 180.0f, -55.0f))
+                .frames(8)
+                .capture("le plafond avec reflets, " + tier, image -> {
+                    ceilingBefore = pixels(image);
+                    double rails = ridges(image);
+                    ModConstants.LOGGER.info("[Test client] Rails du plafond en {} : {} % de l'image.", tier, percent(rails));
+                    ClientTestContext.require(rails >= MIN_RIDGES, "Le rail ne se voit pas en " + tier + " : " + percent(rails) + " % de l'image.");
+                })
                 .run("reflets coupes, " + tier, context -> sheen(context, false))
                 .ticks(4)
                 .await("repos sans reflets, " + tier, BlockMaterialClientTests::settled, SETTLE_TICKS)
+                .run("regard vers le haut du mur sans reflets, " + tier, context -> look(context, wallYaw + 25.0f, -38.0f))
                 .frames(8)
                 .capture("seul le motif brillait, " + tier, image -> {
                     int[] floor = before;
@@ -188,6 +224,13 @@ final class BlockMaterialClientTests {
                     ModConstants.LOGGER.info("[Test client] Reflet du mur en {} : {} % de l'image brille, {} % bouge.", tier, percent(shine), percent(touched));
                     ClientTestContext.require(shine >= MIN_SHINE, "Le motif ne brille pas en " + tier + " : " + percent(shine) + " % de l'image.");
                     ClientTestContext.require(touched <= MAX_TOUCHED, "Trop de mur brille en " + tier + " : " + percent(touched) + " % de l'image.");
+                })
+                .run("regard vers le plafond sans reflets, " + tier, context -> look(context, wallYaw + 180.0f, -55.0f))
+                .frames(8)
+                .capture("le rail du plafond est mat, " + tier, image -> {
+                    double rails = moved(image, ceilingBefore);
+                    ModConstants.LOGGER.info("[Test client] Reflet du plafond en {} : {} % de l'image.", tier, percent(rails));
+                    ClientTestContext.require(rails <= MAX_CEILING_SHINE, "Le rail du plafond brille en " + tier + " : " + percent(rails) + " % de l'image.");
                 })
                 .run("regard vers le sol sans reflets, " + tier, context -> look(context, wallYaw + 180.0f, 50.0f))
                 .frames(8)
@@ -246,6 +289,11 @@ final class BlockMaterialClientTests {
                     ClientTestContext.require(same, "Pixel de matiere " + x + ", " + y + " different de ses textures.");
                 }
             }
+        }
+        try (NativeImage slopes = file(context.client(), "level_zero_ceiling_tile_n")) {
+            int rail = slopes.getColor(RAIL_PIXEL, PANEL_PIXEL) >>> 24;
+            int panel = slopes.getColor(PANEL_PIXEL, PANEL_PIXEL) >>> 24;
+            ClientTestContext.require(rail == 255 && panel < rail && panel >= MIN_PANEL_HEIGHT, "Le rail doit depasser a peine de la dalle : " + rail + " contre " + panel + ".");
         }
         Sprite plain = atlas.getSprite(NO_MATERIAL);
         for (int y = 0; y < plain.getContents().getHeight(); y++) {
@@ -412,6 +460,37 @@ final class BlockMaterialClientTests {
         for (int y = 0; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
                 if (luminance(before[y * image.getWidth() + x]) - luminance(image.getColor(x, y)) >= drop) {
+                    count++;
+                }
+            }
+        }
+        return count / (double) (image.getWidth() * image.getHeight());
+    }
+
+    /** La part de l'image qui depasse ses voisins des deux cotes : les lignes claires, ni la lumiere qui varie lentement, ni les dalles. */
+    private static double ridges(NativeImage image) {
+        int count = 0;
+        int area = 0;
+        for (int y = RIDGE_SPAN; y < image.getHeight() - RIDGE_SPAN; y++) {
+            for (int x = RIDGE_SPAN; x < image.getWidth() - RIDGE_SPAN; x++) {
+                double here = luminance(image.getColor(x, y));
+                double across = (luminance(image.getColor(x - RIDGE_SPAN, y)) + luminance(image.getColor(x + RIDGE_SPAN, y))) * 0.5;
+                double along = (luminance(image.getColor(x, y - RIDGE_SPAN)) + luminance(image.getColor(x, y + RIDGE_SPAN))) * 0.5;
+                if (here < MAX_RIDGE && (here - across >= RIDGE || here - along >= RIDGE)) {
+                    count++;
+                }
+                area++;
+            }
+        }
+        return count / (double) area;
+    }
+
+    /** La part de l'image dont la luminance a change d'au moins {@link #SHINING} depuis cette capture, dans un sens ou dans l'autre. */
+    private static double moved(NativeImage image, int[] first) {
+        int count = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                if (Math.abs(luminance(first[y * image.getWidth() + x]) - luminance(image.getColor(x, y))) >= SHINING) {
                     count++;
                 }
             }

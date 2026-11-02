@@ -1,5 +1,10 @@
 {
   "variants": {
-    "": { "model": "gtgs_backrooms:block/level_zero_damp_carpet" }
+    "": [
+      { "model": "gtgs_backrooms:block/level_zero_damp_carpet" },
+      { "model": "gtgs_backrooms:block/level_zero_damp_carpet_1" },
+      { "model": "gtgs_backrooms:block/level_zero_damp_carpet_2" },
+      { "model": "gtgs_backrooms:block/level_zero_damp_carpet_3" }
+    ]
   }
 }

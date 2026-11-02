@@ -137,6 +137,7 @@ public final class LookResources {
         quality = null;
         LookSettingsStore.save(next);
         publish();
+        LightCopy.refreshSettings();
         LightVolume.rebake();
         if (bakedBefore != bakedAnywhere() && client.worldRenderer != null) {
             client.worldRenderer.reload();

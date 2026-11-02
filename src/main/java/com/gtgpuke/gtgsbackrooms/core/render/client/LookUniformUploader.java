@@ -179,7 +179,7 @@ public final class LookUniformUploader {
             GL20.glUniform3f(locations[AT_AMBIENT], (float) ambient.x, (float) ambient.y, (float) ambient.z);
         }
         if (locations[AT_TONE] >= 0) {
-            GL20.glUniform3f(locations[AT_TONE], look.bakedLight().toe(), look.bakedLight().pixelLight(), look.bakedLight().darkPixels());
+            GL20.glUniform4f(locations[AT_TONE], look.bakedLight().toe(), look.bakedLight().pixelLight(), look.bakedLight().darkPixels(), look.bakedLight().lightLimit());
         }
         if (locations[AT_NEON_TINT] >= 0) {
             LookProfile.Neons neons = look.neons();

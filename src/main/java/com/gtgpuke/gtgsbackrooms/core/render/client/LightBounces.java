@@ -15,6 +15,7 @@ import org.lwjgl.system.MemoryUtil;
 
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBakeSettings;
@@ -48,8 +49,6 @@ public final class LightBounces {
     private static final int ATLAS_HEIGHT = SurfaceAtlas.ROWS * TILE;
     /** Tuiles calculees par image pendant un balayage. */
     private static final int PER_FRAME = 96;
-    /** Ce que valent tous les rebonds, en parts du premier : une surface neuve ne doit pas attendre le balayage pour etre claire. */
-    private static final float FRESH_GAIN = 2.2f;
     /** Tours d'un balayage : deux rebonds. */
     private static final int ROUNDS = 2;
     private static final int LAST_ROUND = 1;
@@ -73,9 +72,10 @@ public final class LightBounces {
     private static int locBase;
     private static int locRays;
     private static int locBounce;
+    private static int locBounceColor;
     private static int locTint;
     private static int locPrevious;
-    private static int locGain;
+    private static int locFresh;
     private static int cursor;
     private static int roundsLeft;
     private static int materialCount;
@@ -114,9 +114,10 @@ public final class LightBounces {
         locBase = GL20.glGetUniformLocation(program, "gtgs_LightBase");
         locRays = GL20.glGetUniformLocation(program, "gtgs_Rays");
         locBounce = GL20.glGetUniformLocation(program, "gtgs_Bounce");
+        locBounceColor = GL20.glGetUniformLocation(program, "gtgs_BounceColor");
         locTint = GL20.glGetUniformLocation(program, "gtgs_NeonTint");
         locPrevious = GL20.glGetUniformLocation(program, "gtgs_PreviousShare");
-        locGain = GL20.glGetUniformLocation(program, "gtgs_Gain");
+        locFresh = GL20.glGetUniformLocation(program, "gtgs_Fresh");
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         GL20.glUseProgram(program);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, LightVolume.SAMPLER), LightVolume.UNIT);
@@ -239,16 +240,18 @@ public final class LightBounces {
             GL20.glUniform1i(locBase, base << 4);
             GL20.glUniform1i(locRays, LookResources.quality().tracedRays());
             GL20.glUniform1f(locBounce, look.bakedLight().bounce());
+            Vec3d bounceColor = look.bakedLight().bounceColor();
+            GL20.glUniform3f(locBounceColor, (float) bounceColor.x, (float) bounceColor.y, (float) bounceColor.z);
             LookProfile.Neons neons = look.neons();
             float strongest = Math.max(Math.max(neons.red(), Math.max(neons.green(), neons.blue())), 1.0e-3f);
             GL20.glUniform3f(locTint, neons.red() / strongest, neons.green() / strongest, neons.blue() / strongest);
             aim(framebuffer, previous, 0.0f);
-            GL20.glUniform1f(locGain, FRESH_GAIN);
+            GL20.glUniform1f(locFresh, 1.0f);
             for (int i = 0; i < FRESH.size(); i++) {
                 gather(FRESH.getInt(i));
             }
             FRESH.clear();
-            GL20.glUniform1f(locGain, 1.0f);
+            GL20.glUniform1f(locFresh, 0.0f);
             sweep();
             GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_PREVIOUS);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, previous);

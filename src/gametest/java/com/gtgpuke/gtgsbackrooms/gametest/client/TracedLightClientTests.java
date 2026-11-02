@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -71,6 +72,13 @@ final class TracedLightClientTests {
     private static final double SECOND_BOUNCE = 1.02;
     /** Luminance d'un plafond eclaire par ses seuls rebonds : le fond du profil seul reste bien en dessous. */
     private static final double MIN_CEILING = 40.0;
+    /** La lumiere qui a tourne dans une piece est plus rouge d'autant, et moins bleue d'autant, que celle d'une surface sous une dalle. */
+    private static final double MIN_WARMER = 0.02;
+    private static final double LIT_BAND = 12.0;
+    /** Le plafond, presque blanc dans sa texture, doit toute sa couleur aux rebonds : ambre, sans quoi ils n'ont que celle des blocs. */
+    private static final double MAX_CEILING_BLUE = 0.45;
+    /** Sous les dalles, la lumiere d'une surface a sa limite : sans elle, le sol sature. */
+    private static final double MAX_LIT_FLOOR = 190.0;
     /** Ce que le contraste local de l'image gagne au moins en quittant la lumiere tracee, a vue egale. */
     private static final double CALMER = 1.25;
     private static final int QUIET_FRAMES = 40;
@@ -81,6 +89,7 @@ final class TracedLightClientTests {
     private static Long2LongOpenHashMap bounces;
     private static Long2LongOpenHashMap direct;
     private static double bounceMean;
+    private static double[] ceilingColor;
     private static double tracedDetail;
     private static VillagerEntity body;
 
@@ -282,17 +291,18 @@ final class TracedLightClientTests {
         ClientTestContext.require(LookSettings.current().pixelShadows() > 0, "Le reglage du joueur a change.");
     }
 
-    /** Le contraste local d'une bande de l'image : ce qu'on voit des textures, a lumiere lisse. */
+    /** Le contraste local du haut de l'image, en parts de sa lumiere : ce qu'on voit du papier peint, quelle que soit l'exposition du palier. */
     private static double localContrast(NativeImage image) {
         double sum = 0.0;
-        int count = 0;
-        for (int y = image.getHeight() / 2; y < image.getHeight(); y += 2) {
+        double light = 0.0;
+        for (int y = image.getHeight() / 4; y < image.getHeight() / 2; y += 2) {
             for (int x = 1; x < image.getWidth(); x++) {
-                sum += Math.abs(luminance(image.getColor(x, y)) - luminance(image.getColor(x - 1, y)));
-                count++;
+                double here = luminance(image.getColor(x, y));
+                sum += Math.abs(here - luminance(image.getColor(x - 1, y)));
+                light += here;
             }
         }
-        return sum / count;
+        return sum / Math.max(light, 1.0);
     }
 
     private static void requireBounces() {
@@ -327,6 +337,39 @@ final class TracedLightClientTests {
         double two = meanBounce();
         ModConstants.LOGGER.info("[Test client] Rebonds : {} au premier tour, {} au second.", String.format(Locale.ROOT, "%.3f", one), String.format(Locale.ROOT, "%.3f", two));
         ClientTestContext.require(one > 0.0 && two > one * SECOND_BOUNCE, String.format(Locale.ROOT, "Le second rebond n'ajoute rien : %.3f puis %.3f.", one, two));
+    }
+
+    /** La couleur moyenne de ce qui, dans l'image, est autour de cette luminance : ni les dalles, ni le fond des coins. */
+    private static double[] litColor(NativeImage image, double around) {
+        double[] sum = new double[3];
+        int count = 0;
+        for (int y = 0; y < image.getHeight(); y += 2) {
+            for (int x = 0; x < image.getWidth(); x += 2) {
+                int abgr = image.getColor(x, y);
+                if (Math.abs(luminance(abgr) - around) <= LIT_BAND) {
+                    sum[0] += abgr & 0xFF;
+                    sum[1] += abgr >> 8 & 0xFF;
+                    sum[2] += abgr >> 16 & 0xFF;
+                    count++;
+                }
+            }
+        }
+        return new double[] {sum[0] / Math.max(count, 1), sum[1] / Math.max(count, 1), sum[2] / Math.max(count, 1)};
+    }
+
+    /** La teinte suit la lumiere : le plafond, qui ne vit que de rebonds, est plus ambre que le sol sous les dalles, ou toute lumiere blanchit. */
+    private static void requireColorFollowsLight(NativeImage image) {
+        double median = medianLuminance(image);
+        double[] floor = litColor(image, median);
+        double redGain = ceilingColor[0] / ceilingColor[1] - floor[0] / floor[1];
+        double blueLoss = floor[2] / floor[1] - ceilingColor[2] / ceilingColor[1];
+        ModConstants.LOGGER.info("[Test client] Plafond {}, sol {} : rouge {}, bleu {}.", Arrays.toString(ceilingColor), Arrays.toString(floor),
+                String.format(Locale.ROOT, "%+.3f", redGain), String.format(Locale.ROOT, "%+.3f", blueLoss));
+        ClientTestContext.require(ceilingColor[2] / ceilingColor[1] <= MAX_CEILING_BLUE,
+                String.format(Locale.ROOT, "Le plafond n'est pas ambre : bleu %.3f du vert.", ceilingColor[2] / ceilingColor[1]));
+        ClientTestContext.require(median <= MAX_LIT_FLOOR, String.format(Locale.ROOT, "Le sol sature sous les dalles : %.0f.", median));
+        ClientTestContext.require(redGain >= MIN_WARMER && blueLoss >= MIN_WARMER,
+                String.format(Locale.ROOT, "La lumiere des rebonds n'a pas sa couleur : rouge %+.3f, bleu %+.3f.", redGain, blueLoss));
     }
 
     /** La luminance mediane de l'image : une dalle dans le champ n'y pese rien. */
@@ -412,11 +455,13 @@ final class TracedLightClientTests {
                     double ceiling = medianLuminance(image);
                     ModConstants.LOGGER.info("[Test client] Plafond en rebonds seuls : luminance {}.", String.format(Locale.ROOT, "%.0f", ceiling));
                     ClientTestContext.require(ceiling >= MIN_CEILING, String.format(Locale.ROOT, "Le terrain ne lit pas les rebonds : plafond a %.0f.", ceiling));
+                    ceilingColor = litColor(image, ceiling);
                 })
                 .run("regard droit devant", context -> look(context, 200.0f, 0.0f))
                 .frames(8)
                 .capture("le sol avec les reflets", image -> {
                     before = pixels(image);
+                    requireColorFollowsLight(image);
                     tracedDetail = localContrast(image);
                 })
                 .run("reflets coupes", context -> LookResources.applySettings(LookSettings.current().with(LookOption.SHEEN, false), context.client()))
@@ -456,9 +501,9 @@ final class TracedLightClientTests {
                 .frames(8)
                 .capture("les textures sont plus calmes en Ultra", image -> {
                     double high = localContrast(image);
-                    ModConstants.LOGGER.info("[Test client] Contraste des textures : Ultra {}, High {}.", String.format(Locale.ROOT, "%.2f", tracedDetail),
-                            String.format(Locale.ROOT, "%.2f", high));
-                    ClientTestContext.require(high > tracedDetail * CALMER, String.format(Locale.ROOT, "Textures aussi marquees en Ultra : %.2f contre %.2f.", tracedDetail, high));
+                    ModConstants.LOGGER.info("[Test client] Contraste des textures : Ultra {}, High {}.", String.format(Locale.ROOT, "%.4f", tracedDetail),
+                            String.format(Locale.ROOT, "%.4f", high));
+                    ClientTestContext.require(high > tracedDetail * CALMER, String.format(Locale.ROOT, "Textures aussi marquees en Ultra : %.4f contre %.4f.", tracedDetail, high));
                 })
                 .cleanup(context -> {
                     setPillar(context, false);

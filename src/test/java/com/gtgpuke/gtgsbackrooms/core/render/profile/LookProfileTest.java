@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -37,9 +36,13 @@ class LookProfileTest {
         assertEquals(Identifier.of("gtgs_backrooms", "backrooms_level_0"), profile.dimension(), "Dimension.");
         assertEquals(1, profile.id(), "Identifiant.");
         assertFalse(profile.vanilla(), "Pas vanilla.");
-        assertEquals(0.0f, profile.tintStrength(), EPSILON, "Pas de teinte d'ensemble : la courbe de teinte porte la palette.");
+        assertEquals(0.0f, profile.tintStrength(), EPSILON, "Pas de teinte d'ensemble : le jaune vient des murs.");
         assertEquals(0.0f, profile.desaturation(), EPSILON, "Pas de desaturation.");
-        assertTrue(profile.grade().tones().size() >= 3, "Sa courbe de teinte.");
+        assertEquals(1.0f, profile.neons().red(), EPSILON, "La lumiere des neons est blanche.");
+        assertEquals(1.0f, profile.neons().green(), EPSILON, "La lumiere des neons est blanche.");
+        assertEquals(1.0f, profile.neons().blue(), EPSILON, "La lumiere des neons est blanche.");
+        assertEquals(new Vec3d(1.03f, 1.0f, 0.72f), profile.bakedLight().bounceColor(), "La lumiere qui a tourne dans une piece se teinte.");
+        assertEquals(0.96f, profile.bakedLight().lightLimit(), EPSILON, "Sous une dalle, une surface a la couleur de sa texture.");
         assertEquals(0.02f, profile.grain(), EPSILON, "Grain.");
         assertEquals(0.0f, profile.flicker(), EPSILON, "Vacillement : mis de cote (decision de l'auteur du 27 octobre 2026).");
         assertEquals(new LookProfile.Lightmap(0.08f, 0.2f, 0.92f), profile.lightmap(), "Lightmap.");
@@ -80,7 +83,7 @@ class LookProfileTest {
         assertEquals(traced.traced(), applied.traced(), "La section reste.");
         LookProfile.BakedLight empty = parse(head + "{ \"shadow_size\": 0.5, \"traced\": {} } }").bakedLight();
         assertEquals(0.5f, empty.traced().shadowSize(), "Une section vide ne change rien.");
-        String[] outOfBounds = {"\"shadow_size\": 9", "\"relief\": 5", "\"sheen\": 3", "\"bounce\": 3", "\"toe\": 2", "\"detail\": 2", "\"exposure\": 5", "\"direct\": 2",
+        String[] outOfBounds = {"\"shadow_size\": 9", "\"relief\": 5", "\"sheen\": 3", "\"bounce\": 3", "\"toe\": 2", "\"detail\": 2", "\"exposure\": 5", "\"direct\": 5",
             "\"shoulder\": 2"};
         for (String key : outOfBounds) {
             assertThrows(JsonParseException.class, () -> parse(head + "{ \"traced\": { " + key + " } } }"), key + ".");
@@ -130,16 +133,6 @@ class LookProfileTest {
         assertEquals(new Vec3d(2.0, 1.0, 0.5), grade.power(), "Puissance.");
         assertEquals(0.75f, grade.saturation(), "Saturation.");
         assertEquals(LookProfile.Grade.NEUTRAL, LookProfile.VANILLA.grade(), "Le look vanilla est neutre.");
-        String tones = "{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"tones\": { ";
-        LookProfile.Grade toned = parse(tones + "\"share\": 0.5, \"stops\": [[0.25, 1.5, 0.5], [0.75, 1, 1]] } } }").grade();
-        assertEquals(0.5f, toned.toneShare(), "Part de la courbe.");
-        assertEquals(List.of(new LookProfile.ToneStop(0.25f, 1.5f, 0.5f), new LookProfile.ToneStop(0.75f, 1.0f, 1.0f)), toned.tones(), "Ses points.");
-        assertEquals(1.0f, parse(tones + "\"stops\": [[0.5, 1, 1]] } } }").grade().toneShare(), "Toute la courbe par defaut.");
-        assertRefused(tones + "\"share\": 2, \"stops\": [] } } }", "grade.tones.share hors de");
-        assertRefused(tones + "\"stops\": [[2, 1, 1]] } } }", "grade.tones.luma hors de");
-        assertRefused(tones + "\"stops\": [[0.5, 9, 1]] } } }", "grade.tones.red hors de");
-        assertRefused(tones + "\"stops\": [[0.5, 1, 9]] } } }", "grade.tones.blue hors de");
-        assertRefused(tones + "\"stops\": [[0.5, 1, 1], [0.25, 1, 1]] } } }", "Courbe de teinte pas en luminance croissante");
         assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [1, 1] } }", "slope : 3 valeurs attendues");
         assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [1, 5, 1] } }", "grade.slope hors de");
         assertRefused("{ \"dimension\": \"m:d\", \"id\": 1, \"grade\": { \"slope\": [-0.1, 1, 1] } }", "grade.slope hors de");
@@ -167,15 +160,17 @@ class LookProfileTest {
         assertEquals(1.0f, minimal.size(), "Taille par defaut.");
         assertEquals(90.0f, minimal.angle(), "Tout le demi-espace devant la dalle par defaut.");
         assertEquals(1.0f, minimal.shoulder(), "Pas d'epaule par defaut.");
+        assertEquals(new Vec3d(1.0, 1.0, 1.0), minimal.bounceColor(), "Les rebonds n'ajoutent pas de couleur par defaut.");
+        assertEquals(0.0f, minimal.lightLimit(), "La lumiere d'une surface n'a pas de limite par defaut.");
         LookProfile.BakedLight full = parse("{ \"dimension\": \"m:d\", \"id\": 1, " + neons + ", \"baked_light\": { \"emission\": 3,"
                 + " \"ambient\": [0.5, 0.25, 0.125], \"reach\": 10, \"size\": 2, \"angle\": 70, \"occlusion\": 0.75, \"relief\": 1.5,"
                 + " \"haze\": 0.25, \"sheen\": 1.25, \"shoulder\": 0.5, \"shadow_size\": 0.5, \"toe\": 0.125, \"pixel_light\": 0.25, \"dark_pixels\": 0.75,"
-                + " \"bounce\": 0.5 } }").bakedLight();
+                + " \"bounce\": 0.5, \"bounce_color\": [1.5, 1.0, 0.5], \"light_limit\": 1.25 } }").bakedLight();
         assertEquals(new LookProfile.BakedLight(3.0f, new Vec3d(0.5, 0.25, 0.125), 10.0f, 2.0f, 70.0f, 0.5f, 0.75f, 1.5f, 0.25f, 1.25f, 0.5f, 0.125f, 0.25f, 0.75f, 0.5f,
-                new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)), full,
+                new Vec3d(1.5, 1.0, 0.5), 1.25f, new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)), full,
                 "Tout lu.");
         assertEquals(new LookProfile.BakedLight(3.0f, new Vec3d(0.5, 0.25, 0.125), 10.0f, 2.0f, 70.0f, 0.5f, 0.75f, 1.5f, 0.25f, 1.25f, 0.5f, 0.125f, 0.5f, 1.5f, 0.5f,
-                new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)),
+                new Vec3d(1.5, 1.0, 0.5), 1.25f, new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)),
                 full.pixels(0.5f, 1.5f), "Les pixels se reglent seuls.");
         assertEquals(1.0f, minimal.shadowSize(), "Rayons des ombres par defaut.");
         assertEquals(0.0f, minimal.toe(), "Pas de pied de courbe par defaut.");
@@ -198,6 +193,8 @@ class LookProfileTest {
         assertRefused(prefix + "\"pixel_light\": 2 } }", "baked_light.pixel_light hors de");
         assertRefused(prefix + "\"dark_pixels\": 3 } }", "baked_light.dark_pixels hors de");
         assertRefused(prefix + "\"bounce\": 3 } }", "baked_light.bounce hors de");
+        assertRefused(prefix + "\"bounce_color\": [1, 3, 1] } }", "baked_light.bounce_color hors de");
+        assertRefused(prefix + "\"light_limit\": 5 } }", "baked_light.light_limit hors de");
         assertEquals(0.0f, minimal.sheen(), "Pas de reflet par defaut.");
         assertEquals(0.0f, minimal.relief(), "Pas de relief par defaut.");
         assertEquals(0.0f, minimal.haze(), "Pas de brume par defaut.");

@@ -27,7 +27,8 @@ class LightBakeSceneTest {
     private static final int EAST = 0;
     private static final int WEST = 1;
     private static final float AMBIENT = 0.1f;
-    private static final LightBakeSettings SETTINGS = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1, 0.0f, 0.0f, 0.0f);
+    private static final LightBakeSettings SETTINGS = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1, 0.0f, 0.0f, 0.0f);
 
     private LightBlocks blocks;
     private byte stone;
@@ -125,7 +126,8 @@ class LightBakeSceneTest {
         assertTrue(before > AMBIENT + 0.02f, "Sans mur, la lumiere arrive : " + before + ".");
         assertEquals(AMBIENT, LightCell.red(walled[LightCell.index(9, 1, 8, UP)]), 0.01f, "Derriere le mur, le fond seul.");
         assertTrue(LightCell.red(walled[LightCell.index(5, 1, 8, UP)]) > before, "Du bon cote, la lumiere reste.");
-        LightBakeSettings dead = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1, 0.0f, 1.0f, 0.0f);
+        LightBakeSettings dead = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1,
+                0.0f, 1.0f, 0.0f);
         assertEquals(AMBIENT, LightCell.red(bakeDirect(dead)[LightCell.index(5, 1, 8, UP)]), 0.01f, "Neon mort : rien.");
     }
 
@@ -134,7 +136,8 @@ class LightBakeSceneTest {
     void lightsThatDoNotReach() {
         set(this.room, 2, CEILING, 2, this.neon);
         fill(1, this.room);
-        LightBakeSettings shortReach = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 2.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1, 0.0f, 0.0f, 0.0f);
+        LightBakeSettings shortReach = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 2.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1, 0.0f,
+                0.0f, 0.0f);
         assertEquals(AMBIENT, LightCell.red(bakeDirect(shortReach)[LightCell.index(14, 1, 14, UP)]), 0.01f, "Hors de portee.");
         // Une poutre sous la dalle : sa face du dessous regarde le sol, la dalle est derriere elle.
         set(this.room, 8, 3, 8, this.stone);
@@ -185,6 +188,36 @@ class LightBakeSceneTest {
         assertTrue(LightCell.red(bounced[floor]) - LightCell.red(direct[floor]) > (LightCell.blue(bounced[floor]) - LightCell.blue(direct[floor])) * 1.2f,
                 "Pres du mur jaune, le rebond tire sur le jaune.");
         assertFalse(LightCell.valid(bounced[wallFace]), "Toujours aucune surface au milieu.");
+    }
+
+    @Test
+    @DisplayName("Le dernier rebond estime les suivants comme les rebonds traces : ce que le second ajoute au premier compte deux fois")
+    void lastBounceCountsTheFollowing() {
+        set(this.room, 8, CEILING, 8, this.neon);
+        fill(1, this.room);
+        SectionBaker baker = new SectionBaker();
+        int[] direct = new int[LightCell.VALUES];
+        baker.direct(this.blocks, SETTINGS, 0, 0, 0, direct);
+        int[][] sources = new int[SectionBaker.neighbors()][];
+        sources[13] = direct;
+        baker.place(this.blocks, 0, 0, 0);
+        int[] first = new int[LightCell.VALUES];
+        baker.bounce(this.blocks, 0, 0, 0, direct, sources, 0.0f, 1.0f, first);
+        sources[13] = first;
+        int[] second = new int[LightCell.VALUES];
+        baker.bounce(this.blocks, 0, 0, 0, direct, sources, 0.0f, 1.0f, second);
+        int[] all = new int[LightCell.VALUES];
+        baker.keepFollowing(first, SectionBaker.FOLLOWING);
+        baker.bounce(this.blocks, 0, 0, 0, direct, sources, 0.0f, 1.0f, all);
+        int surface = LightCell.index(7, 4, 8, DOWN);
+        float once = LightCell.red(first[surface]) - LightCell.red(direct[surface]);
+        float twice = LightCell.red(second[surface]) - LightCell.red(direct[surface]);
+        assertTrue(twice > once + 0.01f, "Le second rebond ajoute : " + once + " puis " + twice + ".");
+        assertEquals(once + (twice - once) * SectionBaker.FOLLOWING, LightCell.red(all[surface]) - LightCell.red(direct[surface]), 0.02f,
+                "Les suivants valent le second.");
+        int[] again = new int[LightCell.VALUES];
+        baker.bounce(this.blocks, 0, 0, 0, direct, sources, 0.0f, 1.0f, again);
+        assertEquals(second[surface], again[surface], "L'estimation ne vaut que pour le rebond qui la suit.");
     }
 
     @Test
@@ -411,6 +444,81 @@ class LightBakeSceneTest {
     }
 
     @Test
+    @DisplayName("La couleur des rebonds du profil colore ce que les surfaces se renvoient, et rien de la lumiere directe")
+    void bounceColor() {
+        set(this.room, 8, CEILING, 8, this.neon);
+        fill(1, this.room);
+        SectionBaker baker = new SectionBaker();
+        int[] direct = new int[LightCell.VALUES];
+        baker.direct(this.blocks, SETTINGS, 0, 0, 0, direct);
+        int[][] sources = new int[SectionBaker.neighbors()][];
+        sources[13] = direct;
+        int[] white = new int[LightCell.VALUES];
+        int[] amber = new int[LightCell.VALUES];
+        baker.bounce(this.blocks, 0, 0, 0, direct, sources, 0.0f, 1.0f, white);
+        baker.bounceColor(new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.5f, 1.0f, 0.5f, 1.0f, 1, 0.0f, 0.0f, 0.0f));
+        baker.bounce(this.blocks, 0, 0, 0, direct, sources, 0.0f, 1.0f, amber);
+        int surface = LightCell.index(7, 4, 8, DOWN);
+        float alone = LightCell.green(direct[surface]);
+        float added = LightCell.green(white[surface]) - alone;
+        assertTrue(added > 0.02f, "Les rebonds ajoutent : " + added + ".");
+        assertEquals(added * 1.5f, LightCell.red(amber[surface]) - LightCell.red(direct[surface]), 0.02f, "Plus de rouge.");
+        assertEquals(added, LightCell.green(amber[surface]) - alone, 0.02f, "Autant de vert.");
+        assertEquals(added * 0.5f, LightCell.blue(amber[surface]) - LightCell.blue(direct[surface]), 0.02f, "Moins de bleu.");
+    }
+
+    @Test
+    @DisplayName("Une zone cuit avec la couleur de rebonds de ses reglages")
+    void zoneBouncesInColor() {
+        set(this.room, 8, CEILING, 8, this.neon);
+        fill(LightZone.RADIUS + LightZone.COPY_MARGIN, this.room);
+        LightZone zone = new LightZone(this.blocks, new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+                0.25f, 1.0f, 1, 0.0f, 0.0f,
+                0.0f), 0, 2);
+        zone.anchor(0, 0, 0);
+        int ceiling = 0;
+        boolean working = true;
+        while (working) {
+            working = zone.step();
+            for (LightZone.Baked baked = zone.poll(); baked != null; baked = zone.poll()) {
+                if (baked.key() == ChunkSectionPos.asLong(0, 0, 0)) {
+                    ceiling = baked.values()[LightCell.index(7, 4, 8, DOWN)];
+                }
+            }
+        }
+        assertTrue(LightCell.green(ceiling) > AMBIENT + 0.02f, "Le plafond ne vit que de rebonds.");
+        assertTrue(LightCell.blue(ceiling) < LightCell.green(ceiling) * 0.9f, "Ils ont la couleur des reglages de la zone.");
+    }
+
+    @Test
+    @DisplayName("Sous la lumiere tracee, la zone compte aussi les rebonds qui suivent le second ; sans, ses deux rebonds seulement")
+    void zoneCountsTheFollowingWhenTraced() {
+        set(this.room, 8, CEILING, 8, this.neon);
+        fill(LightZone.RADIUS + LightZone.COPY_MARGIN, this.room);
+        float plain = LightCell.green(bakedCeiling(1.0f));
+        float traced = LightCell.green(bakedCeiling(SectionBaker.FOLLOWING));
+        assertTrue(plain > AMBIENT + 0.02f, "Le plafond ne vit que de rebonds : " + plain + ".");
+        assertTrue(traced > plain + 0.005f, "Les rebonds suivants l'eclairent davantage : " + traced + " contre " + plain + ".");
+    }
+
+    private int bakedCeiling(float following) {
+        LightZone zone = new LightZone(this.blocks, new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
+                1.0f, following, 1, 0.0f, 0.0f, 0.0f), 0, 2);
+        zone.anchor(0, 0, 0);
+        int ceiling = 0;
+        boolean working = true;
+        while (working) {
+            working = zone.step();
+            for (LightZone.Baked baked = zone.poll(); baked != null; baked = zone.poll()) {
+                if (baked.key() == ChunkSectionPos.asLong(0, 0, 0)) {
+                    ceiling = baked.values()[LightCell.index(7, 4, 8, DOWN)];
+                }
+            }
+        }
+        return ceiling;
+    }
+
+    @Test
     @DisplayName("Une section cuite dit quel changement elle connaissait : plus vieille qu'un bloc change, elle est perimee")
     void bakedStamp() {
         fill(LightZone.RADIUS + LightZone.COPY_MARGIN, this.room);
@@ -509,8 +617,11 @@ class LightBakeSceneTest {
     void settingsFromProfile() {
         LookProfile profile = LookProfile.fromJson(JsonParser.parseString("{ \"dimension\": \"m:d\", \"id\": 1,"
                 + " \"neons\": { \"block\": \"m:tube\", \"color\": [0.5, 1, 0.25], \"dead\": 1 },"
-                + " \"baked_light\": { \"emission\": 4, \"ambient\": [0.1, 0.2, 0.3], \"reach\": 9, \"size\": 2, \"occlusion\": 0.5 } }").getAsJsonObject());
-        LightBakeSettings settings = LightBakeSettings.of(profile, Identifier.of("m", "d"));
+                + " \"baked_light\": { \"emission\": 4, \"ambient\": [0.1, 0.2, 0.3], \"reach\": 9, \"size\": 2, \"occlusion\": 0.5,"
+                + " \"bounce_color\": [1.5, 1, 0.5] } }").getAsJsonObject());
+        LightBakeSettings settings = LightBakeSettings.of(profile, Identifier.of("m", "d"), false);
+        assertEquals(1.0f, settings.following(), "Sans lumiere tracee, la zone compte ses deux rebonds.");
+        assertEquals(SectionBaker.FOLLOWING, LightBakeSettings.of(profile, Identifier.of("m", "d"), true).following(), "Sous la lumiere tracee, les suivants.");
         assertEquals(2.0f, settings.red(), 1.0e-6f, "Couleur fois emission.");
         assertEquals(4.0f, settings.green(), 1.0e-6f, "Couleur fois emission.");
         assertEquals(1.0f, settings.blue(), 1.0e-6f, "Couleur fois emission.");
@@ -519,8 +630,13 @@ class LightBakeSceneTest {
         assertEquals(2.0f, settings.size(), 1.0e-6f, "Taille.");
         assertEquals(0.0f, settings.cone(), 1.0e-6f, "Tout le demi-espace devant la dalle.");
         assertEquals(0.5f, settings.occlusion(), 1.0e-6f, "Coins.");
+        assertEquals(1.5f, settings.bounceRed(), 1.0e-6f, "Couleur des rebonds.");
+        assertEquals(1.0f, settings.bounceGreen(), 1.0e-6f, "Couleur des rebonds.");
+        assertEquals(0.5f, settings.bounceBlue(), 1.0e-6f, "Couleur des rebonds.");
         assertFalse(settings.lit(1, 2, 3), "Tous morts.");
-        assertTrue(new LightBakeSettings(1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1, 0.0f, 0.0f, 0.0f).lit(1, 2, 3), "Aucun mort.");
-        assertFalse(new LightBakeSettings(1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1, 0.0f, 0.0f, 1.0f).lit(1, 2, 3), "Secteur en panne.");
+        assertTrue(new LightBakeSettings(1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1, 0.0f, 0.0f, 0.0f).lit(1, 2, 3),
+                "Aucun mort.");
+        assertFalse(new LightBakeSettings(1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1, 0.0f, 0.0f, 1.0f).lit(1, 2, 3),
+                "Secteur en panne.");
     }
 }

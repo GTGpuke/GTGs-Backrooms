@@ -22,7 +22,7 @@ public final class LightZone {
     public static final int RADIUS = 3;
     /** Sections de la fenetre a la verticale, a partir de sa base. */
     public static final int HEIGHT = 2;
-    /** Etats d'une section : rien, lumiere directe, un rebond, deux rebonds. */
+    /** Etats d'une section : rien, lumiere directe, un rebond, deux rebonds et l'estimation des suivants. */
     static final int FINAL_STAGE = 3;
     /** Sections copiees au-dela de la fenetre : les rayons et les rebonds les lisent. */
     public static final int COPY_MARGIN = 1;
@@ -102,6 +102,7 @@ public final class LightZone {
     public LightZone(LightBlocks blocks, LightBakeSettings settings, int bottomSection, int topSection) {
         this.blocks = blocks;
         this.settings = settings;
+        this.baker.bounceColor(settings);
         this.bottomSection = bottomSection;
         this.topSection = topSection;
     }
@@ -226,7 +227,7 @@ public final class LightZone {
     private void applyForgotten() {
         Long key = this.forgotten.poll();
         while (key != null) {
-            Section section = this.sections.get(key);
+            Section section = this.sections.get(key.longValue());
             if (section != null) {
                 section.published = false;
             }
@@ -326,6 +327,9 @@ public final class LightZone {
             section.indirect = new int[LightCell.VALUES];
             section.surfaces = this.baker.surfaces(section.direct, x, y, z);
             this.baker.keepIndirect(section.indirect, this.settings);
+            if (this.settings.following() > 1.0f) {
+                this.baker.keepFollowing(section.values, this.settings.following());
+            }
         }
         this.baker.bounce(this.blocks, x, y, z, section.direct, neighbors, last ? this.settings.occlusion() : 0.0f, this.settings.bounce(), out);
         section.values = out;

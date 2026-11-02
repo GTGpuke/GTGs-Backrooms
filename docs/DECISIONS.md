@@ -218,9 +218,44 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   Ultra (§5.4, sous tous les presets, le réglage ne vaut que pour les autres paliers) ; contraste des textures baissé (`traced.detail`,
   §2.3 : la matière reste en pixels, mais moins marquée) ; la lumière directe à l'image et les rebonds ont des gains séparés, ce qui n'est
   plus physique et donne le rendu voulu. La palette du profil change à tous les paliers : Low et Ultra gardent la même (§5.7).
-- La palette du Level 0 est une courbe de teinte par luminance (`grade.tones`, demande de l'auteur du 1er novembre 2026 : « c'est pas le
-  bon jaune »), relevée sur son image de référence : l'étalonnage par pente et puissance ne donnait pas à la fois les sombres ambrés et
-  les clairs citron. La teinte et la désaturation d'ensemble du profil sont à zéro. Toujours la même palette à tous les paliers (§5.7).
+- Le jaune du Level 0 vient de sa lumière, sans filtre (demandes de l'auteur des 1er et 2 novembre 2026 : « un filtre jaune partout », puis
+  « la lumière de couleur qui éclaire de la bonne couleur les blocs autour » et la teinte du mur de l'image de référence). Ses néons sont
+  blancs. La courbe de teinte par luminance, essayée avant, remplaçait 85 % de la couleur de chaque pixel, et a été retirée. Néons blancs
+  et rebonds seuls ne suffisaient pas : l'image avait la même teinte partout (49,6 du sombre au clair), alors que celle de référence va de
+  43 à 57. Deux réglages du profil donnent cet écart par le chemin de la lumière : la couleur des rebonds (`bounce_color`), et une limite de
+  la lumière d'une surface (`light_limit`), qui la fait blanchir sous une dalle. Réponse
+  de film `[0.95, 1.0, 1.08]`. Les teintes suivent l'image de référence, mais pas ses niveaux : calée sur eux, l'image était 24 % plus claire
+  que l'ancien look, et moins contrastée (« bien plus lumineux ») ; l'exposition de l'Ultra passe de 0,7 à 0,47, et ses reflets de 1,0 à 1,4 pour garder leur force. Le tout est un peu sous
+  l'ancien look, au même contraste, à la demande de l'auteur : une lumière blanche paraît plus forte qu'une lumière jaune de même niveau.
+  Pour le même motif (« le reste manque de jaune », 2 novembre 2026), le jaune du papier peint doit se voir sur le plafond et la moquette :
+  rebonds plus colorés (`[1.03, 1.0, 0.72]`), lumière directe de l'Ultra à 1,1 et rebonds à 1,1, et une limite qui ne se tasse qu'à partir
+  des trois quarts, sans quoi elle blanchit le sol. Le papier peint, qui tirait vers le vert, passe de 195,191,98 à 199,189,102. La moquette passe de 119,108,70 à 147,134,73 en moyenne, moins orangée et plus claire, et les plinthes,
+  neutres, viraient au mauve à côté du jaune sans filtre : elles passent à 233,221,160. Les quatre paliers ont les mêmes teintes par bande
+  (§5.7) ; High, Medium et Low gardent des sombres plus sombres, leurs rebonds étant ceux de la zone.
+- Un corps prend la lumière du décor (demande de l'auteur du 2 novembre 2026) : même limite, même exposition, et ce que la pièce lui renvoie, par
+  un rayon par fragment. La lumière blanche et fixe qu'il recevait ne suivait ni l'exposition ni les rebonds.
+- Les trois niveaux de lumière doivent donner la même valeur (demande de l'auteur du 2 novembre 2026 : « la différence du calcul de lumière se
+  voit encore trop »). Mesuré sur le même pixel : la zone valait 0,55 des tuiles sur ce qui ne vit que de rebonds, et la lightmap 3,7 fois dans
+  le sombre, presque blanche. La zone gardait les réglages du palier actif à sa création : passée en Ultra en jeu, elle restait aux rebonds de
+  High. Un changement de palier la recuit désormais, et elle vaut 0,86 à 0,95 des tuiles, sans gain ; la lightmap suit une courbe et une
+  couleur relevées sur les tuiles, en Ultra. Filmé ensuite image par image en marchant (« de loin on remarque le changement de lumière
+  quand on avance ») : une surface sans tuile était 12,5 niveaux sous sa valeur finale, et la zone ne comptait que deux rebonds quand les
+  tuiles estiment les suivants. Sous la lumière tracée, la zone en compte une part mesurée (1,55 du second), et une surface neuve garde
+  les rebonds de la zone au lieu d'un gain fixe : écarts de -4,3 et -0,2 niveau. Le vacillement de torche de vanilla, tiré à chaque tick
+  pour la lumière de bloc, entre dans la lightmap, donc dans la lumière lointaine des zones peu éclairées (la lumière forte y est
+  saturée) : un monde à courbe ne l'a plus. Son effet n'est pas mesuré : les sauts de 3 à 4 % par tick d'abord relevés dans le film de
+  marche venaient du mouvement de la caméra, et caméra fixe, la grande salle ne varie que de 0,03 % avant comme après.
+- Moquette sans motif répété (demande de l'auteur du 2 novembre 2026 : « le pattern se répète trop »). Quatre textures tirées au hasard par
+  bloc, sans rotation : l'épaisseur de la moquette (`gtgs_enterPile`) suppose la texture posée dans un sens fixe sur chaque face, et un
+  modèle tourné lui ferait lire une autre texture de l'atlas. La couleur moyenne ne change pas (147,1 ; 134,5 ; 73,1), ni le look.
+- Murs crème et lumière qui descend jusqu'au pied des murs (demande de l'auteur du 2 novembre 2026 : « la couleur des murs plus crème, un
+  jaune plus clair », « la lumière éclaire plus fort, jusqu'en bas des murs, comme une vraie lampe, sans que les lumières saturent entre
+  elles »). Mesuré contre l'image de référence : ses murs à mi-ombre sont aussi saturés que les nôtres, ce sont ses murs bien éclairés
+  (180 à 200) qui sont crème, alors que les nôtres plafonnaient vers 150. Le papier peint passe de 199,189,102 à 213,204,121 ; en Ultra,
+  l'exposition passe de 0,47 à 0,6, la lumière directe de 1,1 à 1,3, les rebonds de 1,1 à 0,95 (les sombres restent sombres) et les
+  reflets de 1,4 à 1,1 (même force). La limite empêche deux dalles de saturer. Moyenne de l'image de 99 à 114, contraste gardé (2,58 à
+  2,62) ; la référence est à 118 et 2,38. High et Low ne changent que par le papier peint (moyennes de 101 à 105 et de 103 à 107).
+  L'état d'avant est gardé à part pour y revenir.
 - La moquette a une épaisseur (demande de l'auteur du 1er novembre 2026) : sa hauteur est le bruit de sa texture, le regard y entre et
   s'arrête au premier pixel qui dépasse. `x_n.png` porte la hauteur en alpha, `x_s.png` ne porte plus que le lissage : une part renvoyée
   par matière n'avait pas d'effet visible, et la table n'a que quatre valeurs par pixel.
@@ -229,6 +264,10 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   des tuiles aurait changé l'image jusqu'à 24 blocs.
 - Écart à `QUALITE_ET_PRESETS` §5.5 : la lumière d'une surface a trois niveaux qui se fondent selon la distance (tuiles, zone, lightmap
   recalée), parce que le passage d'un niveau à l'autre faisait s'allumer les néons au loin.
+- La dalle de plafond a un rail métallique mat, très légèrement surélevé (demandes de l'auteur du 2 novembre 2026 : un rail qui reflétait la pièce,
+  essayé d'abord, ne lui convenait pas, « mat normalement »). Le relief passe par la matière, sans géométrie : un modèle à rails multiplierait
+  les faces de tous les plafonds du Level 0 pour moins de deux centimètres, sur des faces trop fines pour que la lumière s'y lise. Le rail
+  passe de deux pixels à un sur chaque bord, plus proche de l'image de référence, où il est fin et plus clair que la dalle.
 - La matière d'un bloc s'écrit dans ses textures (demande de l'auteur du 1er novembre 2026, `QUALITE_ET_PRESETS` §5.6) : la moquette
   est mate à tous les paliers, le reflet de sol humide n'existe plus, et seul le sombre du motif du papier peint renvoie un peu les
   dalles, son fond restant mat et rugueux. « Le dessous » du motif a été compris comme le papier qu'il recouvre. Écarts : le reflet

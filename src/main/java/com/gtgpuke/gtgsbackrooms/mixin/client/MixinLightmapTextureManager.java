@@ -1,5 +1,6 @@
 package com.gtgpuke.gtgsbackrooms.mixin.client;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -34,5 +35,12 @@ public abstract class MixinLightmapTextureManager {
         }
         // La baisse du moment : un cri lie a l'image, dans cette dimension seulement (plafond de clignotement compris).
         return DimensionLightmap.apply(LookProfiles.of(world.getRegistryKey()).lightmap(), color, CueTracker.lightmapFlicker(world.getRegistryKey().getValue()));
+    }
+
+    // Le vacillement de torche de vanilla, tire a chaque tick : un monde a courbe n'en a pas, sans quoi ce que la lightmap eclaire au loin tremble.
+    @ModifyExpressionValue(method = "update", at = @At(value = "FIELD", target = "Lnet/minecraft/client/render/LightmapTextureManager;flickerIntensity:F"))
+    private float backrooms$steadyBlockLight(float flicker) {
+        ClientWorld world = this.client.world;
+        return world == null ? flicker : DimensionLightmap.blockFlicker(LookProfiles.of(world.getRegistryKey()).lightmap(), flicker);
     }
 }

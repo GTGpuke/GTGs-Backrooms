@@ -30,6 +30,13 @@ final class SectionBaker {
     private static final int EMITTING_FACE = 3;
     /** Ecart a la surface d'ou partent les rayons, pour ne pas partir dans le bloc. */
     private static final float SURFACE_OFFSET = 0.02f;
+    /**
+     * Ce que valent tous les rebonds a partir du second, en parts du second, sous la lumiere tracee. Les rebonds traces
+     * ({@code bounce.fsh}) en comptent deux ; la zone, aux rayons plus courts et moins nombreux, un peu moins : la part qui lui fait
+     * valoir les tuiles, mesuree dans une grande salle. Sans elle, la zone, qui ne compte que deux rebonds, est plus sombre que les
+     * tuiles, et la lumiere change quand une surface prend sa tuile.
+     */
+    static final float FOLLOWING = 1.55f;
     /** Moitie de l'ecart entre les points vises sur une dalle d'un bloc. */
     private static final float SAMPLE_SPREAD = 0.25f;
     private static final int SECTION = 16;
@@ -49,12 +56,17 @@ final class SectionBaker {
     private int[] lightBlocks = new int[INITIAL_LIGHTS * 3];
     private int lights;
     private int @Nullable [] indirect;
+    private int @Nullable [] firstBounce;
+    private float followingShare;
     private float ambientRed;
     private float ambientGreen;
     private float ambientBlue;
     private float bouncedRed;
     private float bouncedGreen;
     private float bouncedBlue;
+    private float colorRed = 1.0f;
+    private float colorGreen = 1.0f;
+    private float colorBlue = 1.0f;
     private float seenShare;
 
     /** Les rayons du rebond de chaque face : repartis selon le cosinus de la normale, leur moyenne suffit. */
@@ -295,15 +307,40 @@ final class SectionBaker {
             int cell = i & LightCell.SECTION_CELLS - 1;
             gather(baseX + (cell & MASK), baseY + (cell >> 4 & MASK), baseZ + (cell >> 8), face, albedos, sources, occlusion, sectionX, sectionY, sectionZ);
             float seen = this.seenShare;
-            float red = this.bouncedRed * share;
-            float green = this.bouncedGreen * share;
-            float blue = this.bouncedBlue * share;
+            float red = this.bouncedRed * share * this.colorRed;
+            float green = this.bouncedGreen * share * this.colorGreen;
+            float blue = this.bouncedBlue * share * this.colorBlue;
+            if (this.firstBounce != null) {
+                int first = this.firstBounce[i];
+                red = following(red, LightCell.red(first) - LightCell.red(value));
+                green = following(green, LightCell.green(first) - LightCell.green(value));
+                blue = following(blue, LightCell.blue(first) - LightCell.blue(value));
+            }
             out[i] = LightCell.pack((LightCell.red(value) + red) * seen, (LightCell.green(value) + green) * seen, (LightCell.blue(value) + blue) * seen);
             if (this.indirect != null) {
                 this.indirect[i] = LightCell.pack((this.ambientRed + red) * seen, (this.ambientGreen + green) * seen, (this.ambientBlue + blue) * seen);
             }
         }
         this.indirect = null;
+        this.firstBounce = null;
+    }
+
+    /** Ce que rapporte un rebond qui en compte deux, quand le premier seul rapportait {@code first} : les suivants a part du second. */
+    private float following(float bounced, float first) {
+        float kept = Math.max(first, 0.0f);
+        return kept + Math.max(bounced - kept, 0.0f) * this.followingShare;
+    }
+
+    /**
+     * Le prochain rebond est le dernier : il estime aussi tous ceux qui le suivent, d'apres l'eclairement du tour precedent, qui
+     * n'avait qu'un rebond.
+     *
+     * @param previous eclairement de la section au tour precedent, lumiere directe et premier rebond
+     * @param following ce que valent tous les rebonds a partir du second, en parts du second
+     */
+    void keepFollowing(int[] previous, float following) {
+        this.firstBounce = previous;
+        this.followingShare = following;
     }
 
     /**
@@ -318,6 +355,13 @@ final class SectionBaker {
         this.ambientRed = settings.ambientRed();
         this.ambientGreen = settings.ambientGreen();
         this.ambientBlue = settings.ambientBlue();
+    }
+
+    /** Ce que les rebonds suivants ajoutent a la couleur des blocs. */
+    void bounceColor(LightBakeSettings settings) {
+        this.colorRed = settings.bounceRed();
+        this.colorGreen = settings.bounceGreen();
+        this.colorBlue = settings.bounceBlue();
     }
 
     /** Pose la fenetre de blocs d'une section, sans lumiere directe. */
