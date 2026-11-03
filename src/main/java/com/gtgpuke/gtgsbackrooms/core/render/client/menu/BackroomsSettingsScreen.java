@@ -15,9 +15,8 @@ import com.gtgpuke.gtgsbackrooms.core.render.quality.VisualPreset;
 public final class BackroomsSettingsScreen extends SettingsPanel {
 
     private static final LookQuality[] TIERS = {LookQuality.LOW, LookQuality.MEDIUM, LookQuality.HIGH, LookQuality.ULTRA};
-    private static final int[] PIXEL_SIZES = {16, 32, 0};
-    private static final VisualPreset[] FIRST_PRESETS = {VisualPreset.FAITHFUL, VisualPreset.PIXEL, VisualPreset.REALISTIC};
-    private static final VisualPreset[] SECOND_PRESETS = {VisualPreset.FOUND_FOOTAGE, VisualPreset.CINEMATIC, VisualPreset.COMFORT};
+    private static final int[] PIXEL_SIZES = {32, 0};
+    private static final VisualPreset[] PRESETS = {VisualPreset.FAITHFUL, VisualPreset.FOUND_FOOTAGE, VisualPreset.CINEMATIC};
 
     /** Ecran de reglages. */
     public BackroomsSettingsScreen(Screen parent) {
@@ -31,8 +30,7 @@ public final class BackroomsSettingsScreen extends SettingsPanel {
         y = section(y, Text.translatable(KEY + "quality"));
         y = qualityRow(y, settings);
         y = section(y, Text.translatable(KEY + "preset"));
-        y = presetRow(y, settings, FIRST_PRESETS);
-        y = presetRow(y, settings, SECOND_PRESETS);
+        y = presetRow(y, settings, PRESETS);
         y = section(y, Text.translatable(KEY + "pixels"));
         y = pixelRow(y, settings);
         y = section(y, Text.translatable(KEY + "comfort"));

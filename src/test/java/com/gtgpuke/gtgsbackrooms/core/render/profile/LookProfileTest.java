@@ -80,6 +80,9 @@ class LookProfileTest {
         assertEquals(1.5f, applied.bounce(), "Rebond.");
         assertEquals(0.125f, applied.toe(), "Pied de courbe.");
         assertEquals(0.625f, applied.shoulder(), "Epaule.");
+        assertEquals(0.25f, applied.detail(), "Textures du palier.");
+        assertEquals(0.5f, applied.exposure(), "Exposition du palier.");
+        assertEquals(0.75f, applied.direct(), "Lumiere directe du palier.");
         assertEquals(traced.traced(), applied.traced(), "La section reste.");
         LookProfile.BakedLight empty = parse(head + "{ \"shadow_size\": 0.5, \"traced\": {} } }").bakedLight();
         assertEquals(0.5f, empty.traced().shadowSize(), "Une section vide ne change rien.");
@@ -165,13 +168,14 @@ class LookProfileTest {
         LookProfile.BakedLight full = parse("{ \"dimension\": \"m:d\", \"id\": 1, " + neons + ", \"baked_light\": { \"emission\": 3,"
                 + " \"ambient\": [0.5, 0.25, 0.125], \"reach\": 10, \"size\": 2, \"angle\": 70, \"occlusion\": 0.75, \"relief\": 1.5,"
                 + " \"haze\": 0.25, \"sheen\": 1.25, \"shoulder\": 0.5, \"shadow_size\": 0.5, \"toe\": 0.125, \"pixel_light\": 0.25, \"dark_pixels\": 0.75,"
-                + " \"bounce\": 0.5, \"bounce_color\": [1.5, 1.0, 0.5], \"light_limit\": 1.25 } }").bakedLight();
+                + " \"bounce\": 0.5, \"bounce_color\": [1.5, 1.0, 0.5], \"light_limit\": 1.25, \"detail\": 0.5, \"exposure\": 0.75, \"direct\": 1.5 } }")
+                .bakedLight();
         assertEquals(new LookProfile.BakedLight(3.0f, new Vec3d(0.5, 0.25, 0.125), 10.0f, 2.0f, 70.0f, 0.5f, 0.75f, 1.5f, 0.25f, 1.25f, 0.5f, 0.125f, 0.25f, 0.75f, 0.5f,
-                new Vec3d(1.5, 1.0, 0.5), 1.25f, new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)), full,
-                "Tout lu.");
-        assertEquals(new LookProfile.BakedLight(3.0f, new Vec3d(0.5, 0.25, 0.125), 10.0f, 2.0f, 70.0f, 0.5f, 0.75f, 1.5f, 0.25f, 1.25f, 0.5f, 0.125f, 0.5f, 1.5f, 0.5f,
-                new Vec3d(1.5, 1.0, 0.5), 1.25f, new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 1.0f, 1.0f, 1.0f, 0.5f)),
-                full.pixels(0.5f, 1.5f), "Les pixels se reglent seuls.");
+                new Vec3d(1.5, 1.0, 0.5), 1.25f, 0.5f, 0.75f, 1.5f, new LookProfile.Traced(0.5f, 1.5f, 1.25f, 0.5f, 0.125f, 0.5f, 0.75f, 1.5f, 0.5f)), full,
+                "Tout lu ; sans section tracee, la lumiere tracee garde textures, exposition et direct des autres paliers.");
+        assertEquals(1.0f, minimal.detail(), "Textures entieres par defaut.");
+        assertEquals(1.0f, minimal.exposure(), "Exposition neutre par defaut.");
+        assertEquals(1.0f, minimal.direct(), "Lumiere directe entiere par defaut.");
         assertEquals(1.0f, minimal.shadowSize(), "Rayons des ombres par defaut.");
         assertEquals(0.0f, minimal.toe(), "Pas de pied de courbe par defaut.");
         assertEquals(0.0f, minimal.pixelLight(), "Degrade lisse par defaut.");
@@ -195,6 +199,9 @@ class LookProfileTest {
         assertRefused(prefix + "\"bounce\": 3 } }", "baked_light.bounce hors de");
         assertRefused(prefix + "\"bounce_color\": [1, 3, 1] } }", "baked_light.bounce_color hors de");
         assertRefused(prefix + "\"light_limit\": 5 } }", "baked_light.light_limit hors de");
+        assertRefused(prefix + "\"detail\": 2 } }", "baked_light.detail hors de");
+        assertRefused(prefix + "\"exposure\": 0 } }", "baked_light.exposure hors de");
+        assertRefused(prefix + "\"direct\": 5 } }", "baked_light.direct hors de");
         assertEquals(0.0f, minimal.sheen(), "Pas de reflet par defaut.");
         assertEquals(0.0f, minimal.relief(), "Pas de relief par defaut.");
         assertEquals(0.0f, minimal.haze(), "Pas de brume par defaut.");

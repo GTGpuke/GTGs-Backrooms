@@ -15,7 +15,7 @@ class TexelGridTest {
     @DisplayName("L'option donne 16, 32 ou 0, et le pas par defaut pour toute autre valeur")
     void steps() {
         assertEquals(0, TexelGrid.steps(0), "Lumiere lisse.");
-        assertEquals(16, TexelGrid.steps(16), "Pixels de 16.");
+        assertEquals(32, TexelGrid.steps(16), "L'ancienne taille de 16 vaut 32 : oui ou non.");
         assertEquals(32, TexelGrid.steps(32), "Pixels de 32.");
         assertEquals(TexelGrid.DEFAULT_STEPS, TexelGrid.steps(8), "Valeur inconnue.");
         assertEquals(TexelGrid.DEFAULT_STEPS, TexelGrid.steps(-1), "Valeur negative.");

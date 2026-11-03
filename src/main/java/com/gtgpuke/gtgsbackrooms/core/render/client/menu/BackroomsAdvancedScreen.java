@@ -7,9 +7,7 @@ import net.minecraft.screen.ScreenTexts;
 import net.minecraft.text.Text;
 
 import com.gtgpuke.gtgsbackrooms.core.render.client.GpuTimer;
-import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookOption;
-import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 
 /**
@@ -41,10 +39,6 @@ final class BackroomsAdvancedScreen extends SettingsPanel {
             y = row(y, new Text[] {optionLabel(options[0]), optionLabel(options[1])}, new boolean[] {settings.has(options[0]), settings.has(options[1])},
                     new Runnable[] {toggle(options[0]), toggle(options[1])});
         }
-        y = section(y + GAP, Text.translatable(KEY + "disabled.label"));
-        boolean off = LookResources.quality() == LookQuality.OFF;
-        y = row(y, new Text[] {tierLabel(LookQuality.OFF)}, new boolean[] {off},
-                new Runnable[] {() -> apply(settings.withQuality(off ? LookQuality.AUTO : LookQuality.OFF.key()))});
         y = section(y + GAP, Text.translatable(KEY + "cost"));
         int lines = y;
         addDrawable((context, mouseX, mouseY, delta) -> {

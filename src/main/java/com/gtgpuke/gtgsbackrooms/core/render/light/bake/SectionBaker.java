@@ -31,12 +31,11 @@ final class SectionBaker {
     /** Ecart a la surface d'ou partent les rayons, pour ne pas partir dans le bloc. */
     private static final float SURFACE_OFFSET = 0.02f;
     /**
-     * Ce que valent tous les rebonds a partir du second, en parts du second, sous la lumiere tracee. Les rebonds traces
-     * ({@code bounce.fsh}) en comptent deux ; la zone, aux rayons plus courts et moins nombreux, un peu moins : la part qui lui fait
-     * valoir les tuiles, mesuree dans une grande salle. Sans elle, la zone, qui ne compte que deux rebonds, est plus sombre que les
-     * tuiles, et la lumiere change quand une surface prend sa tuile.
+     * Ce que valent tous les rebonds a partir du second, en parts du second : chacun garde environ la moitie du precedent, comme pour
+     * les rebonds traces ({@code bounce.fsh}). Sans elle, la zone, qui ne compte que deux rebonds, est plus sombre que les tuiles, et la
+     * lumiere change quand une surface prend sa tuile ; sans lumiere tracee, les paliers ont ainsi les memes rebonds que l'Ultra.
      */
-    static final float FOLLOWING = 1.55f;
+    static final float FOLLOWING = 2.0f;
     /** Moitie de l'ecart entre les points vises sur une dalle d'un bloc. */
     private static final float SAMPLE_SPREAD = 0.25f;
     private static final int SECTION = 16;

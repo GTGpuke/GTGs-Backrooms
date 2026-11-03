@@ -9,6 +9,7 @@ import net.minecraft.client.render.FogShape;
 import net.minecraft.util.math.Vec3d;
 
 import com.gtgpuke.gtgsbackrooms.core.render.light.NeonSchedule;
+import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightZone;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
@@ -58,16 +59,18 @@ public final class LookUniformUploader {
     public static final String NEON_TINT = "gtgs_NeonTint";
     /** 1 si cette vue trace : rebonds de ses surfaces, et ses reflets voient leur dalle en entier. */
     public static final String TRACED = "gtgs_Traced";
-    /** Part du contraste des textures gardee (x), exposition des surfaces (y) et part du direct (z), sous la lumiere tracee. */
-    public static final String TRACED_LOOK = "gtgs_TracedLook";
+    /** Part du contraste des textures gardee (x), exposition des surfaces (y) et part du direct (z), au palier du joueur. */
+    public static final String LIGHT_LOOK = "gtgs_LightLook";
     /** 1 si les matieres ont leur epaisseur. */
     public static final String PILE = "gtgs_Pile";
+    /** La piece moyenne de la dimension, au-dela du loin : par genre de surface, l'eclairement complet puis sa part indirecte. */
+    public static final String FAR_ROOM = "gtgs_FarRoom";
     /** Atlas des blocs, relu quand le regard entre dans l'epaisseur d'une matiere. */
     private static final String BLOCK_ATLAS = "gtgs_BlockAtlas";
     /** Emplacements a resoudre par programme, dans cet ordre. */
-    public static final int LOCATIONS = 20;
+    public static final int LOCATIONS = 21;
     private static final String[] NAMES = {ID, PARAMS, NEON_COUNT, CAMERA_BLOCK, CAMERA_FRACT, NEON_CLOCK, NEON_FACE, NEON_SHARES, BAKED_LIGHT, LIGHT_BASE,
-        FOG_RANGE, FOG_TINT, SURFACE_LIGHT, AIR, AMBIENT, TONE, NEON_TINT, TRACED, TRACED_LOOK, PILE};
+        FOG_RANGE, FOG_TINT, SURFACE_LIGHT, AIR, AMBIENT, TONE, NEON_TINT, TRACED, LIGHT_LOOK, PILE, FAR_ROOM};
     private static final int AT_ID = 0;
     private static final int AT_PARAMS = 1;
     private static final int AT_NEON_COUNT = 2;
@@ -86,8 +89,11 @@ public final class LookUniformUploader {
     private static final int AT_TONE = 15;
     private static final int AT_NEON_TINT = 16;
     private static final int AT_TRACED = 17;
-    private static final int AT_TRACED_LOOK = 18;
+    private static final int AT_LIGHT_LOOK = 18;
     private static final int AT_PILE = 19;
+    private static final int AT_FAR_ROOM = 20;
+    /** Piece moyenne avant toute mesure : le shader garde alors le fond. */
+    private static final float[] NO_ROOM = new float[LightZone.ROOM_VALUES];
 
     private LookUniformUploader() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -115,6 +121,10 @@ public final class LookUniformUploader {
         int zone = GlUniform.getUniformLocation(program, LightVolume.SAMPLER);
         if (zone >= 0) {
             GL20.glUniform1i(zone, LightVolume.UNIT);
+        }
+        int far = GlUniform.getUniformLocation(program, FarVolume.SAMPLER);
+        if (far >= 0) {
+            GL20.glUniform1i(far, FarVolume.UNIT);
         }
         int atlas = GlUniform.getUniformLocation(program, LightSurfaces.SAMPLER_ATLAS);
         if (atlas >= 0) {
@@ -197,9 +207,13 @@ public final class LookUniformUploader {
         if (locations[AT_PILE] >= 0) {
             GL20.glUniform1f(locations[AT_PILE], baked && LightSurfaces.active() && look.bakedLight().relief() > 0.0f ? 1.0f : 0.0f);
         }
-        if (locations[AT_TRACED_LOOK] >= 0) {
-            LookProfile.Traced shaped = look.bakedLight().traced();
-            GL20.glUniform3f(locations[AT_TRACED_LOOK], shaped.detail(), shaped.exposure(), shaped.direct());
+        if (locations[AT_FAR_ROOM] >= 0) {
+            float[] room = FarVolume.room();
+            GL20.glUniform3fv(locations[AT_FAR_ROOM], room == null ? NO_ROOM : room);
+        }
+        if (locations[AT_LIGHT_LOOK] >= 0) {
+            LookProfile.BakedLight shaped = look.bakedLight();
+            GL20.glUniform3f(locations[AT_LIGHT_LOOK], shaped.detail(), shaped.exposure(), shaped.direct());
         }
         if (locations[AT_FOG_RANGE] >= 0) {
             GL20.glUniform4f(locations[AT_FOG_RANGE], RenderSystem.getShaderFogStart(), RenderSystem.getShaderFogEnd(),

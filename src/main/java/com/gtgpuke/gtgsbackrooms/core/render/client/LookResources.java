@@ -33,6 +33,7 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
+import com.gtgpuke.gtgsbackrooms.core.render.quality.VisualPreset;
 
 /**
  * Ressources du moteur de shaders : les profils de look ({@code look_profiles/*.json}), les patchs de shaders
@@ -49,6 +50,11 @@ public final class LookResources {
     private static final String FRAMEBUFFERS = "framebuffers";
     private static final String JSON = ".json";
     private static final Identifier LISTENER_ID = Identifier.of(ModConstants.MOD_ID, "look");
+    /** Le monde du joueur au tick d'avant : hors partie, hors des Backrooms, ou dans une dimension a look. */
+    private static final int NO_WORLD = 0;
+    private static final int OUTSIDE = 1;
+    private static final int INSIDE = 2;
+    private static int lastWorld = NO_WORLD;
     private static @Nullable ResourceFactory loadedFrom;
     private static ShaderPatchRegistry patches = ShaderPatchRegistry.EMPTY;
     private static @Nullable LookQuality quality;
@@ -122,6 +128,21 @@ public final class LookResources {
     /** {@code true} si le cache de surfaces tourne. */
     public static boolean surfaceLight() {
         return LookSettings.current().surfaceLight(quality());
+    }
+
+    /**
+     * Chaque tick du client : en quittant une dimension a look pour une dimension qui n'en a pas, par un portail, une commande ou une
+     * reapparition, le style revient a Fidele (demande de l'auteur), et s'enregistre ; le palier et le confort restent. Une partie
+     * rejointe hors des Backrooms n'est pas une sortie.
+     *
+     * @param client client du jeu
+     */
+    public static void onClientTick(MinecraftClient client) {
+        int now = client.world == null ? NO_WORLD : LookProfiles.of(client.world.getRegistryKey()).vanilla() ? OUTSIDE : INSIDE;
+        if (lastWorld == INSIDE && now == OUTSIDE && LookSettings.current().preset() != VisualPreset.FAITHFUL) {
+            applySettings(LookSettings.current().withPreset(VisualPreset.FAITHFUL), client);
+        }
+        lastWorld = now;
     }
 
     /**

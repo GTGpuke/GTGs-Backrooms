@@ -96,6 +96,7 @@ public final class LightVolume {
         dimension = world;
         anchorX = sectionX;
         anchorZ = sectionZ;
+        FarVolume.target(next, sectionX, baseSection, sectionZ);
     }
 
     /** Vide toute la texture, d'un seul envoi : cela n'arrive qu'en changeant de monde ou de hauteur. */
@@ -140,6 +141,8 @@ public final class LightVolume {
             PixelUnpack.end();
         }
         GlStateManager._activeTexture(previousUnit);
+        FarVolume.frame();
+        LightSurfaces.bindSprites();
         LightSurfaces.frame(zone, LookProfiles.of(dimension), anchorX, base, anchorZ, cameraY);
     }
 

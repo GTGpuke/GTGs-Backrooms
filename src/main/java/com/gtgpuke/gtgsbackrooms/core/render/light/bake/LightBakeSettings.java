@@ -24,8 +24,7 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
  * @param bounceRed ce que les surfaces ajoutent a la couleur de leur bloc dans ce qu'elles renvoient, a chaque rebond
  * @param bounceGreen pareil
  * @param bounceBlue pareil
- * @param following ce que valent tous les rebonds a partir du second, en parts du second : 1 sans lumiere tracee, ou les tuiles
- *     prennent les rebonds de la zone ; plus sous la lumiere tracee, pour valoir ses tuiles
+ * @param following ce que valent tous les rebonds a partir du second, en parts du second : 1 pour deux rebonds exacts
  * @param seed graine du calendrier des neons de la dimension
  * @param flickering part des neons qui vacillent
  * @param dead part des neons morts
@@ -34,20 +33,14 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 public record LightBakeSettings(float red, float green, float blue, float ambientRed, float ambientGreen, float ambientBlue, float reach, float size, float cone, float shadowSize,
         float occlusion, float bounce, float bounceRed, float bounceGreen, float bounceBlue, float following, int seed, float flickering, float dead, float blackout) {
 
-    /**
-     * Les reglages d'un profil a lumiere cuite.
-     *
-     * @param profile profil de la dimension, au palier du joueur
-     * @param dimension dimension
-     * @param traced {@code true} si les rebonds des tuiles se tracent
-     */
-    public static LightBakeSettings of(LookProfile profile, Identifier dimension, boolean traced) {
+    /** Les reglages d'un profil a lumiere cuite, au palier du joueur : la zone compte aussi les rebonds qui suivent le second. */
+    public static LightBakeSettings of(LookProfile profile, Identifier dimension) {
         LookProfile.Neons neons = profile.neons();
         LookProfile.BakedLight baked = profile.bakedLight();
         return new LightBakeSettings(neons.red() * baked.emission(), neons.green() * baked.emission(), neons.blue() * baked.emission(),
                 (float) baked.ambient().x, (float) baked.ambient().y, (float) baked.ambient().z, baked.reach(), baked.size(),
                 (float) Math.cos(Math.toRadians(baked.angle())), baked.shadowSize(), baked.occlusion(), baked.bounce(),
-                (float) baked.bounceColor().x, (float) baked.bounceColor().y, (float) baked.bounceColor().z, traced ? SectionBaker.FOLLOWING : 1.0f,
+                (float) baked.bounceColor().x, (float) baked.bounceColor().y, (float) baked.bounceColor().z, SectionBaker.FOLLOWING,
                 NeonSchedule.seed(dimension), neons.flickering(),
                 neons.dead(), neons.blackout());
     }

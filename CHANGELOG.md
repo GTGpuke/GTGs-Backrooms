@@ -23,6 +23,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 - **Lumière qui change en approchant** : en Ultra, une surface encore sans tuile était 10 % plus sombre que sa valeur finale, et une
   surface neuve un peu trop claire jusqu'à la fin du balayage des rebonds ; elles s'accordent maintenant à quelques niveaux près.
 - Au-delà de 48 blocs, la lumière des zones peu éclairées suivait le vacillement de torche que vanilla tire à chaque tick.
+- **Bandes claires au plafond** en Low, Medium et High dans les grandes pièces : la lumière de la zone comptait des rebonds en trop le long
+  de chaque frontière de sections.
+- **Murs bruns au loin**, à tous les paliers et surtout en Low : au-delà de 48 blocs, la lumière venait de la lightmap de vanilla, un tiers
+  plus sombre que de près sur les murs et d'une couleur brune. Elle est maintenant calculée jusqu'à 128 blocs comme de près, rebonds et
+  coins sombres compris, en cellules de deux blocs : un mur lointain garde la couleur et le niveau qu'il a de près, à 1 à 3 % près pour la
+  moitié des surfaces. Au-delà, elle reprend celle d'une pièce bien éclairée de la dimension, mesurée en jeu : rien n'est propre au Level 0,
+  une autre dimension aura ses propres valeurs.
 
 ### Added
 - **Matière des blocs** : à partir de High, ce qui brille et ce qui accroche la lumière s'écrit dans les textures du bloc, au pixel
@@ -32,9 +39,17 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 - **Plafond du Level 0** : la dalle a un fin rail métallique mat, plus clair qu'elle et très légèrement surélevé, avec une arête et une ombre
   de contact d'un pixel, visible à tous les paliers.
 - **Lumière sans raccord** : dans une grande salle, plus d'anneau sombre autour du joueur, et ce qui est sombre de près ne paraît plus clair et
-  gris de loin : les trois niveaux de lumière donnent la même valeur et la même couleur. Changer de palier en jeu recuit la lumière de la zone,
+  gris de loin : les niveaux de lumière donnent la même valeur et la même couleur. Changer de palier en jeu recuit la lumière de la zone,
   qui gardait sinon les rebonds de l'ancien palier.
 - **Corps** : le joueur, les entités et la main prennent la lumière du décor, sa couleur et son exposition : près d'un mur, ils prennent son jaune.
+- **Menu** : trois styles, Fidèle, VHS et Cinématique ; les ombres pixelisées valent oui (32) ou non ; la partie avancée n'a plus de
+  bouton qui coupe tout. En quittant les Backrooms, le style revient à Fidèle ; la qualité et le confort restent.
+- **Style VHS** : refait comme une cassette de caméscope relue au magnétoscope : cadre 4:3 droit entre deux bandes noires, objectif qui
+  courbe les bords de l'image, image molle et accentuée, couleur qui bave et arrive en retard, traînée des lumières, 240 lignes
+  entrelacées, bas de l'image déchiré, bruit le long des lignes et grain en couleur dans les sombres, fins traits blancs, bande de suivi
+  de temps en temps, très léger tremblé à l'épaule ; les bords du cadre restent droits. Plus de gris : ni désaturation ni noirs relevés, la couleur reste celle du Level 0.
+- **Paliers alignés sur l'Ultra** : Low, Medium et High ont maintenant la palette, les niveaux, le contraste et les textures calmes de
+  l'Ultra ; seul le réalisme de la lumière change. L'Ultra ne change pas.
 - **Moquette** : un grain de courtes mèches de fil, en quatre textures tirées au hasard par bloc ; le motif qui se répétait en grille d'un
   bloc à l'autre a disparu, sans changer la couleur du sol.
 - **Murs crème** : le papier peint est plus clair, et en Ultra la lumière des dalles éclaire les murs jusqu'à leur pied ; un mur bien

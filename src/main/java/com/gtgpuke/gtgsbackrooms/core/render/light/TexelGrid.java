@@ -10,7 +10,6 @@ public final class TexelGrid {
 
     /** Pas par bloc par defaut, celui des textures du mod (32 x 32). */
     public static final int DEFAULT_STEPS = 32;
-    private static final int SMALL_STEPS = 16;
 
     private TexelGrid() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -19,11 +18,11 @@ public final class TexelGrid {
     /**
      * Pas de la grille demandes par l'option de la taille des pixels d'ombre.
      *
-     * @param option valeur de l'option : 16, 32, ou 0 pour la position exacte
-     * @return 16, 32 ou 0 ; toute autre valeur donne le pas par defaut
+     * @param option valeur de l'option : 0 pour la position exacte, sinon les pixels d'ombre
+     * @return 0, ou le pas par defaut pour toute autre valeur (une ancienne taille de 16 comprise)
      */
     public static int steps(int option) {
-        return option == 0 || option == SMALL_STEPS || option == DEFAULT_STEPS ? option : DEFAULT_STEPS;
+        return option == 0 ? 0 : DEFAULT_STEPS;
     }
 
     /**

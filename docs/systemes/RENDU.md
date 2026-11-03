@@ -14,7 +14,7 @@ Dans le Level 0, le terrain n'a plus l'éclairage plat de vanilla. Chaque dalle 
 du bas : le sol sous elle, le bas et le milieu des murs, et le plafond ne reçoit que ce qui rebondit. Tous les néons éclairent :
 le noir n'existe que là où la lumière n'arrive pas. Les ombres, leurs pénombres et le noir des coins se dessinent au pixel de
 texture, et le relief des textures accroche la lumière. La lumière prend la couleur des murs en rebondissant. Les dalles ont un
-halo. En High et en Ultra, chaque bloc a sa matière, écrite dans ses textures : la moquette est mate, le fond du papier peint mat
+halo. Les textures sont calmées, leur contraste ramené vers la couleur de leur bloc. En High et en Ultra, chaque bloc a sa matière, écrite dans ses textures : la moquette est mate, le fond du papier peint mat
 et rugueux, et seul le sombre de son motif renvoie un peu les dalles. Les entités et la main reçoivent la même lumière que le décor, murs compris. En High et
 en Ultra, le joueur et les créatures portent une ombre sur le terrain. En Ultra, la lumière se trace par rayons et l'image change
 de nature : presque toute la lumière est indirecte, très douce, sans grille de pixels, comme une photo d'un Minecraft aux textures
@@ -63,7 +63,7 @@ la même dimension ou le même identifiant, le second est ignoré.
 | `tint` | Teinte et sa force, `[r, g, b, force]` | Couleur de 0 à 4, force de 0 à 1 |
 | `desaturation`, `grain`, `flicker` | Désaturation, grain, vacillement de la lumière de l'écran | 0 à 1 |
 | `grade` | Étalonnage : `slope`, `offset`, `power` (`[r, g, b]` chacun), `saturation` | Pente de 0 à 4, décalage de -1 à 1, puissance de 0,1 à 4, saturation de 0 à 2 |
-| `baked_light` | Lumière cuite : `emission`, `ambient`, `reach`, `size`, `angle`, `shadow_size`, `occlusion`, `relief`, `haze`, `sheen`, `shoulder`, `toe`, `pixel_light`, `dark_pixels`, `bounce`, `bounce_color`, `light_limit`, et `traced` pour la [lumière tracée](#lumière-tracée) ; demande `neons` | Émission de 0,1 à 64, fond de 0 à 1, portée de 1 à 15, taille de 0,5 à 8, angle de 10 à 90 degrés, occlusion de 0 à 1, relief de 0 à 4, halo de 0 à 1, reflet de 0 à 2, épaule de 0,1 à 1, couleur des rebonds de 0 à 2, limite de 0 à 4 |
+| `baked_light` | Lumière cuite : `emission`, `ambient`, `reach`, `size`, `angle`, `shadow_size`, `occlusion`, `relief`, `haze`, `sheen`, `shoulder`, `toe`, `pixel_light`, `dark_pixels`, `detail`, `exposure`, `direct`, `bounce`, `bounce_color`, `light_limit`, et `traced` pour la [lumière tracée](#lumière-tracée) ; demande `neons` | Émission de 0,1 à 64, fond de 0 à 1, portée de 1 à 15, taille de 0,5 à 8, angle de 10 à 90 degrés, occlusion de 0 à 1, relief de 0 à 4, halo de 0 à 1, reflet de 0 à 2, épaule de 0,1 à 1, couleur des rebonds de 0 à 2, limite de 0 à 4 |
 | `lightmap` | `floor`, `warmth`, `max_brightness` ; un monde à courbe n'a pas le vacillement de torche que vanilla tire à chaque tick pour la lumière de bloc (`DimensionLightmap.blockFlicker`), qui ferait trembler, à chaque tick, ce que la lightmap éclaire faiblement au loin | 0 à 1, plancher sous le plafond |
 | `fog` | `color`, `start`, `end` | `end` au-delà de `start` |
 | `post` | `vignette`, `chromatic`, `bloom` (booléen), `bloom_threshold`, `bloom_strength` | 0 à 1, force du bloom de 0 à 2 |
@@ -179,8 +179,21 @@ comme opaque et ne fait rien attendre (`LightBlocks.UNLOADED`).
 lumière complète, puis autant sans la lumière directe. X et Z sont en répétition. Une section garde sa place tant que la
 zone avance, et seules celles qui entrent s'envoient, quatre par image. Au shader, `gtgs_zoneLight` lit la cellule d'air devant la surface, sur la tranche de sa face, au centre de son
 texel. La couleur et la validité vont ensemble : divisée par la validité, l'interpolation ne compte que les surfaces
-voisines, sans fuite par un bloc plein. Une surface hors de la grille ou pas encore cuite prend la lightmap, à
-l'exposition de la zone.
+voisines, sans fuite par un bloc plein. Une surface hors de la grille ou pas encore cuite prend le loin.
+
+Le loin cuit les sections à moins de huit sections de l'ancrage (`LightZone.FAR_RADIUS`), soit 128 blocs, comme la zone : lumière
+directe, premier rebond, puis le second avec l'estimation des suivants et les coins assombris, par les mêmes calculs
+(`SectionBaker`), avec la vraie géométrie et la couleur des blocs. Il ne garde de chaque section qu'une cellule pour deux blocs à
+l'horizontale (`LightZone.reduce`, moyenne des surfaces de chaque face) ; pour le rebond d'une section, ses voisines du loin sont
+relues dans ces cellules (`LightZone.expand`). Une section avance d'un état quand ses voisines en sont au moins là, la plus proche de
+l'ancrage d'abord, et seulement la fenêtre au repos. Une section de la fenêtre donne son loin à sa publication, son propre éclairement
+réduit, et le garde quand la fenêtre s'en va. Un bloc changé fait reculer le loin d'un état de moins par section d'écart (trois
+sections). `FarVolume` tient le résultat comme la texture de zone : l'éclairement complet, puis sa part indirecte, dans une texture
+`RGB10_A2` de 144 × 384 × 144, en répétition tous les 288 blocs, à l'unité 17 ; le shader les lit avec la même formule que la zone.
+Mesuré dans une copie d'un monde de l'auteur : 480 sections en trois états, 7,6 s sur le fil de cuisson (5 ms par état), contre 17 ms
+pour une section de la zone ; le loin se remplit en une dizaine de secondes après une arrivée. La copie du monde va jusqu'à neuf
+sections, huit par tick ; une section qui sort du loin est effacée de la texture puis oubliée (`LightZone.forgetFar`). Seule la zone
+prévient le cache de surfaces et la grille des blocs.
 
 Dans le noir, chaque pixel de texture tire un petit écart de lumière, fixe (`dark_pixels`) : c'est l'effet sombre pixelisé. Il
 s'efface en pleine lumière et entre 8 et 20 blocs, où il ne ferait que du bruit. La face d'un néon brille d'elle-même, et les
@@ -249,15 +262,31 @@ prennent, les sections se servent de la plus proche de l'ancrage à la plus loin
 et une section servie à moitié est reprise dès que des tuiles se libèrent : seul ce qui est assez loin pour se fondre dans la zone
 attend.
 
-La lumière d'une surface vient de trois niveaux, qui se fondent l'un dans l'autre selon la distance à la caméra : les tuiles jusqu'à
-24 blocs, puis la texture de zone de 32 à 40, puis la lightmap vanilla au-delà de 48, ramenée à l'exposition de la zone et corrigée
-selon l'orientation de la surface. Les trois doivent donner la même lumière. Sous la lumière tracée, la lumière directe de la zone a la même part que
-celle des tuiles, et la zone compte, après ses deux rebonds, une part des suivants (`SectionBaker.FOLLOWING`, 1,55, mesurée dans une
-grande salle d'un monde de l'auteur) : les tuiles les estiment, et sans elle la zone était 10 % plus sombre, si bien qu'une surface
-s'éclaircissait en approchant, entre 32 et 24 blocs. Sans lumière tracée, tuiles et zone ont les mêmes rebonds, et la zone garde les
-deux seuls. La lightmap, qui ne connaît ni le noir d'un coin ni la couleur des rebonds, en donne moins quand il y en a peu, et jaune
-(`gtgs_farLight`). Sinon, un anneau se voit autour de la caméra dans une grande salle, et ce qui est sombre de près paraît clair et gris de
-loin. La zone suit le palier du joueur : changer de palier en jeu la recuit (`LightCopy.refreshSettings`). Une section qui prend ses tuiles, ou une pièce qui entre dans la zone, ne se voit donc pas : c'est
+La lumière d'une surface vient de quatre niveaux, qui se fondent l'un dans l'autre selon la distance à la caméra : les tuiles jusqu'à
+24 blocs, puis la texture de zone de 32 à 40, puis le loin de 48 à 96, puis une pièce moyenne au-delà de 128. Les quatre doivent
+donner la même lumière. La lumière directe de la zone a la même part que
+celle des tuiles, et la zone compte, après ses deux rebonds, les suivants comme les rebonds tracés (`SectionBaker.FOLLOWING`, deux fois
+le second) : sans eux la zone était 10 % plus sombre, si bien qu'une surface s'éclaircissait en approchant, entre 32 et 24 blocs. Pour
+son rebond, une section relit ses voisines à l'étape d'avant, même si elles sont allées plus loin (`LightZone.at`) : une voisine déjà
+finie donnait ses rebonds en trop, et une bande claire suivait les frontières de sections au plafond des paliers sans lumière tracée.
+
+Aucune valeur propre à une dimension n'est écrite dans le shader : tout ce que le loin et la pièce moyenne montrent vient de la cuisson
+de la dimension où l'on est. Contre la zone, en Low, sur le même pixel, aux deux endroits mesurés : le loin vaut 0,97 à 1,00 en
+médiane, et la moitié des surfaces est à 1 % près sur les murs et au plafond (0,99 à 1,01), à 3 % au sol. Avec des rebonds fixes,
+mesurés une fois dans le Level 0, l'écart allait de 0,86 à 1,26. Sur des vues entières où tout le terrain prend le loin, l'écart moyen
+à la zone est de 2,3 niveaux par pixel (7,6 avec les rebonds fixes). La lightmap d'avant le loin valait 0,66 à 0,86 sur les murs,
+dans un brun que la zone n'a pas.
+
+Au-delà de 128 blocs, la pièce moyenne (`LightZone.room`, uniforme `gtgs_FarRoom`) se mesure sur tout ce qui est publié : par genre
+de surface (murs, sols, plafonds), la moyenne des surfaces éclairées de chaque section, puis celle du quart le plus clair des
+sections récentes, une pièce bien éclairée ; elle s'éteint avec la lightmap là où celle-ci tombe sous ce qu'elle vaut dans une pièce
+éclairée. Les sections les plus sombres sont des couloirs sans dalle, que la lightmap assombrit déjà : la moyenne de toutes valait
+0,55 à 0,76 de la zone dans deux salles éclairées, le quart le plus clair 0,69 à 1,17. Le passage du loin à la pièce moyenne se fond
+de 96 à 128 blocs. Avant la première section cuite de la dimension (une arrivée, une vue de portail tout juste ouverte, le temps de la
+copie et de la cuisson), la lightmap prend sa place, ombrée selon l'orientation de la surface, comme avant le loin : sans cela, tout
+ce qui n'était pas encore cuit restait noir quelques secondes.
+
+La zone suit le palier du joueur : changer de palier en jeu la recuit (`LightCopy.refreshSettings`). Une section qui prend ses tuiles, ou une pièce qui entre dans la zone, ne se voit donc pas : c'est
 ce qui faisait « s'allumer » les néons au loin. Une section qui quitte la fenêtre est oubliée par la zone (`LightZone.forget`), et
 repart quand la fenêtre revient sur elle.
 
@@ -277,8 +306,7 @@ Trois effets dépendent de la vue et se calculent au fragment, pour les dix néo
 Le bloom ajoute deux tours de flou à pas larges : une dalle rayonne dans la pièce, pas seulement autour d'elle.
 
 La texture de zone se répète : au-delà de 48 blocs de la caméra, elle montrerait autre chose. Entre 40 et 48 blocs, le terrain
-passe en fondu à la lightmap, à l'exposition de la zone. Le Level 0 n'ayant pas de brouillard, ce relais se voit dans les très
-longues lignes de vue.
+passe en fondu au loin, et entre 96 et 128 blocs, du loin à la pièce moyenne.
 
 Une vue lit la zone si sa dimension est celle de la zone et que sa caméra en est à moins de 48 blocs, dans sa hauteur
 (`LightVolume.covers`). Sinon, elle garde la lightmap et la lumière des néons : il n'y a qu'une zone à la fois.
@@ -311,7 +339,7 @@ partir de High, comme le veut `QUALITE_ET_PRESETS` §5.6.
   premier pixel qui dépasse. Le fragment prend la couleur et la lumière de ce pixel : les brins se cachent les uns les autres et bougent
   avec la caméra. Les creux perdent un peu de lumière et les pointes en gagnent, plus en Ultra, où la texture calmée ne porte plus ce
   contraste ; un pixel plat n'est ni l'un ni l'autre. Elle s'efface de 10 à 16 blocs, et l'option de relief la coupe.
-- Le calme des textures de la lumière tracée (`gtgs_calmed`) laisse leur couleur aux pixels tout en haut d'une matière presque plate :
+- Le calme des textures (`gtgs_calmed`, à tous les paliers) laisse leur couleur aux pixels tout en haut d'une matière presque plate :
   le rail d'une dalle est une pièce à part, pas du grain, comme le sont les brins d'une moquette. Sans cela, un rail mat disparaît en Ultra.
 - Le reflet (`gtgs_gloss`) lit le lissage, et penche sa normale selon la pente du pixel. Sur un pixel mat, il s'arrête là : ni boucle
   ni rayon. Sinon, chaque dalle proche se voit au point de son rectangle le plus proche du miroir, avec le lobe de ce lissage, plus
@@ -383,7 +411,8 @@ range sur les surfaces, et ne se voit qu'une fois fini. Il vise une image éclai
 pas de noir tant que la lumière peut arriver, ombres très larges, sol mat. Une pièce fermée reste noire. La matière reste celle du
 jeu : ses pixels restent, leur contraste baisse.
 
-La section `traced` de `baked_light` porte ce qui change, et tout ce qu'elle ne dit pas garde la valeur de la lumière cuite :
+La section `traced` de `baked_light` porte ce qui change, et tout ce qu'elle ne dit pas garde la valeur de la lumière cuite.
+`detail`, `exposure` et `direct` valent aussi dans `baked_light`, pour les autres paliers (1 par défaut) :
 
 | Clé | Rôle |
 |-----|------|
@@ -473,7 +502,13 @@ Le palier (`LookQuality`) se choisit dans le menu, ou par l'option `quality`.
 | Ultra | 32 | High, plus la lumière tracée : pénombres, rebonds | Plus le bloom | Oui, quatre rayons par dalle |
 | Désactivé | Aucun | Lightmap et ombrage vanilla | Aucun | Non |
 
-La lumière cuite garde la même émission à tous les paliers : seul le réalisme change, jamais ce qu'on voit des dangers. En mode
+La lumière cuite garde la même émission à tous les paliers : seul le réalisme change, jamais ce qu'on voit des dangers. Les paliers ont
+la palette, les niveaux et le contraste de l'Ultra, comme le veut le document de qualité (« Low et Ultra ont la même palette ») : ils
+prennent ses réglages (exposition, lumière directe, rebonds, textures calmées par leur plus petit niveau), et la zone compte, comme lui,
+les rebonds qui suivent le second. Sans rebonds tracés, la lumière directe des tuiles n'a plus de courbe qui creuse les ombres, et leurs
+rebonds, ceux de la zone, ne repassent pas par l'ouverture : la zone assombrit déjà ses coins. Mesure du 2 novembre 2026, grande salle
+d'un monde de l'auteur : moyenne de l'image 113,4 en Ultra, 114,4 en High, 111,9 en Medium, 113,8 en Low, contraste de 2,58 à 2,70 ;
+teintes des murs et du sol à un degré près. En mode
 `auto`, `LookQuality` prend High, ou Low sur une carte graphique intégrée, reconnue à la chaîne `GL_RENDERER` du pilote
 (`intel`, `llvmpipe`, `swiftshader`). Le choix est journalisé, et le calcul acoustique le suit par défaut. Les anciens noms
 `light` et `full` valent Medium et High.
@@ -485,12 +520,24 @@ Dans une dimension à look, le menu pause a un petit bouton carré à gauche de 
 assombrissement : le jeu tourne derrière, et chaque choix se voit aussitôt.
 
 - **Qualité** : Auto, Low, Medium, High, Ultra.
-- **Style** : Fidèle, Pixel, Réaliste, VHS, Cinématique, Confort (`VisualPreset`). Un preset ne touche ni à la lumière ni au
-  brouillard. Choisir un preset pose aussi sa taille de pixels d'ombre.
-- **Ombres pixelisées** : 16, 32, ou lisses. Lisses, la lumière s'interpole entre les pixels de la tuile.
+- **Style** : Fidèle, VHS, Cinématique (`VisualPreset`). Un style ne touche ni à la lumière ni au brouillard. Le VHS (`look_post.fsh`)
+  montre ce qu'un caméscope a enregistré sur une cassette, relue au magnétoscope. Le cadre est un 4:3 droit au milieu de l'écran, entre
+  deux bandes noires. L'objectif courbe les droites vers les bords de l'image, le milieu restant presque droit (termes en r² et r⁴), et
+  y laisse une frange rouge et bleue ; le milieu s'agrandit d'autant, pour remplir le cadre jusqu'aux coins. Le signal a 240 lignes par
+  trame, qui bougent d'un cinquième de ligne d'une image à la suivante, sans faire sautiller les bords ; la luminosité est molle puis accentuée par le magnétoscope,
+  qui cerne chaque bord d'un liseré clair et sombre ; la couleur bave sur une large part de la ligne et arrive en retard, vers la droite ;
+  les fortes lumières laissent une traînée à leur droite. Le temps des lignes n'est pas tout à fait tenu : chaque ligne glisse à peine,
+  le haut penche un peu, le bas se déchire au changement de tête, le cadre restant droit. Le bruit court le long des lignes, discret
+  dans le clair, fort et en couleur dans les sombres, avec de rares pertes blanches et, quelques secondes de temps en temps, une bande
+  de suivi ; les traits blancs ne prennent qu'un tiers de la hauteur d'une ligne. Un très léger tremblé à l'épaule déplace l'image dans
+  le cadre (jamais sans secousse). Ni gris ni noirs relevés : la couleur reste celle du look, un peu plus dense, et les coins
+  s'assombrissent. Sans grain, le bruit de la cassette tombe à 30 %. Le cinématique pose des bandes noires, un grain de film et un
+  contraste plus dense. En quittant les Backrooms (portail, commande, réapparition), le style revient à Fidèle et s'enregistre ; le
+  palier et le confort restent (`LookResources.onClientTick`). Une partie rejointe hors des Backrooms n'est pas une sortie.
+- **Ombres pixelisées** : oui (32 pixels par bloc, ceux des textures) ou non. Sans, la lumière s'interpole entre les pixels de la tuile.
 - **Confort** : sans flash, sans secousse, sans grain.
-- **Avancé** : chaque effet un par un, le palier désactivé, et le temps GPU du monde, du bloom et du post sur la dernière
-  seconde, mesuré tant que cet écran est ouvert (`GpuTimer`).
+- **Avancé** : chaque effet un par un, et le temps GPU du monde, du bloom et du post sur la dernière seconde, mesuré tant que cet
+  écran est ouvert (`GpuTimer`). Le palier désactivé ne se choisit plus que par l'option de lancement `quality`.
 
 `LookSettings` tient les réglages, enregistrés dans `config/gtgs_backrooms.json` (`LookSettingsStore`) : les options de
 lancement ne donnent que les valeurs de départ. `LookResources` garde les looks tels que les fichiers les décrivent, et refait
@@ -597,7 +644,10 @@ section.
 `LightBakeBasicsTest` vérifie le stockage, la copie du monde, le facteur de forme contre sa formule et les rayons sur les
 six directions. `LightBakeSceneTest` cuit une pièce connue : sol sous la dalle, plafond sans lumière directe, ombre d'un mur,
 néon mort, rebond teinté par un mur jaune, coins assombris, puis l'ordre de cuisson, le recuit après un bloc changé et le
-déplacement de la zone.
+déplacement de la zone ; le loin (moyenne de ses cellules, trois états après la fenêtre, recul après un bloc changé, oubli et
+retour, monde haut), qui vaut la même section cuite dans la fenêtre à 5 % près en moyenne et assombrit ses coins comme elle ; la
+pièce moyenne, celle du quart le plus
+clair des sections ; et la part des rebonds suivants, la même que celle du shader des rebonds tracés.
 
 ## Compatibilité
 
@@ -684,15 +734,16 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
   de 24 à 32 blocs se fond, sans disparaître tout à fait.
 - Les rebonds et les surfaces des paliers sans cache de surfaces suivent un bloc changé avec la cuisson, quelques dixièmes de
   seconde plus tard.
-- Au-delà de 40 à 48 blocs, la lightmap prend le relais : elle ne connaît ni les ombres ni les pannes, et son orientation est une
-  correction d'ensemble, pas un calcul.
+- Le loin est la zone en cellules de deux blocs : un détail plus fin qu'elles se fond. Au-delà de 128 blocs, la pièce moyenne ne
+  connaît ni les ombres, ni les pannes, ni quel mur fait face aux dalles : une salle très éclairée y paraît plus sombre que de près
+  (jusqu'à 0,69 fois dans une salle mesurée), une salle peu éclairée plus claire, le changement se fondant de 96 à 128 blocs.
 - En Ultra, un rayon ne voit que la grille des blocs : un bloc non plein n'arrête pas les rebonds, les corps ne font pas d'ombre aux
   rebonds. Un reflet ne montre que les dalles : ni les murs ni les corps, qui lui coupent seulement une dalle. Un rebond suit un bloc posé une fois le cache au repos, en environ une seconde. Pas de rendu réduit
   ni de TAA : rien n'est accumulé à l'écran. Le coût vient de chaque carte : mesuré sur une seule machine (ci-dessus). Les dalles restent
   des carrés d'un bloc, celles de la génération : une dalle en longue bande demanderait de toucher au Level 0. Au-delà de la zone
-  des tuiles, à 40 blocs environ, la lumière retombe sur celle de la lightmap.
-- Une surface hors de la grille (plinthe rentrée dans son bloc) n'a pas de tuile et prend la lightmap.
-- Une surface au-dessus ou au-dessous de la hauteur de la zone, vue par un puits entre deux couches, prend la lightmap.
+  des tuiles, à 40 blocs environ, la lumière retombe sur celle de la zone, puis du loin.
+- Une surface hors de la grille (plinthe rentrée dans son bloc) n'a pas de tuile et prend le loin.
+- Une surface au-dessus ou au-dessous de la hauteur de la zone, vue par un puits entre deux couches, prend la pièce moyenne.
 - Le cache de surfaces a une taille fixe : une salle de plus de trente-deux mille surfaces sur le rayon des tuiles laisserait ses sections
   les plus loin à la lumière de la zone. Le Level 0 en demande dix-huit mille au pire de ce qui a été mesuré.
 - Le Level 0 a de vrais couloirs sans dalle : ils restent très sombres. Les éclairer demanderait de toucher à sa génération.
@@ -728,7 +779,8 @@ couleur des biomes à celle de vanilla, au bit près, sur des milliers de points
 que les mixins du moteur s'appliquent. Dans un vrai client, `LevelZeroClientTests` vérifie le look du Level 0, les néons
 envoyés, la couleur du brouillard et le jumeau GLSL, et que la couleur des biomes du mod est celle de vanilla dans
 l'Overworld comme dans le Level 0 (`biome_colors_match_vanilla`). `SettingsMenuClientTests` vérifie le menu : icône absente hors des Backrooms, à l'écran et juste à gauche de la première rangée dans
-le Level 0, et chaque choix appliqué en direct. `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
+le Level 0, et chaque choix appliqué en direct ; le style VHS pose sa bande noire dans le Level 0, revient à Fidèle en sortant,
+le palier restant, et ne laisse rien dans l'Overworld (`tape_only_in_backrooms`). `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
 framebuffer recréé et le sampler du dessin plein écran. `LookGradeClientTests` compare l'étalonnage et la lumière au
 texel du processeur graphique à leurs jumeaux Java. `PortalViewClientTests` vérifie le look dans un cadre et
 l'absence de couture à la traversée.

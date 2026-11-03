@@ -15,7 +15,7 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
  *
  * @param quality palier demande : cle d'un {@link LookQuality}, ou {@link LookQuality#AUTO}
  * @param preset preset visuel
- * @param pixelShadows pixels d'ombre par bloc : 32, 16, ou 0 pour une lumiere lisse
+ * @param pixelShadows pixels d'ombre par bloc : 32, ou 0 pour une lumiere lisse
  * @param options masque des {@link LookOption} actives
  */
 public record LookSettings(String quality, VisualPreset preset, int pixelShadows, int options) {
@@ -68,9 +68,9 @@ public record LookSettings(String quality, VisualPreset preset, int pixelShadows
         return new LookSettings(next, this.preset, this.pixelShadows, this.options);
     }
 
-    /** Ces reglages, sous ce preset, avec sa taille des pixels d'ombre. */
+    /** Ces reglages, sous ce preset. */
     public LookSettings withPreset(VisualPreset next) {
-        return new LookSettings(this.quality, next, next.pixelShadows(), this.options);
+        return new LookSettings(this.quality, next, this.pixelShadows, this.options);
     }
 
     /** Ces reglages, avec cette taille des pixels d'ombre. */
@@ -80,17 +80,17 @@ public record LookSettings(String quality, VisualPreset preset, int pixelShadows
 
     /** {@code true} si aucune variation forte de lumiere n'est permise. */
     public boolean flashesReduced() {
-        return has(LookOption.REDUCE_FLASHES) || this.preset == VisualPreset.COMFORT;
+        return has(LookOption.REDUCE_FLASHES);
     }
 
     /** {@code true} si la camera ne tremble jamais. */
     public boolean motionReduced() {
-        return has(LookOption.REDUCE_MOTION) || this.preset == VisualPreset.COMFORT;
+        return has(LookOption.REDUCE_MOTION);
     }
 
     /** {@code true} si l'image n'a ni grain ni aberration. */
     public boolean noiseReduced() {
-        return has(LookOption.REDUCE_NOISE) || this.preset == VisualPreset.COMFORT;
+        return has(LookOption.REDUCE_NOISE);
     }
 
     /** {@code true} si le cache de surfaces tourne a ce palier. */

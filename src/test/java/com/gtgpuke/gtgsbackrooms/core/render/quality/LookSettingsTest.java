@@ -83,7 +83,8 @@ class LookSettingsTest {
         assertTrue(before.has(LookOption.BLOOM), "L'original n'a pas change.");
         assertTrue(off.with(LookOption.BLOOM, true).has(LookOption.BLOOM), "Remis.");
         assertEquals("ultra", before.withQuality("ultra").quality(), "Palier.");
-        assertEquals(16, before.withPixelShadows(16).pixelShadows(), "Pixels.");
+        assertEquals(0, before.withPixelShadows(0).pixelShadows(), "Pixels d'ombre coupes.");
+        assertEquals(32, before.withPixelShadows(16).pixelShadows(), "L'ancienne taille de 16 vaut 32.");
         assertEquals(32, before.withPixelShadows(7).pixelShadows(), "Une valeur inconnue vaut 32.");
         LookSettings previous = LookSettings.current();
         LookSettings.set(off);
@@ -92,15 +93,13 @@ class LookSettingsTest {
     }
 
     @Test
-    @DisplayName("Choisir un preset pose ses pixels d'ombre, et le preset Confort vaut les trois options")
+    @DisplayName("Choisir un style garde les pixels d'ombre, et chaque option de confort vaut seule")
     void presets() {
-        assertEquals(16, settings().withPreset(VisualPreset.PIXEL).pixelShadows(), "Pixel : gros pixels.");
-        assertEquals(0, settings().withPreset(VisualPreset.REALISTIC).pixelShadows(), "Realiste : lumiere lisse.");
-        LookSettings comfort = settings().with(LookOption.REDUCE_MOTION, false).withPreset(VisualPreset.COMFORT);
-        assertTrue(comfort.flashesReduced(), "Aucun flash.");
-        assertTrue(comfort.noiseReduced(), "Aucun grain.");
-        assertTrue(comfort.motionReduced(), "Aucune secousse.");
-        assertFalse(settings().with(LookOption.REDUCE_MOTION, false).motionReduced(), "Sans l'option ni le preset, la camera peut trembler.");
+        assertEquals(0, settings().withPixelShadows(0).withPreset(VisualPreset.CINEMATIC).pixelShadows(), "Le style garde la lumiere lisse.");
+        assertEquals(VisualPreset.FOUND_FOOTAGE, settings().withPreset(VisualPreset.FOUND_FOOTAGE).preset(), "Style pose.");
+        assertFalse(settings().with(LookOption.REDUCE_MOTION, false).motionReduced(), "Sans l'option, la camera peut trembler.");
+        assertFalse(settings().with(LookOption.REDUCE_FLASHES, false).flashesReduced(), "Sans l'option, les flashs restent.");
+        assertFalse(settings().with(LookOption.REDUCE_NOISE, false).noiseReduced(), "Sans l'option, le grain reste.");
         assertTrue(settings().with(LookOption.REDUCE_FLASHES, true).flashesReduced(), "L'option seule.");
         assertTrue(settings().with(LookOption.REDUCE_NOISE, true).noiseReduced(), "L'option seule.");
     }
@@ -177,16 +176,13 @@ class LookSettingsTest {
             assertSame(LookProfile.VANILLA, preset.apply(LookProfile.VANILLA), "Vanilla reste vanilla : " + preset.key() + ".");
         }
         assertSame(LOOK, VisualPreset.FAITHFUL.apply(LOOK), "Fidele : le look du fichier.");
-        assertSame(LOOK, VisualPreset.COMFORT.apply(LOOK), "Confort passe par les options.");
-        LookProfile pixel = VisualPreset.PIXEL.apply(LOOK);
-        assertTrue(pixel.bakedLight().relief() > LOOK.bakedLight().relief(), "Pixel : relief marque.");
-        assertTrue(pixel.post().bloomStrength() < LOOK.post().bloomStrength(), "Pixel : moins de rayonnement.");
-        LookProfile realistic = VisualPreset.REALISTIC.apply(LOOK);
-        assertTrue(realistic.bakedLight().sheen() > LOOK.bakedLight().sheen(), "Realiste : reflets pousses.");
         LookProfile tape = VisualPreset.FOUND_FOOTAGE.apply(LOOK);
-        assertTrue(tape.grain() > LOOK.grain(), "Bande : plus de grain.");
-        assertTrue(tape.post().chromatic() > LOOK.post().chromatic(), "Bande : couleurs qui bavent.");
-        assertTrue(tape.desaturation() > LOOK.desaturation(), "Bande : balance approximative.");
+        assertEquals(LOOK.grain(), tape.grain(), EPSILON, "Bande : son bruit est dans le post, le long des lignes.");
+        assertEquals(LOOK.post().chromatic(), tape.post().chromatic(), EPSILON, "Bande : la couleur bave dans le post, pas par un objectif.");
+        assertEquals(LOOK.desaturation(), tape.desaturation(), EPSILON, "Bande : pas de gris.");
+        assertEquals(LOOK.grade().saturation(), tape.grade().saturation(), EPSILON, "Bande : la couleur du look.");
+        assertTrue(tape.grade().power().y > LOOK.grade().power().y, "Bande : un peu plus dense.");
+        assertTrue(tape.post().vignette() > LOOK.post().vignette(), "Bande : l'objectif assombrit les coins.");
         assertEquals(1.0f, VisualPreset.FOUND_FOOTAGE.tape(), EPSILON, "Effet de bande.");
         assertEquals(0.0f, VisualPreset.FAITHFUL.tape(), EPSILON, "Pas de bande.");
         LookProfile film = VisualPreset.CINEMATIC.apply(LOOK);
@@ -196,7 +192,8 @@ class LookSettingsTest {
         assertEquals(0.0f, VisualPreset.FAITHFUL.bars(), EPSILON, "Pas de bandes.");
         assertSame(VisualPreset.FAITHFUL, VisualPreset.byKey("inconnu"), "Nom inconnu.");
         assertTrue(VisualPreset.FOUND_FOOTAGE.needsPost() && VisualPreset.CINEMATIC.needsPost(), "Ces deux-la vivent dans le post.");
-        assertFalse(VisualPreset.PIXEL.needsPost(), "Pas celui-ci.");
+        assertFalse(VisualPreset.FAITHFUL.needsPost(), "Pas celui-ci.");
+        assertEquals(3, VisualPreset.values().length, "Trois styles : fidele, VHS et cinematique.");
         assertFalse(settings().withPreset(VisualPreset.CINEMATIC).effective(LOOK, LookQuality.LOW).post().none(), "Le film garde son post en Low.");
     }
 }

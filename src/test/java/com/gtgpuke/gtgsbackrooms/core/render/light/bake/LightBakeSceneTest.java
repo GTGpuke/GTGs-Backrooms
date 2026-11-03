@@ -1,12 +1,22 @@
 package com.gtgpuke.gtgsbackrooms.core.render.light.bake;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import com.google.gson.JsonParser;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +39,12 @@ class LightBakeSceneTest {
     private static final float AMBIENT = 0.1f;
     private static final LightBakeSettings SETTINGS = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f,
             1.0f, 1.0f, 1, 0.0f, 0.0f, 0.0f);
+    /** Comme un profil : coins assombris, rebonds teintes et rebonds suivants comptes. */
+    private static final LightBakeSettings PROFILE_LIKE = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.6f, 0.95f,
+            1.03f, 1.0f, 0.72f, SectionBaker.FOLLOWING, 1, 0.0f, 0.0f, 0.0f);
+    /** Le meme, sans coins assombris. */
+    private static final LightBakeSettings PROFILE_OPEN = new LightBakeSettings(2.0f, 2.0f, 2.0f, AMBIENT, AMBIENT, AMBIENT, 14.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.95f,
+            1.03f, 1.0f, 0.72f, SectionBaker.FOLLOWING, 1, 0.0f, 0.0f, 0.0f);
 
     private LightBlocks blocks;
     private byte stone;
@@ -310,6 +326,14 @@ class LightBakeSceneTest {
         return count;
     }
 
+    private static int farPublished(LightZone zone) {
+        int count = 0;
+        while (zone.pollFar() != null) {
+            count++;
+        }
+        return count;
+    }
+
     @Test
     @DisplayName("La zone cuit d'abord le plus proche, attend ce qui manque, puis publie une fois chaque section")
     void zoneBakes() {
@@ -360,8 +384,8 @@ class LightBakeSceneTest {
         int all = (2 * LightZone.RADIUS + 1) * (2 * LightZone.RADIUS + 1) * LightZone.HEIGHT;
         for (int[] move : new int[][] {{12, 0, 0}, {-12, 0, 0}, {0, 0, 12}, {0, 0, -12}}) {
             zone.anchor(move[0], 0, move[2]);
-            assertEquals(all, drain(zone), "Une toute nouvelle fenetre.");
-            assertEquals(all, published(zone), "Publiee.");
+            assertTrue(drain(zone) > all, "Une toute nouvelle fenetre, et son loin.");
+            assertEquals(all, published(zone), "La fenetre publiee.");
         }
         // Hauteurs : d'abord loin en dessous (les sections du haut partent), puis loin au-dessus (celles du bas partent).
         zone.anchor(-0, -6, -12);
@@ -379,6 +403,7 @@ class LightBakeSceneTest {
         LightZone zone = zone();
         drain(zone);
         published(zone);
+        farPublished(zone);
         assertTrue(zone.idle(), "Tout est au repos.");
         long key = ChunkSectionPos.asLong(LightZone.RADIUS, 0, 0);
         assertFalse(zone.step(), "Rien a publier.");
@@ -491,8 +516,8 @@ class LightBakeSceneTest {
     }
 
     @Test
-    @DisplayName("Sous la lumiere tracee, la zone compte aussi les rebonds qui suivent le second ; sans, ses deux rebonds seulement")
-    void zoneCountsTheFollowingWhenTraced() {
+    @DisplayName("La zone compte aussi les rebonds qui suivent le second ; reglee a 1, ses deux rebonds seulement")
+    void zoneCountsTheFollowing() {
         set(this.room, 8, CEILING, 8, this.neon);
         fill(LightZone.RADIUS + LightZone.COPY_MARGIN, this.room);
         float plain = LightCell.green(bakedCeiling(1.0f));
@@ -519,6 +544,36 @@ class LightBakeSceneTest {
     }
 
     @Test
+    @DisplayName("Une section vaut la meme chose quel que soit l'ordre de cuisson de ses voisines : son bord ne lit jamais une voisine deja finie")
+    void sectionIgnoresBakingOrder() {
+        set(this.room, 8, CEILING, 8, this.neon);
+        fill(LightZone.RADIUS + LightZone.COPY_MARGIN + 1, emptyRoom());
+        this.blocks.setSection(ChunkSectionPos.asLong(0, 0, 0), this.room);
+        this.blocks.setSection(ChunkSectionPos.asLong(1, 0, 0), this.room);
+        int[] first = bakedOrigin(0);
+        int[] later = bakedOrigin(1);
+        assertNotNull(first, "La section de l'origine est cuite.");
+        assertArrayEquals(first, later, "La section cuite apres sa voisine lit ses rebonds en trop.");
+    }
+
+    /** La section de l'origine, cuite par une zone ancree ici : la plus proche de l'ancrage cuit d'abord. */
+    private int @Nullable [] bakedOrigin(int anchorX) {
+        LightZone zone = new LightZone(this.blocks, SETTINGS, 0, 2);
+        zone.anchor(anchorX, 0, 0);
+        int[] values = null;
+        boolean working = true;
+        while (working) {
+            working = zone.step();
+            for (LightZone.Baked baked = zone.poll(); baked != null; baked = zone.poll()) {
+                if (baked.key() == ChunkSectionPos.asLong(0, 0, 0)) {
+                    values = baked.values();
+                }
+            }
+        }
+        return values;
+    }
+
+    @Test
     @DisplayName("Une section cuite dit quel changement elle connaissait : plus vieille qu'un bloc change, elle est perimee")
     void bakedStamp() {
         fill(LightZone.RADIUS + LightZone.COPY_MARGIN, this.room);
@@ -542,7 +597,289 @@ class LightBakeSceneTest {
         drain(zone);
         assertFalse(zone.idle(), "Tout est cuit, rien n'a ete pris.");
         published(zone);
+        assertFalse(zone.idle(), "Le loin attend d'etre pris.");
+        farPublished(zone);
         assertTrue(zone.idle(), "Tout est cuit et pris.");
+    }
+
+    @Test
+    @DisplayName("Le loin d'une section moyenne les surfaces de chaque cellule de deux blocs, laisse vide une cellule sans surface et se relit a pleine resolution")
+    void farCells() {
+        int[] values = new int[LightCell.VALUES];
+        values[LightCell.index(0, 3, 0, UP)] = LightCell.pack(0.2f, 0.4f, 0.6f);
+        values[LightCell.index(1, 3, 1, UP)] = LightCell.pack(0.4f, 0.4f, 0.2f);
+        int[] far = new int[LightZone.FAR_VALUES];
+        LightZone.reduce(values, far, LightCell.FACES);
+        int cell = far[LightZone.farIndex(0, 3, 0, LightCell.FACES + UP)];
+        assertTrue(LightCell.valid(cell), "Deux surfaces sur quatre.");
+        assertEquals(0.3f, LightCell.red(cell), 0.01f, "Leur moyenne.");
+        assertEquals(0.4f, LightCell.green(cell), 0.01f, "Leur moyenne.");
+        assertEquals(0.4f, LightCell.blue(cell), 0.01f, "Leur moyenne.");
+        assertEquals(0, far[LightZone.farIndex(0, 3, 0, UP)], "Les tranches d'avant ne sont pas touchees.");
+        assertEquals(0, far[LightZone.farIndex(1, 3, 0, LightCell.FACES + UP)], "Sans surface : vide.");
+        int[] state = LightZone.reduced(values);
+        assertEquals(LightZone.FAR_STATE_VALUES, state.length, "Une tranche par face.");
+        int[] full = LightZone.expand(state, new int[LightCell.VALUES]);
+        assertEquals(state[LightZone.farIndex(0, 3, 0, UP)], full[LightCell.index(1, 3, 0, UP)], "Chaque bloc prend la valeur de sa cellule.");
+        assertEquals(0, full[LightCell.index(2, 3, 0, UP)], "La cellule voisine, vide, le reste.");
+        assertEquals(LightZone.FAR_VALUES - 1, LightZone.farIndex(LightZone.FAR_CELLS - 1, LightZone.FAR_ROWS - 1, LightZone.FAR_CELLS - 1,
+                LightZone.FAR_LAYERS - 1), "La derniere cellule.");
+        assertEquals(1, LightZone.kindOf(UP), "Un sol.");
+        assertEquals(2, LightZone.kindOf(DOWN), "Un plafond.");
+        assertEquals(0, LightZone.kindOf(EAST), "Un mur.");
+    }
+
+    private static List<LightZone.FarBaked> farBaked(LightZone zone) {
+        List<LightZone.FarBaked> all = new ArrayList<>();
+        for (LightZone.FarBaked far = zone.pollFar(); far != null; far = zone.pollFar()) {
+            all.add(far);
+        }
+        return all;
+    }
+
+    @Test
+    @DisplayName("Le loin vient de la fenetre a sa publication, puis cuit autour d'elle en trois etats, du plus proche au plus loin, une fois chaque section")
+    void farBakes() {
+        set(this.room, 8, CEILING, 8, this.neon);
+        fill(LightZone.FAR_RADIUS + 1, this.room);
+        LightZone zone = zone();
+        assertTrue(zone.step(), "La section de l'ancrage.");
+        LightZone.FarBaked center = zone.pollFar();
+        assertNotNull(center, "Son loin part avec elle.");
+        assertEquals(ChunkSectionPos.asLong(0, 0, 0), center.key(), "Le sien.");
+        LightZone.Baked near = zone.poll();
+        assertNotNull(near, "Publiee.");
+        int[] exact = new int[LightZone.FAR_VALUES];
+        LightZone.reduce(near.values(), exact, 0);
+        LightZone.reduce(near.indirect(), exact, LightCell.FACES);
+        assertArrayEquals(exact, center.values(), "Le loin d'une section de la fenetre est son propre eclairement, reduit.");
+        int under = LightZone.farIndex(4, 1, 4, UP);
+        assertTrue(LightCell.red(center.values()[under]) > LightCell.red(center.values()[LightZone.farIndex(0, 1, 0, UP)]) + 0.1f,
+                "Le sol sous la dalle est plus clair que le coin.");
+        assertTrue(LightCell.red(center.values()[under + LightCell.FACES * LightZone.FAR_FACE_VALUES]) < LightCell.red(center.values()[under]) - 0.1f,
+                "Sa part indirecte est bien moindre que son eclairement.");
+        int window = (2 * LightZone.RADIUS + 1) * (2 * LightZone.RADIUS + 1) * LightZone.HEIGHT;
+        for (int i = 1; i < window; i++) {
+            assertTrue(zone.step(), "La fenetre d'abord.");
+        }
+        assertEquals(window - 1, published(zone), "Toute la fenetre.");
+        assertEquals(window - 1, farPublished(zone), "Avec son loin.");
+        int all = (2 * LightZone.FAR_RADIUS + 1) * (2 * LightZone.FAR_RADIUS + 1) * LightZone.HEIGHT;
+        assertEquals(3 * (all - window), drain(zone), "Trois etats par section du loin : lumiere directe, premier rebond, le reste.");
+        assertNull(zone.poll(), "Rien pour la fenetre.");
+        List<LightZone.FarBaked> far = farBaked(zone);
+        assertEquals(all - window, far.size(), "Chacune publiee une fois.");
+        long first = far.get(0).key();
+        assertEquals(LightZone.RADIUS + 1, Math.max(Math.abs(ChunkSectionPos.unpackX(first)), Math.abs(ChunkSectionPos.unpackZ(first))),
+                "Les plus proches d'abord.");
+    }
+
+    @Test
+    @DisplayName("Un bloc change recuit le loin autour de lui, d'un etat de moins par section d'ecart ; un loin oublie ou republie repart, un loin quitte puis retrouve recuit")
+    void farFollowsChanges() {
+        fill(LightZone.FAR_RADIUS + 1, this.room);
+        LightZone zone = zone();
+        drain(zone);
+        published(zone);
+        farPublished(zone);
+        zone.onChanged(ChunkSectionPos.asLong(7, 0, 0));
+        assertEquals(128, drain(zone), "Trois etats a moins d'une section, deux a deux sections, un a trois, sur les deux rangees.");
+        assertEquals(70, farPublished(zone), "Republiees.");
+        long key = ChunkSectionPos.asLong(LightZone.FAR_RADIUS, 1, LightZone.FAR_RADIUS);
+        zone.forgetFar(key);
+        zone.forgetFar(ChunkSectionPos.asLong(100, 0, 100));
+        assertFalse(zone.idle(), "L'oubli attend le thread de cuisson.");
+        assertTrue(zone.step(), "Le loin repart, sans recuire ses premiers etats.");
+        LightZone.FarBaked again = zone.pollFar();
+        assertNotNull(again, "Publie.");
+        assertEquals(key, again.key(), "Lui seul.");
+        assertFalse(zone.step(), "Une seule fois.");
+        int window = (2 * LightZone.RADIUS + 1) * (2 * LightZone.RADIUS + 1) * LightZone.HEIGHT;
+        int all = (2 * LightZone.FAR_RADIUS + 1) * (2 * LightZone.FAR_RADIUS + 1) * LightZone.HEIGHT;
+        zone.republish();
+        assertEquals(all, drain(zone), "Republier relit la fenetre et refait le dernier etat du loin.");
+        assertEquals(window, published(zone), "La fenetre.");
+        assertEquals(all, farPublished(zone), "Et tout le loin.");
+        zone.anchor(40, 0, 0);
+        assertFalse(zone.step(), "Rien de copie la-bas.");
+        zone.anchor(0, 0, 0);
+        assertEquals(window + 3 * (all - window), drain(zone), "De retour : ce qui a ete quitte recuit en entier.");
+        assertEquals(all, farPublished(zone), "Tout le loin.");
+    }
+
+    /** Une piece eclairee par section : une dalle au plafond et un pilier, sur toutes les sections voulues. */
+    private void fillLit(int radius) {
+        set(this.room, 8, CEILING, 8, this.neon);
+        for (int y = 1; y < CEILING; y++) {
+            set(this.room, 3, y, 3, this.yellow);
+        }
+        for (int z = -radius; z <= radius; z++) {
+            for (int x = -radius; x <= radius; x++) {
+                this.blocks.setSection(ChunkSectionPos.asLong(x, 0, z), this.room);
+                this.blocks.setSection(ChunkSectionPos.asLong(x, 1, z), LightBlocks.UNLOADED);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Le loin d'une section vaut, a peu pres, ce qu'elle vaut dans la fenetre : eclairement et part indirecte")
+    void farMatchesZone() {
+        fillLit(LightZone.FAR_RADIUS + 1);
+        long key = ChunkSectionPos.asLong(5, 0, 0);
+        LightZone zone = new LightZone(this.blocks, PROFILE_LIKE, 0, 2);
+        zone.anchor(0, 0, 0);
+        drain(zone);
+        LightZone.FarBaked far = null;
+        for (LightZone.FarBaked baked : farBaked(zone)) {
+            far = baked.key() == key ? baked : far;
+        }
+        assertNotNull(far, "La section est du loin.");
+        LightZone near = new LightZone(this.blocks, PROFILE_LIKE, 0, 2);
+        near.anchor(5, 0, 0);
+        assertTrue(near.step(), "La meme section, au milieu d'une fenetre.");
+        LightZone.Baked baked = near.poll();
+        assertNotNull(baked, "Publiee.");
+        int[] exact = new int[LightZone.FAR_VALUES];
+        LightZone.reduce(baked.values(), exact, 0);
+        LightZone.reduce(baked.indirect(), exact, LightCell.FACES);
+        for (int layer = 0; layer < 2; layer++) {
+            double farSum = 0.0;
+            double exactSum = 0.0;
+            int worst = 0;
+            int cells = 0;
+            for (int i = layer * LightCell.FACES * LightZone.FAR_FACE_VALUES; i < (layer + 1) * LightCell.FACES * LightZone.FAR_FACE_VALUES; i++) {
+                if (!LightCell.valid(exact[i])) {
+                    continue;
+                }
+                assertTrue(LightCell.valid(far.values()[i]), "Les memes surfaces.");
+                float a = LightCell.red(far.values()[i]) + LightCell.green(far.values()[i]) + LightCell.blue(far.values()[i]);
+                float b = LightCell.red(exact[i]) + LightCell.green(exact[i]) + LightCell.blue(exact[i]);
+                farSum += a;
+                exactSum += b;
+                worst += Math.abs(a - b) > 0.25f * b + 0.02f ? 1 : 0;
+                cells++;
+            }
+            String what = layer == 0 ? "Eclairement" : "Part indirecte";
+            assertEquals(1.0, farSum / exactSum, 0.05, what + " : le loin vaut la fenetre, en moyenne.");
+            assertTrue(worst < cells / 10, what + " : " + worst + " cellules sur " + cells + " a plus de 25 % de la fenetre.");
+        }
+    }
+
+    @Test
+    @DisplayName("La piece moyenne se mesure sur ce qui est publie : rien avant, un sol sous une dalle surtout direct, un plafond indirect, les murs du pilier")
+    void roomIsMeasured() {
+        fillLit(LightZone.RADIUS + LightZone.COPY_MARGIN);
+        LightZone zone = zone();
+        assertNull(zone.room(), "Rien avant la premiere section.");
+        assertTrue(zone.step(), "La section de l'ancrage.");
+        float[] room = zone.room();
+        assertNotNull(room, "Mesuree.");
+        assertEquals(LightZone.ROOM_VALUES, room.length, "Trois genres, l'eclairement et sa part indirecte, en couleur.");
+        assertTrue(room[6] > room[9] + 0.05f, "Un sol sous une dalle recoit surtout de la lumiere directe : " + room[6] + " contre " + room[9] + ".");
+        assertEquals(room[12], room[15], 0.02f, "Un plafond ne recoit que le fond et les rebonds.");
+        assertTrue(room[12] > AMBIENT, "Le plafond recoit les rebonds du sol.");
+        assertTrue(room[0] > AMBIENT, "Les murs du pilier comptent.");
+        drain(zone);
+        assertNotNull(zone.room(), "Toujours mesuree.");
+    }
+
+    /** Le loin publie d'une section, cuit autour de l'origine avec ces reglages : la cuisson s'arrete des qu'il part. */
+    private int[] farOf(LightBakeSettings settings, long key) {
+        LightZone zone = new LightZone(this.blocks, settings, 0, 2);
+        zone.anchor(0, 0, 0);
+        while (zone.step()) {
+            for (LightZone.FarBaked far = zone.pollFar(); far != null; far = zone.pollFar()) {
+                if (far.key() == key) {
+                    return far.values();
+                }
+            }
+        }
+        throw new AssertionError("Loin jamais publie.");
+    }
+
+    @Test
+    @DisplayName("Le loin assombrit les coins comme la fenetre : au pied d'un pilier, sa surface est plus sombre avec l'occlusion du profil que sans")
+    void farDarkensCorners() {
+        fillLit(LightZone.FAR_RADIUS + 1);
+        long key = ChunkSectionPos.asLong(LightZone.RADIUS + 1, 0, 0);
+        int corner = LightZone.farIndex(1, 1, 1, UP);
+        int dark = farOf(PROFILE_LIKE, key)[corner];
+        int open = farOf(PROFILE_OPEN, key)[corner];
+        assertTrue(LightCell.valid(dark) && LightCell.valid(open), "Le sol au pied du pilier.");
+        assertTrue(luma(LightCell.red(dark), LightCell.green(dark), LightCell.blue(dark)) < 0.97f * luma(LightCell.red(open), LightCell.green(open), LightCell.blue(open)),
+                "Le coin s'assombrit.");
+    }
+
+    private static float luma(float red, float green, float blue) {
+        return 0.299f * red + 0.587f * green + 0.114f * blue;
+    }
+
+    @Test
+    @DisplayName("La piece moyenne est celle des pieces bien eclairees : la moyenne du quart le plus clair des sections, plus claire que celle de toutes")
+    void roomKeepsTheBrightestQuarter() {
+        // Une section sur deux a sa dalle : les autres ne recoivent que ce qui deborde de leurs voisines.
+        set(this.room, 8, CEILING, 8, this.neon);
+        byte[] dark = emptyRoom();
+        for (int z = -LightZone.FAR_RADIUS - 1; z <= LightZone.FAR_RADIUS + 1; z++) {
+            for (int x = -LightZone.FAR_RADIUS - 1; x <= LightZone.FAR_RADIUS + 1; x++) {
+                this.blocks.setSection(ChunkSectionPos.asLong(x, 0, z), Math.floorMod(x + z, 2) == 0 ? this.room : dark);
+                this.blocks.setSection(ChunkSectionPos.asLong(x, 1, z), LightBlocks.UNLOADED);
+            }
+        }
+        LightZone zone = zone();
+        drain(zone);
+        float threshold = 3.0f * luma(AMBIENT, AMBIENT, AMBIENT);
+        List<float[]> floors = new ArrayList<>();
+        for (LightZone.FarBaked far : farBaked(zone)) {
+            float red = 0.0f;
+            int count = 0;
+            for (int i = UP * LightZone.FAR_FACE_VALUES; i < (UP + 1) * LightZone.FAR_FACE_VALUES; i++) {
+                int total = far.values()[i];
+                if (LightCell.valid(total) && luma(LightCell.red(total), LightCell.green(total), LightCell.blue(total)) > threshold) {
+                    red += LightCell.red(total);
+                    count++;
+                }
+            }
+            if (count > 0) {
+                floors.add(new float[] {red / count});
+            }
+        }
+        assertTrue(floors.size() >= 4, "Plusieurs sections ont un sol eclaire : " + floors.size() + ".");
+        floors.sort((a, b) -> Float.compare(a[0], b[0]));
+        float bright = floors.get(floors.size() * 3 / 4)[0];
+        float kept = 0.0f;
+        float all = 0.0f;
+        int brightCount = 0;
+        for (float[] floor : floors) {
+            all += floor[0];
+            if (floor[0] >= bright) {
+                kept += floor[0];
+                brightCount++;
+            }
+        }
+        float[] room = zone.room();
+        assertNotNull(room, "Mesuree.");
+        assertEquals(kept / brightCount, room[6], 0.01f, "La moyenne du quart le plus clair.");
+        assertTrue(room[6] > all / floors.size(), "Plus claire que la moyenne de toutes les sections : " + room[6] + " contre " + all / floors.size() + ".");
+    }
+
+    @Test
+    @DisplayName("Dans un monde haut, le loin ne compte que les rangees de la fenetre, et ses voisines au-dessus et au-dessous restent de simples sources")
+    void farInTallWorld() {
+        for (int z = -LightZone.FAR_RADIUS - 1; z <= LightZone.FAR_RADIUS + 1; z++) {
+            for (int x = -LightZone.FAR_RADIUS - 1; x <= LightZone.FAR_RADIUS + 1; x++) {
+                for (int y = 2; y <= 5; y++) {
+                    this.blocks.setSection(ChunkSectionPos.asLong(x, y, z), this.room);
+                }
+            }
+        }
+        LightZone zone = new LightZone(this.blocks, SETTINGS, 0, 8);
+        zone.anchor(0, 3, 0);
+        int window = (2 * LightZone.RADIUS + 1) * (2 * LightZone.RADIUS + 1) * LightZone.HEIGHT;
+        int all = (2 * LightZone.FAR_RADIUS + 1) * (2 * LightZone.FAR_RADIUS + 1) * LightZone.HEIGHT;
+        drain(zone);
+        assertEquals(window, published(zone), "La fenetre, sur ses deux rangees.");
+        assertEquals(all, farPublished(zone), "Et le loin, sur les memes.");
     }
 
     @Test
@@ -613,15 +950,27 @@ class LightBakeSceneTest {
     }
 
     @Test
+    @DisplayName("La zone compte les rebonds suivants comme les rebonds traces : la meme part que dans leur shader")
+    void followingMatchesTracedBounces() throws IOException {
+        String source;
+        try (InputStream stream = LightBakeSceneTest.class.getResourceAsStream("/assets/gtgs_backrooms/shaders/bake/bounce.fsh")) {
+            assertNotNull(stream, "Shader des rebonds introuvable.");
+            source = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        Matcher matcher = Pattern.compile("const float FOLLOWING = ([0-9.]+);").matcher(source);
+        assertTrue(matcher.find(), "Part des rebonds suivants introuvable dans le shader.");
+        assertEquals(Float.parseFloat(matcher.group(1)), SectionBaker.FOLLOWING, 1.0e-6f, "Meme part des deux cotes.");
+    }
+
+    @Test
     @DisplayName("Les reglages viennent du profil, et le calendrier decide des neons morts")
     void settingsFromProfile() {
         LookProfile profile = LookProfile.fromJson(JsonParser.parseString("{ \"dimension\": \"m:d\", \"id\": 1,"
                 + " \"neons\": { \"block\": \"m:tube\", \"color\": [0.5, 1, 0.25], \"dead\": 1 },"
                 + " \"baked_light\": { \"emission\": 4, \"ambient\": [0.1, 0.2, 0.3], \"reach\": 9, \"size\": 2, \"occlusion\": 0.5,"
                 + " \"bounce_color\": [1.5, 1, 0.5] } }").getAsJsonObject());
-        LightBakeSettings settings = LightBakeSettings.of(profile, Identifier.of("m", "d"), false);
-        assertEquals(1.0f, settings.following(), "Sans lumiere tracee, la zone compte ses deux rebonds.");
-        assertEquals(SectionBaker.FOLLOWING, LightBakeSettings.of(profile, Identifier.of("m", "d"), true).following(), "Sous la lumiere tracee, les suivants.");
+        LightBakeSettings settings = LightBakeSettings.of(profile, Identifier.of("m", "d"));
+        assertEquals(SectionBaker.FOLLOWING, settings.following(), "La zone compte aussi les rebonds qui suivent le second.");
         assertEquals(2.0f, settings.red(), 1.0e-6f, "Couleur fois emission.");
         assertEquals(4.0f, settings.green(), 1.0e-6f, "Couleur fois emission.");
         assertEquals(1.0f, settings.blue(), 1.0e-6f, "Couleur fois emission.");

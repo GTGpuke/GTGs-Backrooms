@@ -94,6 +94,8 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
         EntityHandover.init();
         CompatClient.register();
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // Avant tout le reste, hors partie comprise : une sortie des Backrooms remet le style a Fidele.
+            LookResources.onClientTick(client);
             if (client.world == null) {
                 endPortalSession();
                 return;

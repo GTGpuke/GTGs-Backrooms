@@ -55,7 +55,9 @@ public final class LightCopy {
     private static final int BUDGET_PER_TICK = 8;
     /** Sections copiees au-dela de la zone : une section ne cuit qu'une fois ses voisines copiees. */
     private static final int COPY_RADIUS = LightZone.RADIUS + LightZone.COPY_MARGIN;
-    private static final int KEEP_RADIUS = COPY_RADIUS + 3;
+    /** Sections copiees pour le loin, apres celles de la zone : sa lumiere directe lit les blocs des voisines. */
+    private static final int FAR_COPY_RADIUS = LightZone.FAR_RADIUS + LightZone.COPY_MARGIN;
+    private static final int KEEP_RADIUS = FAR_COPY_RADIUS + 3;
     private static final int RETAIN_PERIOD_TICKS = 100;
     private static final int SECTION = 16;
     private static final float CHANNEL = 255.0f;
@@ -128,8 +130,7 @@ public final class LightCopy {
         if (target == null) {
             RegistryKey<World> key = world.getRegistryKey();
             LookProfile profile = LookProfiles.of(key);
-            target = new Target(new LightZone(new LightBlocks(), LightBakeSettings.of(profile, key.getValue(), LookResources.quality().traced()),
-                    world.getBottomSectionCoord(),
+            target = new Target(new LightZone(new LightBlocks(), LightBakeSettings.of(profile, key.getValue()), world.getBottomSectionCoord(),
                     world.getTopSectionCoord()));
             TARGETS.put(world, target);
         }
@@ -158,7 +159,7 @@ public final class LightCopy {
         LightBlocks blocks = target.zone.blocks();
         int bottom = Math.max(base - LightZone.COPY_MARGIN, world.getBottomSectionCoord());
         int top = Math.min(base + LightZone.HEIGHT + LightZone.COPY_MARGIN, world.getTopSectionCoord());
-        for (int radius = 0; radius <= COPY_RADIUS; radius++) {
+        for (int radius = 0; radius <= FAR_COPY_RADIUS; radius++) {
             for (int z = sectionZ - radius; z <= sectionZ + radius; z++) {
                 for (int x = sectionX - radius; x <= sectionX + radius; x++) {
                     if (Math.max(Math.abs(x - sectionX), Math.abs(z - sectionZ)) != radius) {
@@ -172,7 +173,10 @@ public final class LightCopy {
                         WorldChunk chunk = world.getChunkManager().getWorldChunk(x, z);
                         // Une colonne que le client n'a pas (petite distance de vue) ne fait pas attendre la cuisson.
                         blocks.setSection(key, chunk == null ? LightBlocks.UNLOADED : copy(world, target, chunk, y));
-                        LightSurfaces.onSectionCopied(key, base);
+                        // La grille des blocs et le cache de surfaces ne tiennent que la zone : une section du loin y prendrait la place d'une autre.
+                        if (radius <= COPY_RADIUS) {
+                            LightSurfaces.onSectionCopied(key, base);
+                        }
                         target.zone.onChanged(key);
                         if (--budget == 0) {
                             return;
@@ -342,7 +346,7 @@ public final class LightCopy {
     public static void refreshSettings() {
         for (World world : List.copyOf(TARGETS.keySet())) {
             RegistryKey<World> key = world.getRegistryKey();
-            if (!LightBakeSettings.of(LookProfiles.of(key), key.getValue(), LookResources.quality().traced()).equals(TARGETS.get(world).zone.settings())) {
+            if (!LightBakeSettings.of(LookProfiles.of(key), key.getValue()).equals(TARGETS.get(world).zone.settings())) {
                 forget(world);
             }
         }

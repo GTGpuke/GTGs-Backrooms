@@ -56,6 +56,8 @@ public final class LookPost {
     private static final Identifier BLOOM_QUARTER_B = Identifier.of(ModConstants.MOD_ID, "bloom_quarter_b");
     private static final String PERF_POST = "client.look.post";
     private static final String PERF_BLOOM = "client.look.bloom";
+    /** Bruit de la cassette sous l'option qui reduit le bruit. */
+    private static final float QUIET_TAPE = 0.3f;
     /** Sous un pack : tout l'ecran, sans test de stencil. */
     public static final int NO_FRAME = -1;
     /** Coupe-circuit : vrai apres une exception pendant le post, qui ne se dessine plus de la session. */
@@ -153,8 +155,10 @@ public final class LookPost {
         LookPrograms.bindLutSampler();
         GlUniform style = LookPrograms.postStyle();
         if (style != null) {
-            VisualPreset preset = LookSettings.current().preset();
-            style.set(preset.tape(), preset.bars());
+            LookSettings settings = LookSettings.current();
+            VisualPreset preset = settings.preset();
+            // Les options de confort valent pour la cassette : pas de tremble a l'epaule, et un bruit bien moindre.
+            style.set(preset.tape(), preset.bars(), settings.motionReduced() ? 0.0f : 1.0f, settings.noiseReduced() ? QUIET_TAPE : 1.0f);
         }
         Framebuffer screen = client.getFramebuffer();
         Vec3d listener = client.gameRenderer.getCamera().getPos();

@@ -37,7 +37,7 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - `core/render/client/menu/` : icône du menu pause et écrans de réglages du joueur ; `core/render/quality/` : paliers, presets visuels et réglages (`LookSettings`, `config/gtgs_backrooms.json`).
 - `core/perf/` : moniteur de performance opt-in.
 - `core/audio/` : moteur audio maison (`docs/systemes/AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
-- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), lumière cuite du terrain (`light/bake/` : dalles en rectangles, ombres et rebonds sur une copie des blocs, sur un fil à part ; `client/LightCopy`, `LightWorker`, `LightVolume` pour la texture 3D de zone, `LightSurfaces` et `shaders/bake/surface.fsh` pour le cache de surfaces, lightmap au pixel de texture calculée sur le GPU, `EntityShadows` et `light/ShadowCasters` pour les ombres des corps, `LightBounces` et `shaders/bake/bounce.fsh` pour les rebonds tracés de l'Ultra, `BlockMaterials` pour la matière des blocs, écrite dans leurs textures (`x_s.png`, `x_n.png`) et recopiée dans une table alignée sur l'atlas ; calcul d'une dalle et marche dans la grille communs au Java et au GLSL, `shaders/include/area_light.glsl`, `block_march.glsl`, `surface_light.glsl`, tenus d'accord par `src/test/resources/area_light_vectors.json`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
+- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), lumière cuite du terrain (`light/bake/` : dalles en rectangles, ombres et rebonds sur une copie des blocs, sur un fil à part ; `client/LightCopy`, `LightWorker`, `LightVolume` pour la texture 3D de zone, `FarVolume` pour celle du loin (jusqu'à 128 blocs), `LightSurfaces` et `shaders/bake/surface.fsh` pour le cache de surfaces, lightmap au pixel de texture calculée sur le GPU, `EntityShadows` et `light/ShadowCasters` pour les ombres des corps, `LightBounces` et `shaders/bake/bounce.fsh` pour les rebonds tracés de l'Ultra, `BlockMaterials` pour la matière des blocs, écrite dans leurs textures (`x_s.png`, `x_n.png`) et recopiée dans une table alignée sur l'atlas ; calcul d'une dalle et marche dans la grille communs au Java et au GLSL, `shaders/include/area_light.glsl`, `block_march.glsl`, `surface_light.glsl`, tenus d'accord par `src/test/resources/area_light_vectors.json`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
 - `backrooms/level0/generation/` : `coord` → `noise` → `sector` → `layout` → `write`, orchestrés par `LevelZeroChunkGenerator`.
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
@@ -589,17 +589,32 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   buts tombent à chaque tick (`clearGoals(goal -> true)`, qui garde sa gravité, à la différence de `setAiDisabled`). Un corps lancé dans le Level 0 finit contre un mur : un relevé de
   continuité s'arrête avant, sinon cet arrêt passe pour un gel.
 - Lumière par niveaux : la zone (`SectionBaker`) compte deux rebonds exacts, les tuiles tracées en estiment les suivants (`bounce.fsh`,
-  `FOLLOWING`) ; sous la lumière tracée, la zone en compte une part mesurée, sinon une surface s'éclaircit en prenant sa tuile. Une surface
+  `FOLLOWING`, deux fois le second) ; la zone les compte aussi, à tous les paliers, sinon une surface s'éclaircit en prenant sa tuile. Pour un
+  rebond, une section relit ses voisines à l'étape d'avant (`LightZone.at`), jamais finies : sinon, une bande claire suit chaque
+  frontière de sections (trouvée en peignant les cellules de bord dans le shader). Une surface
   neuve garde les rebonds de la zone jusqu'au balayage : un gain fixe la rend trop claire puis la fait retomber. Un « flash » en marchant
   se mesure en filmant une recuisson caméra fixe (`LightVolume.rebake`, chaque image contre la dernière) : d'une image à l'autre en
   marchant, la caméra avance par tick et cela ressemble à des sauts de lumière. Vanilla tire à chaque tick un vacillement de torche
   (`LightmapTextureManager.flickerIntensity`) qui entre dans la lumière de bloc de la lightmap ; la lumière forte, saturée, ne bouge pas.
+- Profil de look et paliers : une valeur de `baked_light` que la section `traced` ne redit pas vaut aussi pour l'Ultra (émission, fond,
+  limite, couleur des rebonds, néons, étalonnage, textures) ; régler un autre palier sans toucher l'Ultra passe par une valeur que `traced`
+  redit ou par du code gardé par `gtgs_Traced`, et se prouve en recapturant l'Ultra contre sa référence.
 - Grille des blocs des shaders (`gtgs_Blocks`, `gtgs_trace`) : elle n'existe qu'avec le cache de surfaces (High, Ultra, uniforme
   `gtgs_SurfaceLight`) ; en Low et Medium, l'unité de texture n'est pas liée et un rayon y lit n'importe quoi.
 - Texture d'un bloc à relief (`x_n.png`) : l'épaisseur (`gtgs_enterPile`) suppose la texture posée dans un sens fixe sur chaque face ;
   un modèle tourné par le blockstate (`"y": 90`) lui ferait lire une autre texture de l'atlas. Contre la répétition : des variantes de
   texture tirées par le blockstate, de même couleur moyenne (l'albédo du bloc se lit sur la première), sans motif à l'échelle du bloc :
   de loin, les mipmaps effacent le grain fin et ne gardent que les taches, identiques à chaque bloc.
+
+- Tests du client : un réglage qui réagit au changement de dimension du joueur (le style revient à Fidèle en quittant les
+  Backrooms) peut être défait par la sortie qu'un test précédent a encore en cours côté client ; un test attend d'abord la
+  dimension voulue côté client, puis pose son réglage. Joué seul, il passait ; dans la suite, il échouait.
+- Shaders : un tirage `fract(sin(dot(p, ...)))` dessine des hachures diagonales sur de grandes coordonnées (pixels, numéros
+  d'image) ; le bruit du post tire sur des entiers non signés (`gtgs_draw`, GLSL 150).
+- Banc de la lumière lointaine : les vues du Level 0 ont 1 à 2 % de pixels au-delà de 48 blocs ; un niveau lointain se juge en
+  forçant tout le terrain sur lui et en le comparant à la zone sur le même pixel, par genre de surface. Un masque de diagnostic lu
+  après l'étalonnage confond le blanc des néons avec son code (neutraliser `grade` et `post`). Sur un mur, la lecture filtrée du
+  loin touche la cellule dans le mur (validité 0,5 à 0,75) : c'est normal, le shader divise par la validité.
 
 ## Avant de push
 

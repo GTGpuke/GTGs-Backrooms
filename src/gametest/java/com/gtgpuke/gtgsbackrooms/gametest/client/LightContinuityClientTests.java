@@ -16,12 +16,15 @@ import org.lwjgl.system.MemoryUtil;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.screen.PlayerScreenHandler;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkSectionPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -30,13 +33,16 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModBlocks;
+import com.gtgpuke.gtgsbackrooms.core.render.client.FarVolume;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightBounces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightCopy;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightSurfaces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightVolume;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
+import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBakeSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBlocks;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightCell;
+import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightZone;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.SurfaceAtlas;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
@@ -60,6 +66,9 @@ final class LightContinuityClientTests {
     private static final double MAX_FAR = 1.4;
     /** Lumiere minimale d'une galerie eclairee. */
     private static final double MIN_LIT = 40.0;
+    /** Cellules du loin cuites qu'il faut au moins hors de la fenetre de la zone : une par section qu'il couvre en plus d'elle. */
+    private static final int MIN_FAR_CELLS = ((2 * LightZone.FAR_RADIUS + 1) * (2 * LightZone.FAR_RADIUS + 1) - (2 * LightZone.RADIUS + 1)
+            * (2 * LightZone.RADIUS + 1)) * LightZone.HEIGHT;
     /** Ecart moyen au plus entre deux images d'une meme vue, au retour : le grain du film seul. */
     private static final double MAX_RETURN = 2.5;
     /** Assez loin pour que la piece quitte la fenetre de la zone, assez pres pour que la zone garde encore ses sections cuites. */
@@ -109,7 +118,8 @@ final class LightContinuityClientTests {
             uniform sampler2D gtgs_Materials;
             uniform sampler2D gtgs_BlockAtlas;
             uniform sampler2D gtgs_BlockMaterial;
-            uniform vec3 gtgs_TracedLook;
+            uniform vec3 gtgs_LightLook;
+            uniform float gtgs_Traced;
             vec3 gtgs_WorldRel;
             vec3 gtgs_Normal = vec3(0.0, 1.0, 0.0);
             vec2 gtgs_Uv;
@@ -292,9 +302,9 @@ final class LightContinuityClientTests {
                 .ticks(40)
                 .await("repos en Ultra", LightContinuityClientTests::settled, SETTLE_TICKS)
                 .check("la zone suit le palier", context -> {
-                    float wanted = LookProfiles.of(context.world().getRegistryKey()).bakedLight().bounce();
-                    float baked = LightCopy.settings(context.world()).bounce();
-                    ClientTestContext.require(baked == wanted, "La zone garde les rebonds de l'ancien palier : " + baked + " contre " + wanted + ".");
+                    LightBakeSettings wanted = LightBakeSettings.of(LookProfiles.of(context.world().getRegistryKey()), context.world().getRegistryKey().getValue());
+                    LightBakeSettings baked = LightCopy.settings(context.world());
+                    ClientTestContext.require(wanted.equals(baked), "La zone garde les reglages de l'ancien palier : " + baked + " contre " + wanted + ".");
                 })
                 .run("regard au plafond, tuiles", context -> look(context, 200.0f, -70.0f))
                 .frames(8)
@@ -450,11 +460,26 @@ final class LightContinuityClientTests {
         float[][] cases = {{0.0f, -0.5f, 0.0f}, {128.0f, -0.5f, 0.0f}, {0.0f, -0.5f, 128.0f}, {0.0f, -64.5f, 0.0f}, {0.0f, -1.5f, 0.0f}};
         boolean[] beyond = {false, true, true, true, false};
         int below = cases.length - 1;
-        float[] pixels = LookGradeClientTests.render(source, 1, program -> {
+        float[] pixels = calmPixels(context, source, sprite, floor, cases, 1.0f);
+        // Sans lumiere tracee, la table des matieres n'existe pas : tout se lit dans la texture, meme dans la grille.
+        float[] plain = calmPixels(context, source, sprite, floor, cases, 0.0f);
+        for (int i = 0; i < cases.length; i++) {
+            for (int channel = 0; channel < 3; channel++) {
+                float expected = plain[(i * 3 + 1) * 4 + channel] * (1.0f - DETAIL) + DETAIL;
+                ClientTestContext.require(Math.abs(plain[i * 12 + channel] - expected) <= COLOR_TOLERANCE, String.format(Locale.ROOT,
+                        "Sans lumiere tracee, cas %d, composante %d : %.4f au lieu de %.4f.", i, channel, plain[i * 12 + channel], expected));
+            }
+        }
+        checkCalmCases(pixels, cases, beyond, below, floor);
+    }
+
+    private static float[] calmPixels(ClientTestContext context, String source, Sprite sprite, BlockPos floor, float[][] cases, float traced) {
+        return LookGradeClientTests.render(source, 1, program -> {
+            GL20.glUniform1f(GL20.glGetUniformLocation(program, "gtgs_Traced"), traced);
             GL20.glUniform3i(GL20.glGetUniformLocation(program, "gtgs_CameraBlock"), floor.getX(), floor.getY() + 1, floor.getZ());
             GL20.glUniform3f(GL20.glGetUniformLocation(program, "gtgs_CameraFract"), 0.5f, 0.5f, 0.5f);
             GL20.glUniform1i(GL20.glGetUniformLocation(program, "gtgs_LightBase"), LightVolume.baseY());
-            GL20.glUniform3f(GL20.glGetUniformLocation(program, "gtgs_TracedLook"), DETAIL, 0.0f, 0.0f);
+            GL20.glUniform3f(GL20.glGetUniformLocation(program, "gtgs_LightLook"), DETAIL, 0.0f, 0.0f);
             GL20.glUniform2f(GL20.glGetUniformLocation(program, "gtgs_TestUv"), (sprite.getMinU() + sprite.getMaxU()) * 0.5f, (sprite.getMinV() + sprite.getMaxV()) * 0.5f);
             GL20.glUniform1i(GL20.glGetUniformLocation(program, LightSurfaces.SAMPLER_BLOCKS), LightSurfaces.UNIT_BLOCKS);
             GL20.glUniform1i(GL20.glGetUniformLocation(program, LightBounces.SAMPLER_MATERIALS), LightBounces.UNIT_MATERIALS);
@@ -463,6 +488,9 @@ final class LightContinuityClientTests {
                 GL20.glUniform4f(GL20.glGetUniformLocation(program, "gtgs_TestRel[" + i + "]"), cases[i][0], cases[i][1], cases[i][2], 0.0f);
             }
         });
+    }
+
+    private static void checkCalmCases(float[] pixels, float[][] cases, boolean[] beyond, int below, BlockPos floor) {
         for (int i = 0; i < cases.length; i++) {
             for (int channel = 0; channel < 3; channel++) {
                 float calmed = pixels[i * 12 + channel];
@@ -635,12 +663,24 @@ final class LightContinuityClientTests {
                 });
     }
 
-    /** Une surface au-dela de la zone n'a que la lightmap : elle doit deja valoir ce qu'elle vaudra de pres. */
+    /**
+     * Une surface au-dela de la zone prend la lumiere du loin : elle doit deja valoir ce qu'elle vaudra de pres. Le loin est cuit autour
+     * de la zone, dans sa texture, et le terrain la lit.
+     */
     private static ClientScenario farRoomStaysLit() {
         ClientScenario scenario = arrival("far_room_stays_lit", LookQuality.HIGH)
                 .run("une longue galerie", LightContinuityClientTests::build)
                 .ticks(40);
         scenario = gallery(scenario, "High");
+        scenario = scenario.check("le loin est cuit au-dela de la zone, et le terrain le lit", context -> {
+            int program = GameRenderer.getRenderTypeSolidProgram().getGlRef();
+            int location = GL20.glGetUniformLocation(program, FarVolume.SAMPLER);
+            ClientTestContext.require(location >= 0 && GL20.glGetUniformi(program, location) == FarVolume.UNIT, "Le terrain ne lit pas la texture du loin.");
+            int[] cells = farCellsBeyondZone(context);
+            ModConstants.LOGGER.info("[Test client] Loin : {} cellules cuites hors de la zone, {} de part indirecte.", cells[0], cells[1]);
+            ClientTestContext.require(cells[0] >= MIN_FAR_CELLS && cells[1] >= MIN_FAR_CELLS, "Loin presque vide hors de la zone : " + cells[0] + " cellules, "
+                    + cells[1] + " de part indirecte.");
+        });
         scenario = scenario.run("palier Ultra", context -> tier(context, LookQuality.ULTRA)).ticks(4);
         scenario = gallery(scenario, "Ultra");
         return scenario
@@ -649,5 +689,45 @@ final class LightContinuityClientTests {
                     LevelZeroClientTests.defaultTier(context);
                     LevelZeroClientTests.backToOverworld(context);
                 });
+    }
+
+    /**
+     * Cellules valides de la texture du loin dans les sections hors de la fenetre de la zone, autour de la camera : dans les tranches de
+     * l'eclairement complet, puis dans celles de sa part indirecte.
+     */
+    private static int[] farCellsBeyondZone(ClientTestContext context) {
+        int texture = FarVolume.texture();
+        ClientTestContext.require(texture != 0, "Pas de texture du loin.");
+        int width = FarVolume.WIDTH;
+        int rows = FarVolume.HEIGHT;
+        int slots = width / LightZone.FAR_CELLS;
+        Vec3d camera = context.client().gameRenderer.getCamera().getPos();
+        int centerX = Math.floorMod(ChunkSectionPos.getSectionCoord(MathHelper.floor(camera.x)), slots);
+        int centerZ = Math.floorMod(ChunkSectionPos.getSectionCoord(MathHelper.floor(camera.z)), slots);
+        ByteBuffer pixels = MemoryUtil.memAlloc(width * rows * width * Integer.BYTES);
+        int previousUnit = GlStateManager._getActiveTexture();
+        try {
+            GlStateManager._activeTexture(GL13.GL_TEXTURE0 + FarVolume.UNIT);
+            GL11.glBindTexture(GL12.GL_TEXTURE_3D, texture);
+            GL11.glGetTexImage(GL12.GL_TEXTURE_3D, 0, GL11.GL_RGBA, GL12.GL_UNSIGNED_INT_2_10_10_10_REV, pixels);
+            int[] count = new int[2];
+            for (int z = 0; z < width; z++) {
+                // Ecart signe a la section de la camera, la texture se repetant tous les slots sections.
+                int dz = Math.floorMod(z / LightZone.FAR_CELLS - centerZ + slots / 2, slots) - slots / 2;
+                for (int y = 0; y < rows; y++) {
+                    for (int x = 0; x < width; x++) {
+                        int dx = Math.floorMod(x / LightZone.FAR_CELLS - centerX + slots / 2, slots) - slots / 2;
+                        boolean beyond = Math.abs(dx) > LightZone.RADIUS || Math.abs(dz) > LightZone.RADIUS;
+                        if (beyond && pixels.getInt(((z * rows + y) * width + x) * Integer.BYTES) >>> 30 != 0) {
+                            count[y < rows / 2 ? 0 : 1]++;
+                        }
+                    }
+                }
+            }
+            return count;
+        } finally {
+            GlStateManager._activeTexture(previousUnit);
+            MemoryUtil.memFree(pixels);
+        }
     }
 }

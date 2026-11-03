@@ -35,8 +35,8 @@ import com.gtgpuke.gtgsbackrooms.core.ModConstants;
  * pixel (rouge vers la droite de la texture, vert vers son bas) et sa hauteur (alpha, opaque en haut), et {@code x_s.png} son lissage
  * (rouge, 0 pour mat). Les deux se recopient dans une texture de la taille de l'atlas des blocs, chaque pixel a la place du sien
  * dans l'atlas : un shader la lit aux memes coordonnees que sa texture, sans table, sans savoir quel bloc il dessine. Ce qui n'a pas de
- * fichier reste a zero : mat, et sans pente. Refaite a la premiere demande apres un rechargement des modeles, et seulement si le palier
- * la lit : en dessous du cache de surfaces, elle n'existe pas.
+ * fichier reste a zero : mat, et sans pente. Refaite a la premiere demande apres un rechargement des modeles : tous les paliers a lumiere
+ * cuite la lisent (textures calmees).
  */
 public final class BlockMaterials {
 

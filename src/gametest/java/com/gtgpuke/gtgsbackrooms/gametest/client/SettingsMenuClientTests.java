@@ -1,10 +1,16 @@
 package com.gtgpuke.gtgsbackrooms.gametest.client;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 
+import com.mojang.blaze3d.platform.GlStateManager;
+import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
+import org.lwjgl.system.MemoryUtil;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.GameMenuScreen;
 import net.minecraft.client.gui.screen.Screen;
@@ -36,13 +42,19 @@ final class SettingsMenuClientTests {
     private static final String KEY = "screen.gtgs_backrooms.settings.";
     /** Images laissees aux mesures GPU pour remonter jusqu'a la moyenne. */
     private static final int MEASURED_FRAMES = 30;
+    /** Les six options de la partie avancee, et Termine. */
+    private static final int ADVANCED_BUTTONS = 7;
+    /** Largeur de la bande gauche de l'image relue, en pour cent : dans la bande noire de la cassette, pour un ecran de 16:9. */
+    private static final int SIDE_PERCENT = 8;
+    /** Palier choisi avant le test de la cassette. */
+    private static String tierBefore = "";
 
     private SettingsMenuClientTests() {
         throw new UnsupportedOperationException("Classe utilitaire.");
     }
 
     static List<ClientScenario> scenarios() {
-        return List.of(settingsMenu());
+        return List.of(settingsMenu(), tapeOnlyInBackrooms());
     }
 
     private static TexturedButtonWidget icon(Screen screen) {
@@ -109,13 +121,17 @@ final class SettingsMenuClientTests {
                     ClientTestContext.require(LookResources.surfaceLight(), "Pas de cache de surfaces en High.");
                     ClientTestContext.require(LookProfiles.of(BackroomsConstants.LEVEL_ZERO_WORLD).post().bloom(), "Pas de bloom en High.");
                 })
-                .run("preset Pixel", context -> click(context.client(), label("preset.pixel")))
+                .run("ombres pixelisees : non", context -> click(context.client(), label("pixels.0")))
                 .frames(2)
-                .check("le preset pose ses pixels d'ombre dans le shader", context -> ClientTestContext.require(uniformVec("gtgs_LookParams") == 16.0f,
-                        "Pixels d'ombre " + uniformVec("gtgs_LookParams") + " au lieu de 16."))
-                .run("lumiere lisse", context -> click(context.client(), label("pixels.0")))
+                .check("la lumiere est lisse dans le shader", context -> ClientTestContext.require(uniformVec("gtgs_LookParams") == 0.0f, "La lumiere n'est pas lisse."))
+                .run("ombres pixelisees : oui", context -> click(context.client(), label("pixels.32")))
                 .frames(2)
-                .check("les pixels d'ombre se reglent seuls", context -> ClientTestContext.require(uniformVec("gtgs_LookParams") == 0.0f, "La lumiere n'est pas lisse."))
+                .check("les pixels d'ombre valent 32 dans le shader", context -> ClientTestContext.require(uniformVec("gtgs_LookParams") == 32.0f,
+                        "Pixels d'ombre " + uniformVec("gtgs_LookParams") + " au lieu de 32."))
+                .run("style VHS", context -> click(context.client(), label("preset.found_footage")))
+                .frames(2)
+                .check("le style VHS est pose", context -> ClientTestContext.require(LookSettings.current().preset() == VisualPreset.FOUND_FOOTAGE,
+                        "Style " + LookSettings.current().preset() + "."))
                 .run("preset Cinematique", context -> click(context.client(), label("preset.cinematic")))
                 .frames(4)
                 .run("une option de confort", context -> click(context.client(), label("option.reduce_flashes")))
@@ -124,11 +140,15 @@ final class SettingsMenuClientTests {
                 .run("reglages avances", context -> click(context.client(), label("advanced")))
                 .frames(MEASURED_FRAMES)
                 .check("le cout GPU se mesure en direct", context -> ClientTestContext.require(GpuTimer.milliseconds(GpuTimer.WORLD) > 0.0f, "Aucune mesure du monde."))
+                .check("la partie avancee n'a que ses options et Termine", context -> ClientTestContext.require(
+                        Screens.getButtons(context.client().currentScreen).size() == ADVANCED_BUTTONS,
+                        "Boutons de la partie avancee : " + Screens.getButtons(context.client().currentScreen).size() + "."))
                 .run("bloom coupe", context -> click(context.client(), label("option.bloom")))
                 .frames(2)
                 .check("une option avancee retire son effet", context -> ClientTestContext.require(!LookProfiles.of(BackroomsConstants.LEVEL_ZERO_WORLD).post().bloom(),
                         "Bloom encore la."))
-                .run("tout couper", context -> click(context.client(), label("quality.off")))
+                .run("palier desactive, par la configuration", context -> LookResources.applySettings(LookSettings.current().withQuality(LookQuality.OFF.key()),
+                        context.client()))
                 .frames(6)
                 .check("le palier desactive retire le look et la lumiere cuite", context -> {
                     ClientTestContext.require(LookResources.quality() == LookQuality.OFF, "Palier " + LookResources.quality() + ".");
@@ -140,6 +160,96 @@ final class SettingsMenuClientTests {
                     context.client().setScreen(null);
                     LevelZeroClientTests.backToOverworld(context);
                 });
+    }
+
+    /**
+     * Le style VHS vaut pour les Backrooms : sa cassette pose ses bandes noires dans le Level 0 ; en sortant, le style revient a Fidele,
+     * le palier restant, et l'image redevient normale.
+     */
+    private static ClientScenario tapeOnlyInBackrooms() {
+        // D'abord l'Overworld cote client, puis le style une fois dans le Level 0 : un test precedent peut encore avoir une sortie des
+        // Backrooms en cours cote client, et elle remettrait le style a Fidele.
+        return ClientScenario.named("tape_only_in_backrooms")
+                .run("dans l'Overworld", LevelZeroClientTests::backToOverworld)
+                .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD, 1200)
+                .run("entree dans le Level 0", LevelZeroClientTests::enterLevelZero)
+                .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, 1200)
+                .run("style VHS", context -> {
+                    tierBefore = LookSettings.current().quality();
+                    LookResources.applySettings(LookSettings.current().withPreset(VisualPreset.FOUND_FOOTAGE), context.client());
+                })
+                .frames(8)
+                .check("dans le Level 0, la cassette pose sa bande noire, au bord droit", context -> {
+                    float black = blackSide(context.client());
+                    ClientTestContext.require(black > 0.99f, "Part noire de la bande gauche dans le Level 0 : " + black + ".");
+                    int[] edge = frameEdge(context.client());
+                    ClientTestContext.require(edge[0] == edge[1], "Bord du cadre dentele : de la colonne " + edge[0] + " a " + edge[1] + ".");
+                })
+                .run("retour dans l'Overworld", LevelZeroClientTests::backToOverworld)
+                .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD, 1200)
+                .await("le style revient a Fidele", context -> LookSettings.current().preset() == VisualPreset.FAITHFUL, 200)
+                .frames(8)
+                .check("hors des Backrooms, le palier reste et l'image redevient normale", context -> {
+                    ClientTestContext.require(LookSettings.current().quality().equals(tierBefore), "Palier change : " + LookSettings.current().quality() + ".");
+                    float black = blackSide(context.client());
+                    ClientTestContext.require(black < 0.05f, "Part noire de la bande gauche dans l'Overworld : " + black + ".");
+                })
+                .cleanup(context -> {
+                    LookResources.applySettings(LookSettings.defaults(), context.client());
+                    LevelZeroClientTests.backToOverworld(context);
+                });
+    }
+
+    /**
+     * Premiere et derniere colonne ou s'arrete la bande noire de gauche, sur toutes les lignes de la derniere image : egales, le bord du
+     * cadre est droit, meme au bas de l'image que le changement de tete fait glisser.
+     */
+    private static int[] frameEdge(MinecraftClient client) {
+        Framebuffer screen = client.getFramebuffer();
+        int width = screen.textureWidth / 2;
+        int height = screen.textureHeight;
+        ByteBuffer pixels = MemoryUtil.memAlloc(width * height * 4);
+        try {
+            GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, screen.fbo);
+            GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
+            int first = width;
+            int last = 0;
+            for (int row = 0; row < height; row++) {
+                int column = 0;
+                while (column < width && pixels.get((row * width + column) * 4) == 0 && pixels.get((row * width + column) * 4 + 1) == 0
+                        && pixels.get((row * width + column) * 4 + 2) == 0) {
+                    column++;
+                }
+                first = Math.min(first, column);
+                last = Math.max(last, column);
+            }
+            return new int[] {first, last};
+        } finally {
+            screen.beginWrite(false);
+            MemoryUtil.memFree(pixels);
+        }
+    }
+
+    /** Part des pixels tout a fait noirs dans la bande gauche de la derniere image, que le tick du client relit entre deux images. */
+    private static float blackSide(MinecraftClient client) {
+        Framebuffer screen = client.getFramebuffer();
+        int width = screen.textureWidth * SIDE_PERCENT / 100;
+        int height = screen.textureHeight;
+        ByteBuffer pixels = MemoryUtil.memAlloc(width * height * 4);
+        try {
+            GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, screen.fbo);
+            GL11.glReadPixels(0, 0, width, height, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
+            int black = 0;
+            for (int i = 0; i < width * height; i++) {
+                if (pixels.get(i * 4) == 0 && pixels.get(i * 4 + 1) == 0 && pixels.get(i * 4 + 2) == 0) {
+                    black++;
+                }
+            }
+            return black / (float) (width * height);
+        } finally {
+            screen.beginWrite(false);
+            MemoryUtil.memFree(pixels);
+        }
     }
 
     /** Premiere composante d'un uniforme vec4 du terrain. */

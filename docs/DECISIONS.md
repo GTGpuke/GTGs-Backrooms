@@ -240,11 +240,58 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   High. Un changement de palier la recuit désormais, et elle vaut 0,86 à 0,95 des tuiles, sans gain ; la lightmap suit une courbe et une
   couleur relevées sur les tuiles, en Ultra. Filmé ensuite image par image en marchant (« de loin on remarque le changement de lumière
   quand on avance ») : une surface sans tuile était 12,5 niveaux sous sa valeur finale, et la zone ne comptait que deux rebonds quand les
-  tuiles estiment les suivants. Sous la lumière tracée, la zone en compte une part mesurée (1,55 du second), et une surface neuve garde
+  tuiles estiment les suivants. Sous la lumière tracée, la zone en compte une part mesurée (1,55 du second, puis 2 une fois corrigé le
+  défaut des frontières de sections), et une surface neuve garde
   les rebonds de la zone au lieu d'un gain fixe : écarts de -4,3 et -0,2 niveau. Le vacillement de torche de vanilla, tiré à chaque tick
   pour la lumière de bloc, entre dans la lightmap, donc dans la lumière lointaine des zones peu éclairées (la lumière forte y est
   saturée) : un monde à courbe ne l'a plus. Son effet n'est pas mesuré : les sauts de 3 à 4 % par tick d'abord relevés dans le film de
   marche venaient du mouvement de la caméra, et caméra fixe, la grande salle ne varie que de 0,03 % avant comme après.
+- Menu simplifié (demande de l'auteur du 2 novembre 2026) : les styles se réduisent à Fidèle, VHS (refait, plus convaincant) et
+  Cinématique ; Pixel, Réaliste et Confort disparaissent (Confort doublait les options de confort, qui restent). Les ombres pixelisées
+  valent oui (32) ou non : la taille 16 disparaît, et un réglage enregistré à 16 vaut 32. La partie avancée n'a plus de bouton qui
+  coupe tout : le palier désactivé ne se choisit plus que par l'option de lancement. Écart avec le document de qualité, qui liste six
+  styles : la décision de l'auteur prime.
+- Style VHS refait une seconde fois (demande de l'auteur du 2 novembre 2026 : un 4:3 à l'écran, mais « la partie distordue, ce n'est pas
+  les bords de l'écran mais les bords de l'image », pas de gris, un vrai aspect found footage). Compris ainsi : le cadre reste un rectangle
+  droit, c'est l'objectif du caméscope qui courbe l'image vers ses bords. Le principe vient de ce que montrent les vidéos du genre, faites
+  d'images de synthèse passées sur une vraie cassette au magnétoscope ; tout est écrit pour ce moteur, en une passe. Les défauts qui
+  demanderaient l'image précédente (peignes de l'entrelacement en mouvement, exposition automatique qui pompe) ne sont pas faits : le
+  post n'a pas d'historique. Le tremblé à l'épaule bouge l'image dans le cadre, pas la caméra du joueur, et suit l'option sans secousse.
+  Ensuite (même jour) : bords du cadre droits, et traits blancs (pertes, tirets) sur un tiers de la hauteur d'une ligne ; le reste
+  des défauts, grain des sombres compris, garde sa force (des défauts tous adoucis ne convenaient pas à l'auteur). Puis un entre-deux,
+  à sa demande : le bruit des sombres reste entier, le reste à mi-chemin, et le tremblé à l'épaule passe au tiers, les lignes
+  glissant beaucoup moins. Puis encore moins de tremblements : tremblé à l'épaule de 0,4 pixel, lignes qui glissent à peine, et
+  l'entrelacement ne déplace plus les lignes que d'un cinquième de ligne d'une image à l'autre (une demi-ligne faisait sautiller les
+  bords horizontaux).
+- En quittant les Backrooms, le style revient à Fidèle (demande de l'auteur du 2 novembre 2026). C'est une règle des réglages, prise sur
+  la dimension du joueur, pas une règle de rendu : chaque pixel garde le look de la dimension qu'il montre. Le palier et les options de
+  confort restent, réglages de performance et d'accessibilité.
+- Zone : une section relisait une voisine déjà finie, avec tous ses rebonds, au lieu de son état d'avant (trouvé le 2 novembre 2026 en
+  cherchant les défauts de Low et Medium dans les grandes pièces : une bande claire au plafond, le long de chaque frontière de sections).
+  Corrigé, la part des rebonds suivants de la zone revient à celle des rebonds tracés (2, au lieu de 1,55, mesurée avec le défaut).
+  L'Ultra recapturé ne change que dans un couloir lointain et sombre (4 niveaux sur un bloc de 64 pixels) ; écart signé nul.
+- Ultra figé et paliers alignés sur lui (demande de l'auteur du 2 novembre 2026 : « aligner toutes les qualités en dessous avec ce que
+  représente l'Ultra », « le Ultra tu le fige »). Conforme au document de qualité (« Low et Ultra ont la même palette : seul le réalisme
+  de la lumière change »). Les paliers prennent les réglages de l'Ultra (`detail`, `exposure`, `direct` dans `baked_light`, rebonds 0,95,
+  pied de courbe nul, épaule 0,8, relief 0,6), la zone compte partout les rebonds suivants, les textures sont calmées partout (couleur du
+  bloc lue dans le plus petit niveau de sa texture : la table des matières n'existe qu'en Ultra), et High perd la courbe qui creusait ses
+  ombres et la double occlusion de ses rebonds. L'exposition des paliers vaut 0,63 contre 0,6 en Ultra : leurs rebonds, ceux de la zone,
+  rendent un peu moins que les rebonds tracés. L'Ultra recapturé est identique à sa référence (écart signé nul, pire bloc de 64 pixels
+  à 0,16 niveau, le grain du film). Les réglages de la section `traced` restent écrits en entier : un changement des valeurs de base ne le
+  touche pas.
+- La lumière est calculée jusqu'à 128 blocs (choix de l'auteur du 2 novembre 2026, entre trois correctifs proposés, après « la distance de
+  rendu des area light », pour tous les paliers). Au-delà de 48 blocs, la lightmap recalée virait au brun sur les murs, plus sombres d'un
+  tiers que de près en Low. Un loin prend le relais de la zone jusqu'à 128 blocs : la lumière directe cuite, deux fois moins fine à
+  l'horizontale, avec les rebonds d'une pièce moyenne mesurée dans la zone ; au-delà, la pièce moyenne seule remplace la lightmap. L'Ultra
+  ne change qu'au-delà de 40 blocs (recapture contre sa référence : écart signé nul, seul un couloir lointain change, 4 niveaux sur un bloc
+  de 64 pixels, et prend le ton des murs proches). Écart au document de qualité, qui ne prévoit pas de troisième niveau de lumière cuite.
+- Le loin se cuit comme la zone, sans valeur propre au Level 0 dans le shader (demande de l'auteur du 2 novembre 2026 : « fais en sorte
+  que ça soit intelligent, pour ne pas avoir à le refaire plus tard », et la différence se voyait encore de loin). Ses rebonds étaient
+  une pièce moyenne fixe, mesurée une fois dans le Level 0 et écrite dans le shader commun : elle aurait été fausse dans toute autre
+  dimension, et à 10 à 25 % près surface par surface dans le Level 0 même. Le loin calcule maintenant ses deux rebonds avec la
+  vraie géométrie (480 sections, 7,6 s de cuisson au lieu de 1,1 s, hors du fil de rendu) ; la pièce moyenne, au-delà de 128 blocs,
+  se mesure sur ce qui est cuit. Elle ne vaut qu'une salle bien éclairée en moyenne : le quart le plus clair des sections, choisi sur
+  mesure en deux salles (la moitié la plus claire donnait 0,59 à 1,01 de la zone, le quart 0,69 à 1,17).
 - Moquette sans motif répété (demande de l'auteur du 2 novembre 2026 : « le pattern se répète trop »). Quatre textures tirées au hasard par
   bloc, sans rotation : l'épaisseur de la moquette (`gtgs_enterPile`) suppose la texture posée dans un sens fixe sur chaque face, et un
   modèle tourné lui ferait lire une autre texture de l'atlas. La couleur moyenne ne change pas (147,1 ; 134,5 ; 73,1), ni le look.
@@ -262,8 +309,8 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
 - Le cache de surfaces passe de 64 à 128 Mio, et ses rebonds de 8 à 16 Mio (décision prise en corrigeant les carrés de chunks, le
   1er novembre 2026) : une grande salle ouverte du Level 0 demande dix-huit mille tuiles, le cache en avait seize mille. Réduire le rayon
   des tuiles aurait changé l'image jusqu'à 24 blocs.
-- Écart à `QUALITE_ET_PRESETS` §5.5 : la lumière d'une surface a trois niveaux qui se fondent selon la distance (tuiles, zone, lightmap
-  recalée), parce que le passage d'un niveau à l'autre faisait s'allumer les néons au loin.
+- Écart à `QUALITE_ET_PRESETS` §5.5 : la lumière d'une surface a des niveaux qui se fondent selon la distance (tuiles, zone, loin, pièce
+  moyenne depuis le 2 novembre 2026), parce que le passage d'un niveau à l'autre faisait s'allumer les néons au loin.
 - La dalle de plafond a un rail métallique mat, très légèrement surélevé (demandes de l'auteur du 2 novembre 2026 : un rail qui reflétait la pièce,
   essayé d'abord, ne lui convenait pas, « mat normalement »). Le relief passe par la matière, sans géométrie : un modèle à rails multiplierait
   les faces de tous les plafonds du Level 0 pour moins de deux centimètres, sur des faces trop fines pour que la lumière s'y lise. Le rail

@@ -540,6 +540,15 @@ public final class LightSurfaces {
         GL11.glBindTexture(GL12.GL_TEXTURE_3D, tiles);
         GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_BLOCKS);
         GL11.glBindTexture(GL12.GL_TEXTURE_3D, blocks);
+        GlStateManager._activeTexture(previousUnit);
+    }
+
+    /**
+     * Lie l'atlas des blocs et la matiere de leurs textures a leurs unites, a tous les paliers a lumiere cuite : le terrain y lit la
+     * couleur moyenne d'une texture (textures calmees) et la hauteur de ses pixels. Un rechargement a pu les changer.
+     */
+    static void bindSprites() {
+        int previousUnit = GlStateManager._getActiveTexture();
         GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_SPRITES);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, MinecraftClient.getInstance().getTextureManager().getTexture(PlayerScreenHandler.BLOCK_ATLAS_TEXTURE).getGlId());
         GlStateManager._activeTexture(previousUnit);

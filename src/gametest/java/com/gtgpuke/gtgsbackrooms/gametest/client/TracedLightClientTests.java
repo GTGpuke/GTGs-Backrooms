@@ -79,7 +79,7 @@ final class TracedLightClientTests {
     private static final double MAX_CEILING_BLUE = 0.45;
     /** Sous les dalles, la lumiere d'une surface a sa limite : sans elle, le sol sature. */
     private static final double MAX_LIT_FLOOR = 190.0;
-    /** Ce que le contraste local de l'image gagne au moins en quittant la lumiere tracee, a vue egale. */
+    /** Ce que le contraste local de l'image peut gagner au plus en quittant la lumiere tracee, a vue egale : les textures sont calmes partout. */
     private static final double CALMER = 1.25;
     private static final int QUIET_FRAMES = 40;
     private static final int SETTLE_TICKS = 2400;
@@ -499,11 +499,12 @@ final class TracedLightClientTests {
                 .ticks(4)
                 .await("High au repos", TracedLightClientTests::settled, SETTLE_TICKS)
                 .frames(8)
-                .capture("les textures sont plus calmes en Ultra", image -> {
+                .capture("les textures sont aussi calmes en High", image -> {
                     double high = localContrast(image);
                     ModConstants.LOGGER.info("[Test client] Contraste des textures : Ultra {}, High {}.", String.format(Locale.ROOT, "%.4f", tracedDetail),
                             String.format(Locale.ROOT, "%.4f", high));
-                    ClientTestContext.require(high > tracedDetail * CALMER, String.format(Locale.ROOT, "Textures aussi marquees en Ultra : %.4f contre %.4f.", tracedDetail, high));
+                    ClientTestContext.require(high < tracedDetail * CALMER, String.format(Locale.ROOT, "Textures plus marquees en High qu'en Ultra : %.4f contre %.4f.", high,
+                            tracedDetail));
                 })
                 .cleanup(context -> {
                     setPillar(context, false);

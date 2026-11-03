@@ -56,45 +56,36 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
      *         tourne dans une piece y prend sa couleur, sans toucher a ce qu'une dalle eclaire directement
      * @param lightLimit ce que vaut au plus la lumiere d'une surface, composante par composante, 0 sans limite : sous une dalle, toute lumiere finit
      *         par valoir cette limite, et la surface a la couleur de sa texture ; ce qui n'a que des rebonds garde leur couleur
+     * @param detail part du contraste des textures gardee : 1 les garde, 0 rend la couleur moyenne de chaque bloc
+     * @param exposure ce qui multiplie la lumiere des surfaces
+     * @param direct ce que vaut la lumiere directe a l'image, les rebonds restant entiers
      * @param traced ce que change la lumiere tracee
      */
     public record BakedLight(float emission, Vec3d ambient, float reach, float size, float angle, float shadowSize, float occlusion, float relief, float haze, float sheen,
-            float shoulder, float toe, float pixelLight, float darkPixels, float bounce, Vec3d bounceColor, float lightLimit, Traced traced) {
+            float shoulder, float toe, float pixelLight, float darkPixels, float bounce, Vec3d bounceColor, float lightLimit, float detail, float exposure, float direct,
+            Traced traced) {
 
         /** Aucune lumiere cuite : la lightmap reste. */
         public static final BakedLight NONE = new BakedLight(0.0f, Vec3d.ZERO, 0.0f, 1.0f, 90.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-                new Vec3d(1.0, 1.0, 1.0), 0.0f, new Traced(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f));
+                new Vec3d(1.0, 1.0, 1.0), 0.0f, 1.0f, 1.0f, 1.0f, new Traced(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f));
 
         /** {@code true} si ce profil cuit sa lumiere. */
         public boolean any() {
             return this.emission > 0.0f;
         }
 
-        /** Cette lumiere, relief, halos et reflet multiplies. */
-        public BakedLight scaled(float reliefFactor, float hazeFactor, float sheenFactor) {
-            return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.shadowSize, this.occlusion, this.relief * reliefFactor,
-                    this.haze * hazeFactor, this.sheen * sheenFactor, this.shoulder, this.toe, this.pixelLight, this.darkPixels, this.bounce, this.bounceColor,
-                    this.lightLimit, this.traced);
-        }
-
-        /** Cette lumiere, avec cette part du degrade sur la grille des texels et ce grain de pixels dans le noir. */
-        public BakedLight pixels(float nextPixelLight, float nextDarkPixels) {
-            return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.shadowSize, this.occlusion, this.relief, this.haze, this.sheen,
-                    this.shoulder, this.toe, nextPixelLight, nextDarkPixels, this.bounce, this.bounceColor, this.lightLimit, this.traced);
-        }
-
         /** Cette lumiere, sans le relief, les halos ou le reflet que le palier et les options retirent. */
         public BakedLight masked(boolean keepRelief, boolean keepHaze, boolean keepSheen) {
             return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.shadowSize, this.occlusion, keepRelief ? this.relief : 0.0f,
                     keepHaze ? this.haze : 0.0f, keepSheen ? this.sheen : 0.0f, this.shoulder, this.toe, this.pixelLight, this.darkPixels, this.bounce, this.bounceColor,
-                    this.lightLimit, this.traced);
+                    this.lightLimit, this.detail, this.exposure, this.direct, this.traced);
         }
 
         /** Cette lumiere sous le trace : ce que le profil demande a la lumiere tracee remplace ses valeurs. */
         public BakedLight tracedLight() {
             return new BakedLight(this.emission, this.ambient, this.reach, this.size, this.angle, this.traced.shadowSize(), this.occlusion, this.traced.relief(), this.haze,
                     this.traced.sheen(), this.traced.shoulder(), this.traced.toe(), this.pixelLight, this.darkPixels, this.traced.bounce(), this.bounceColor,
-                    this.lightLimit, this.traced);
+                    this.lightLimit, this.traced.detail(), this.traced.exposure(), this.traced.direct(), this.traced);
         }
     }
 
@@ -204,10 +195,9 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
      */
     public record Post(float vignette, float chromatic, boolean bloom, float bloomThreshold, float bloomStrength) {
 
-        /** Ce post, vignette et aberration augmentees (bornees a 1), bloom multiplie. */
-        public Post adjusted(float vignetteAdded, float chromaticAdded, float bloomFactor) {
-            return new Post(Math.min(this.vignette + vignetteAdded, 1.0f), Math.min(this.chromatic + chromaticAdded, 1.0f), this.bloom, this.bloomThreshold,
-                    this.bloomStrength * bloomFactor);
+        /** Ce post, vignette augmentee (bornee a 1), bloom multiplie. */
+        public Post adjusted(float vignetteAdded, float bloomFactor) {
+            return new Post(Math.min(this.vignette + vignetteAdded, 1.0f), this.chromatic, this.bloom, this.bloomThreshold, this.bloomStrength * bloomFactor);
         }
 
         /** Aucun post-traitement. */
@@ -333,9 +323,15 @@ public record LookProfile(@Nullable Identifier dimension, int id, float tintRed,
         }
         float lightLimit = section.has("light_limit") ? section.get("light_limit").getAsFloat() : 0.0f;
         check("baked_light.light_limit", lightLimit, 0.0f, 4.0f);
+        float detail = section.has("detail") ? section.get("detail").getAsFloat() : 1.0f;
+        check("baked_light.detail", detail, 0.0f, 1.0f);
+        float exposure = section.has("exposure") ? section.get("exposure").getAsFloat() : 1.0f;
+        check("baked_light.exposure", exposure, 0.05f, 4.0f);
+        float direct = section.has("direct") ? section.get("direct").getAsFloat() : 1.0f;
+        check("baked_light.direct", direct, 0.0f, 4.0f);
         return new BakedLight(emission, new Vec3d(ambient[0], ambient[1], ambient[2]), reach, size, angle, shadowSize, occlusion, relief, haze, sheen, shoulder, toe,
-                pixelLight, darkPixels, bounce, new Vec3d(bounceColor[0], bounceColor[1], bounceColor[2]), lightLimit, traced(section, new Traced(shadowSize, relief,
-                sheen, bounce, toe, 1.0f, 1.0f, 1.0f, shoulder)));
+                pixelLight, darkPixels, bounce, new Vec3d(bounceColor[0], bounceColor[1], bounceColor[2]), lightLimit, detail, exposure, direct, traced(section,
+                new Traced(shadowSize, relief, sheen, bounce, toe, detail, exposure, direct, shoulder)));
     }
 
     /** La section {@code traced} d'une lumiere cuite ; ce qu'elle ne dit pas garde la valeur de {@code plain}. */

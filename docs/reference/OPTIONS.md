@@ -108,8 +108,8 @@ Le fonctionnement des portails est dans [PORTAILS.md](../systemes/PORTAILS.md).
 | `gtgsbackrooms.look.replaceShaderPack` | `-PlookReplaceShaderPack` | `true` | Sous un pack de shaders, dans une dimension à look, remplace le rendu du pack par celui du mod. |
 | `gtgsbackrooms.look.quality` | `-PlookQuality` | `auto` | Palier de départ du moteur : `off`, `low`, `medium`, `high`, `ultra` ou `auto` (`light` et `full`, anciens noms, valent `medium` et `high`). Le choix du joueur, enregistré dans `config/gtgs_backrooms.json`, prime ensuite. |
 | `gtgsbackrooms.look.bakedLight` | `-PlookBakedLight` | `true` | Lumière cuite du terrain, dans les dimensions dont le profil en a une ; coupée, la lightmap et l'ombrage vanilla reviennent. |
-| `gtgsbackrooms.look.pixelShadows` | `-PlookPixelShadows` | `32` | Taille des pixels d'ombre : pas de la grille des texels par bloc sur laquelle se calcule la lumière des néons, `32` (celui des textures du mod), `16`, ou `0` pour une lumière lisse. |
-| `gtgsbackrooms.look.reduceNoise` | `-PreduceNoise` | `false` | Confort : retire du look le grain, le vacillement de la lumière de l'écran et l'aberration chromatique. |
+| `gtgsbackrooms.look.pixelShadows` | `-PlookPixelShadows` | `32` | Taille des pixels d'ombre : pas de la grille des texels par bloc sur laquelle se calcule la lumière des néons, `32` (celui des textures du mod) ou `0` pour une lumière lisse ; toute autre valeur vaut `32`. |
+| `gtgsbackrooms.look.reduceNoise` | `-PreduceNoise` | `false` | Confort : retire du look le grain, le vacillement de la lumière de l'écran et l'aberration chromatique ; sous le style VHS, le bruit de la cassette tombe à 30 %. |
 | `gtgsbackrooms.look.debugStencil` | `-PlookDebugStencil` | `false` | Remplace l'image par le stencil, une couleur par niveau d'imbrication. |
 | `gtgsbackrooms.look.checkGlState` | `-PlookCheckGlState` | `false` | Vérifie que chaque passe du moteur rend l'état GL tel qu'elle l'a trouvé. |
 | `gtgsbackrooms.look.verifyNeonShader` | `-PlookVerifyNeonShader` | Vide | Chemin des vecteurs communs du calendrier des néons, à confronter au jumeau GLSL. |
@@ -155,7 +155,7 @@ Quelques précisions :
 - `reduceBass` retire environ 6 dB de graves : le filtre de chaque source passe de passe-bas à passe-bande. Elle exige
   EFX.
 - Le tremblement de `cameraShake` n'a jamais lieu dans une dimension vanilla, ni avec `reduceFlashes`. Son amplitude
-  suit l'option vanilla des effets de distorsion.
+  suit l'option vanilla des effets de distorsion. Coupé, le style VHS n'a pas non plus de tremblé à l'épaule.
 - Dans `debugRays`, un rayon jaune rebondit, un vert sort, un magenta passe par un cadre et un gris se perd hors de la
   copie du monde. Les chemins d'occlusion vont du vert au rouge selon ce qu'ils retirent.
 
