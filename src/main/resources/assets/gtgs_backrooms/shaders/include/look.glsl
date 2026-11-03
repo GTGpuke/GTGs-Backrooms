@@ -57,8 +57,10 @@ layout(std140) uniform gtgs_NeonBlock {
     // Centre de la face qui eclaire de chaque neon, relatif au bloc de la camera, dans les axes du monde (xyz), et sa part dans ce qui ne
     // compte que les neons les plus proches (w) : elle s'eteint avant qu'il ne quitte la liste.
     vec4 gtgs_NeonFaces[32];
-    // Corps qui portent une ombre, relatifs au bloc de la camera : centre du bas et rayon, puis haut (x).
-    vec4 gtgs_Caster[48];
+    // Corps qui portent une ombre, relatifs au bloc de la camera, soixante-six groupes chacun : leur enveloppe (centre du bas et rayon,
+    // puis haut et nombre de boites), puis leurs boites, les cubes de leur modele (centre et rayon de la sphere qui la resume, puis trois
+    // demi-axes, le plus long d'abord).
+    vec4 gtgs_Caster[528];
     // Nombre de corps (x), rayons vers chaque dalle (y, 0 sans ombres de corps), portee des dalles (w).
     vec4 gtgs_CasterRays;
     // Cosinus de l'angle d'une dalle (x), cote de son rectangle (y), ce qui change le carre de la lumiere d'une tuile en parts de dalles (z),
@@ -78,6 +80,8 @@ flat in float gtgs_Lit;
 vec3 gtgs_Shift = vec3(0.0);
 // La part de la lumiere d'une surface que les corps lui laissent : elle se retire apres la limite, qui effacerait leur ombre sous une dalle.
 float gtgs_BodyLight = 1.0;
+// La part de la lumiere qui revient de la piece que les corps retirent a une surface pres d'eux : leur ombre de contact.
+float gtgs_BodyShade = 0.0;
 
 // Point d'un bloc ou se calcule sa lumiere, depuis le bloc de la camera : le centre du texel du fragment sur sa face
 // (gtgs_LookParams.x pas par bloc, l'axe de la normale garde la position), pour que la lumiere suive les pixels des textures.
@@ -158,6 +162,65 @@ bool gtgs_crosses(vec3 start, vec3 toTarget, vec4 body, float top) {
     return max(max(enter, min(low, high)), 0.0) <= min(min(leave, max(low, high)), 1.0);
 }
 
+// Groupes de quatre valeurs d'un corps : son enveloppe, puis seize boites de quatre groupes ; corps, au plus.
+const int GTGS_BODY_ENTRIES = 66;
+const int GTGS_MAX_BODIES = 8;
+
+// Le segment de start a start + toTarget passe-t-il dans ce corps ? Son enveloppe ecarte vite les rayons qui passent loin.
+bool gtgs_bodyHides(vec3 start, vec3 toTarget, int body) {
+    int at = body * GTGS_BODY_ENTRIES;
+    vec4 top = gtgs_Caster[at + 1];
+    if (!gtgs_crosses(start, toTarget, gtgs_Caster[at], top.x)) {
+        return false;
+    }
+    int boxes = int(top.y);
+    for (int k = 0; k < boxes; k++) {
+        int box = at + 2 + k * 4;
+        if (gtgs_hitsBox(start, toTarget, gtgs_Caster[box].xyz, gtgs_Caster[box + 1].xyz, gtgs_Caster[box + 2].xyz, gtgs_Caster[box + 3].xyz, 0.0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Distance, en blocs, au-dela de laquelle un corps ne retire plus rien de la lumiere qui revient de la piece, et ce qu'il en retire au plus.
+const float GTGS_BODY_REACH = 3.0;
+const float GTGS_BODY_OCCLUSION = 0.7;
+
+// La part de la lumiere qui revient de la piece que les corps cachent a ce point : chaque boite, trois spheres de la taille de sa
+// section le long de son axe le plus long, cache ce qu'une sphere cache d'un ciel uniforme, le carre de son rayon apparent par le
+// cosinus de sa direction ; une boite longue compte autant que les spheres qui la rempliraient.
+float gtgs_bodyOcclusion(vec3 point, vec3 normal) {
+    int bodies = int(gtgs_CasterRays.x);
+    float hidden = 0.0;
+    for (int b = 0; b < bodies; b++) {
+        int at = b * GTGS_BODY_ENTRIES;
+        vec4 bounds = gtgs_Caster[at];
+        vec4 top = gtgs_Caster[at + 1];
+        vec2 across = point.xz - bounds.xz;
+        float reach = bounds.w + GTGS_BODY_REACH;
+        if (dot(across, across) >= reach * reach || point.y < bounds.y - GTGS_BODY_REACH || point.y > top.x + GTGS_BODY_REACH) {
+            continue;
+        }
+        int boxes = int(top.y);
+        for (int k = 0; k < boxes; k++) {
+            vec4 center = gtgs_Caster[at + 2 + k * 4];
+            vec3 longest = gtgs_Caster[at + 3 + k * 4].xyz;
+            float half_ = length(longest);
+            float radius = center.w;
+            float weight = max(1.0, half_ / radius) / 3.0;
+            vec3 step_ = longest * (max(half_ - radius, 0.0) / half_);
+            for (int s = -1; s <= 1; s++) {
+                vec3 toSphere = center.xyz + step_ * float(s) - point;
+                float distance2 = max(dot(toSphere, toSphere), radius * radius);
+                float facing = max(dot(normal, toSphere), 0.0) * inversesqrt(distance2);
+                hidden += weight * facing * radius * radius / distance2;
+            }
+        }
+    }
+    return min(hidden, GTGS_BODY_OCCLUSION);
+}
+
 // La part de ce qu'une surface recoit vraiment que les corps lui retirent, de 0 a 1. Les rayons visent toute la dalle : l'ombre d'un
 // corps est nette a son contact et se dilue en s'en eloignant. Un rayon arrete par un corps ne compte que si les blocs le laissaient
 // passer : un corps ne fait pas d'ombre a une dalle qu'on ne voit pas d'ici. seen est ce que la surface recoit, en parts de dalles.
@@ -167,10 +230,10 @@ float gtgs_casterShade(vec3 point, vec3 normal, float seen) {
     if (rays == 0 || bodies == 0 || seen <= 0.0) {
         return 0.0;
     }
-    // Les corps assez proches pour que leur ombre compte ici, un bit par cylindre.
+    // Les corps assez proches pour que leur ombre compte ici, un bit par corps.
     int nearby = 0;
     for (int b = 0; b < bodies; b++) {
-        vec3 toBody = gtgs_Caster[b * 2].xyz - point;
+        vec3 toBody = gtgs_Caster[b * GTGS_BODY_ENTRIES].xyz - point;
         if (dot(toBody, toBody) < 100.0) {
             nearby |= 1 << b;
         }
@@ -189,13 +252,24 @@ float gtgs_casterShade(vec3 point, vec3 normal, float seen) {
         if (toFace.y <= 0.0 || dot(toFace, toFace) >= reach * reach) {
             continue;
         }
-        // Seuls comptent les corps que le rayon vers le centre de la dalle frole, de la largeur de la dalle pres : tous les autres
-        // rayons passent loin, et la plupart des dalles s'arretent ici.
+        // Seules comptent les boites que le rayon vers le centre de la dalle frole, de la largeur de la dalle pres : tout autre rayon vers
+        // la dalle passe a moins de cette largeur de lui. La plupart des dalles s'arretent ici, et chaque rayon ne teste que ces boites.
         int crossing = 0;
+        int touched[GTGS_MAX_BODIES];
         for (int b = 0; b < bodies; b++) {
-            if ((nearby >> b & 1) != 0) {
-                vec4 body = gtgs_Caster[b * 2];
-                if (gtgs_crosses(start, toFace, vec4(body.x, body.y - side, body.z, body.w + side), gtgs_Caster[b * 2 + 1].x + side)) {
+            touched[b] = 0;
+            int at = b * GTGS_BODY_ENTRIES;
+            vec4 body = gtgs_Caster[at];
+            vec4 top = gtgs_Caster[at + 1];
+            if ((nearby >> b & 1) != 0 && gtgs_crosses(start, toFace, vec4(body.x, body.y - side, body.z, body.w + side), top.x + side)) {
+                for (int k = 0; k < int(top.y); k++) {
+                    int box = at + 2 + k * 4;
+                    if (gtgs_hitsBox(start, toFace, gtgs_Caster[box].xyz, gtgs_Caster[box + 1].xyz, gtgs_Caster[box + 2].xyz, gtgs_Caster[box + 3].xyz,
+                            side + 0.02)) {
+                        touched[b] |= 1 << k;
+                    }
+                }
+                if (touched[b] != 0) {
                     crossing |= 1 << b;
                 }
             }
@@ -208,17 +282,28 @@ float gtgs_casterShade(vec3 point, vec3 normal, float seen) {
             continue;
         }
         int hidden = 0;
+        // Les blocs laissent-ils voir le centre de la dalle ? Une seule marche dans la grille, au premier rayon arrete par un corps ; s'ils
+        // le cachent, chaque rayon arrete refait la sienne.
+        int open = -1;
         for (int s = 0; s < rays; s++) {
             float angle = float(s) * 2.3999632;
             float radius = sqrt((float(s) + 0.5) / float(rays)) * side;
             vec3 toTarget = face + vec3(cos(angle) * radius, -0.02, sin(angle) * radius) - start;
-            for (int b = 0; b < bodies; b++) {
-                if ((crossing >> b & 1) != 0 && gtgs_crosses(start, toTarget, gtgs_Caster[b * 2], gtgs_Caster[b * 2 + 1].x)) {
-                    if (gtgs_march(gtgs_CameraBlock, start, toTarget) >= 2.0) {
-                        hidden++;
-                    }
-                    break;
+            bool stopped = false;
+            for (int b = 0; b < bodies && !stopped; b++) {
+                int boxes = (crossing >> b & 1) != 0 ? touched[b] : 0;
+                int at = b * GTGS_BODY_ENTRIES + 2;
+                for (int k = 0; boxes >> k != 0 && !stopped; k++) {
+                    int box = at + k * 4;
+                    stopped = (boxes >> k & 1) != 0 && gtgs_hitsBox(start, toTarget, gtgs_Caster[box].xyz, gtgs_Caster[box + 1].xyz,
+                            gtgs_Caster[box + 2].xyz, gtgs_Caster[box + 3].xyz, 0.0);
                 }
+            }
+            if (stopped && open < 0) {
+                open = gtgs_march(gtgs_CameraBlock, start, toFace + vec3(0.0, -0.02, 0.0)) >= 2.0 ? 1 : 0;
+            }
+            if (stopped && (open == 1 || gtgs_march(gtgs_CameraBlock, start, toTarget) >= 2.0)) {
+                hidden++;
             }
         }
         removed += form * float(hidden) / float(rays);
@@ -241,10 +326,11 @@ vec3 gtgs_darkPixels(vec3 light) {
     return light * (1.0 + pick * gtgs_Tone.z * dark * near);
 }
 
-// La lumiere d'une surface avant ce que les corps lui retirent, et la part qu'ils lui laissent, gardee a part.
+// La lumiere d'une surface avant ce que les corps lui retirent, et la part qu'ils lui laissent, gardee a part : ce que leurs ombres
+// portees laissent de la lumiere directe, ce que leur ombre de contact laisse de celle qui revient de la piece.
 vec3 gtgs_underBodies(vec3 direct, vec3 around, float kept) {
     vec3 light = direct + around;
-    gtgs_BodyLight = dot(direct * kept + around, vec3(1.0)) / max(dot(light, vec3(1.0)), 1.0e-3);
+    gtgs_BodyLight = dot(direct * kept + around * (1.0 - gtgs_BodyShade), vec3(1.0)) / max(dot(light, vec3(1.0)), 1.0e-3);
     return light;
 }
 
@@ -425,6 +511,9 @@ vec3 gtgs_zoneLight() {
     float face = float(side);
     vec3 axis = GTGS_FACE_NORMAL[side];
     vec3 point = gtgs_texelPoint();
+    // Pres d'un corps, la lumiere qui revient de la piece passe moins : a tous les paliers, sans les tuiles comme avec.
+    gtgs_BodyShade = gtgs_bodyOcclusion(point, axis);
+    gtgs_BodyLight = 1.0 - gtgs_BodyShade;
     vec3 rel = point + axis * 0.5;
     vec3 toZone = axis * 0.5 + vec3(float(gtgs_CameraBlock.x & 127), float(gtgs_CameraBlock.y - gtgs_LightBase), float(gtgs_CameraBlock.z & 127));
     vec3 at = point + toZone;
@@ -455,7 +544,7 @@ vec3 gtgs_zoneLight() {
             if (tile != 0u) {
                 vec3 lit = gtgs_tileLight(tile, gtgs_CameraFract + gtgs_WorldRel + gtgs_Shift + toZone, at, face, axis);
                 float fade = smoothstep(GTGS_TILE_FADE, GTGS_TILE_END, reach);
-                gtgs_BodyLight = mix(gtgs_BodyLight, 1.0, fade);
+                gtgs_BodyLight = mix(gtgs_BodyLight, 1.0 - gtgs_BodyShade, fade);
                 return mix(lit, light, fade);
             }
         }
@@ -582,7 +671,7 @@ vec3 gtgs_gloss() {
             vec3 toAim = vec3(aim.x, dalle.y - 0.02, aim.y) - start;
             bool hidden = gtgs_march(gtgs_CameraBlock, start, toAim) < 2.0;
             for (int b = 0; b < bodies && !hidden; b++) {
-                hidden = gtgs_crosses(start, toAim, gtgs_Caster[b * 2], gtgs_Caster[b * 2 + 1].x);
+                hidden = gtgs_bodyHides(start, toAim, b);
             }
             if (!hidden) {
                 seen++;

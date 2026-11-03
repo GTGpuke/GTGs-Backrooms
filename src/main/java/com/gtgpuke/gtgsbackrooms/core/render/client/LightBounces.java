@@ -13,11 +13,13 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
+import com.gtgpuke.gtgsbackrooms.core.render.light.TileBudget;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBakeSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBlocks;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.SurfaceAtlas;
@@ -26,11 +28,12 @@ import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 /**
  * Les rebonds traces du palier Ultra : une petite tuile par surface, calculee par rayons dans la grille des blocs (shader
  * {@code bake/bounce.fsh}), a cote du cache de surfaces dont elle relit la lumiere. Une surface qui prend sa tuile calcule tout de
- * suite un premier rebond. Une fois le cache de surfaces au repos, un balayage repasse sur toutes les tuiles, en deux tours : le
- * premier ecrit a part, sur la seule lumiere directe, le second le relit et ecrit le cache lu par le terrain, ce qui fait deux
- * rebonds. Le resultat ne depend donc jamais de ce qui etait la avant, et l'image ne voit jamais d'etat intermediaire : poser un
- * bloc ne fait pas retomber la lumiere autour. Un shader refuse par le pilote coupe les rebonds pour la session : le terrain garde
- * ceux de la zone.
+ * suite un premier rebond. Une fois le cache de surfaces au repos, un balayage repasse sur toutes les tuiles, de la plus proche de la
+ * camera a la plus loin, en deux tours : le premier ecrit a part, sur la seule lumiere directe, le second le relit et ecrit le cache lu
+ * par le terrain, ce qui fait deux rebonds. Le resultat ne depend donc jamais de ce qui etait la avant, et l'image ne voit jamais d'etat
+ * intermediaire : poser un bloc ne fait pas retomber la lumiere autour. Les rayons portent a 24 blocs et le second tour relit le
+ * premier : un changement touche tout le cache, ou presque, et c'est le temps permis par image qui fait la vitesse du balayage. Un shader
+ * refuse par le pilote coupe les rebonds pour la session : le terrain garde ceux de la zone.
  */
 public final class LightBounces {
 
@@ -47,8 +50,12 @@ public final class LightBounces {
     private static final int TILE = 8;
     private static final int ATLAS_WIDTH = SurfaceAtlas.ACROSS * TILE;
     private static final int ATLAS_HEIGHT = SurfaceAtlas.ROWS * TILE;
-    /** Tuiles calculees par image pendant un balayage. */
-    private static final int PER_FRAME = 96;
+    /** Temps permis par image aux rebonds, en millisecondes, processeur et carte graphique. */
+    private static final float BOUNCE_MILLISECONDS = 1.5f;
+    private static final TileBudget BUDGET = new TileBudget(BOUNCE_MILLISECONDS);
+    private static final TileClock CLOCK = new TileClock(BUDGET);
+    /** Distances a la camera que distingue l'ordre d'un balayage, en blocs : au-dela, les surfaces passent ensemble, en dernier. */
+    private static final int ORDER_DISTANCES = 128;
     /** Tours d'un balayage : deux rebonds. */
     private static final int ROUNDS = 2;
     private static final int LAST_ROUND = 1;
@@ -58,6 +65,11 @@ public final class LightBounces {
     private static final long[] TILE_CELL = new long[SurfaceAtlas.CAPACITY];
     private static final byte[] TILE_FACE = new byte[SurfaceAtlas.CAPACITY];
     private static final IntArrayList FRESH = new IntArrayList();
+    /** Les tuiles du balayage en cours, de la plus proche de la camera a la plus loin. */
+    private static final int[] ORDER = new int[SurfaceAtlas.CAPACITY];
+    /** Debut de chaque distance dans l'ordre, pendant son calcul. */
+    private static final int[] ORDER_STARTS = new int[ORDER_DISTANCES + 1];
+    private static int orderCount;
     private static final FloatBuffer MATERIAL_VALUES = MemoryUtil.memAllocFloat(MATERIALS * MATERIAL_CHANNELS);
     private static int atlas;
     private static int previous;
@@ -227,8 +239,9 @@ public final class LightBounces {
         bindForShaders();
         if (idle && changed && roundsLeft == 0) {
             changed = false;
-            cursor = 1;
+            cursor = 0;
             roundsLeft = ROUNDS;
+            order();
         }
         if (FRESH.isEmpty() && roundsLeft == 0) {
             return;
@@ -245,14 +258,16 @@ public final class LightBounces {
             LookProfile.Neons neons = look.neons();
             float strongest = Math.max(Math.max(neons.red(), Math.max(neons.green(), neons.blue())), 1.0e-3f);
             GL20.glUniform3f(locTint, neons.red() / strongest, neons.green() / strongest, neons.blue() / strongest);
+            CLOCK.begin();
             aim(framebuffer, previous, 0.0f);
             GL20.glUniform1f(locFresh, 1.0f);
-            for (int i = 0; i < FRESH.size(); i++) {
+            int fresh = FRESH.size();
+            for (int i = 0; i < fresh; i++) {
                 gather(FRESH.getInt(i));
             }
             FRESH.clear();
             GL20.glUniform1f(locFresh, 0.0f);
-            sweep();
+            CLOCK.end(fresh + sweep(BUDGET.tiles()));
             GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_PREVIOUS);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, previous);
         } finally {
@@ -276,28 +291,65 @@ public final class LightBounces {
         }
     }
 
-    /** Quelques tuiles du balayage en cours : le premier tour ecrit a part, le dernier ecrit ce que le terrain lit. */
-    private static void sweep() {
-        int budget = PER_FRAME;
+    /**
+     * Les tuiles tenues, de la plus proche de la camera a la plus loin, au bloc pres : le balayage les suit dans cet ordre, a chacun de
+     * ses tours. Un tri par distance entiere, dans des tableaux alloues une fois : le tri du JDK peut allouer un tampon.
+     */
+    private static void order() {
+        BlockPos camera = MinecraftClient.getInstance().gameRenderer.getCamera().getBlockPos();
+        Arrays.fill(ORDER_STARTS, 0);
+        for (int tile = 1; tile < SurfaceAtlas.CAPACITY; tile++) {
+            if (TILE_CELL[tile] != NONE) {
+                ORDER_STARTS[distance(TILE_CELL[tile], camera) + 1]++;
+            }
+        }
+        for (int i = 1; i <= ORDER_DISTANCES; i++) {
+            ORDER_STARTS[i] += ORDER_STARTS[i - 1];
+        }
+        orderCount = ORDER_STARTS[ORDER_DISTANCES];
+        for (int tile = 1; tile < SurfaceAtlas.CAPACITY; tile++) {
+            if (TILE_CELL[tile] != NONE) {
+                ORDER[ORDER_STARTS[distance(TILE_CELL[tile], camera)]++] = tile;
+            }
+        }
+    }
+
+    /** Distance d'une surface a la camera, en blocs entiers, les plus loin ensemble. */
+    private static int distance(long cell, BlockPos camera) {
+        double dx = BlockPos.unpackLongX(cell) - camera.getX();
+        double dy = BlockPos.unpackLongY(cell) - camera.getY();
+        double dz = BlockPos.unpackLongZ(cell) - camera.getZ();
+        return Math.min(ORDER_DISTANCES - 1, (int) Math.sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
+    /**
+     * Des tuiles du balayage en cours, autant que le budget : le premier tour ecrit a part, le dernier ecrit ce que le terrain lit.
+     *
+     * @return tuiles calculees
+     */
+    private static int sweep(int budget) {
+        int done = 0;
         if (roundsLeft > 0) {
             aimRound();
         }
-        while (roundsLeft > 0 && budget > 0) {
-            while (cursor < SurfaceAtlas.CAPACITY && budget > 0) {
-                if (TILE_CELL[cursor] != NONE) {
-                    gather(cursor);
-                    budget--;
+        while (roundsLeft > 0 && done < budget) {
+            while (cursor < orderCount && done < budget) {
+                int tile = ORDER[cursor];
+                if (TILE_CELL[tile] != NONE) {
+                    gather(tile);
+                    done++;
                 }
                 cursor++;
             }
-            if (cursor == SurfaceAtlas.CAPACITY) {
-                cursor = 1;
+            if (cursor == orderCount) {
+                cursor = 0;
                 roundsLeft--;
                 if (roundsLeft > 0) {
                     aimRound();
                 }
             }
         }
+        return done;
     }
 
     private static void gather(int tile) {

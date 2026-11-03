@@ -34,6 +34,7 @@ import net.minecraft.util.math.ChunkSectionPos;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
+import com.gtgpuke.gtgsbackrooms.core.render.light.TileBudget;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBakeSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBlocks;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightCell;
@@ -84,8 +85,14 @@ public final class LightSurfaces {
     private static final int SECTION = 16;
     private static final int SLOTS_ACROSS = LightVolume.WIDTH / SECTION;
     private static final int GRID_SLOTS = SLOTS_ACROSS * SLOTS_ACROSS * LightZone.HEIGHT;
-    /** Tuiles calculees par image : le coeur du cout du cache, et il ne dure que le temps de remplir les surfaces proches. */
-    private static final int TILES_PER_FRAME = 96;
+    /**
+     * Temps permis par image au calcul des tuiles, en millisecondes, processeur et carte graphique : le coeur du cout du cache, qui ne
+     * dure que le temps de remplir les surfaces proches ou de suivre un bloc change. Un nombre fixe de tuiles prenait une demi-seconde
+     * a suivre un bloc pose sous une dalle, sans que la carte s'en apercoive.
+     */
+    private static final float TILE_MILLISECONDS = 1.5f;
+    private static final TileBudget TILE_BUDGET = new TileBudget(TILE_MILLISECONDS);
+    private static final TileClock TILE_CLOCK = new TileClock(TILE_BUDGET);
     /** Sections de la grille des blocs envoyees par image. */
     private static final int GRID_PER_FRAME = 8;
     /** Rayon des sections qui ont des tuiles, autour de l'ancrage. */
@@ -690,7 +697,9 @@ public final class LightSurfaces {
             GL20.glUniform1f(locCone, settings.cone());
             GL20.glUniform1f(locRelief, look.bakedLight().relief());
             GL20.glUniform2i(locRays, LookResources.quality().surfaceRays(), LookResources.quality().surfaceOcclusionRays());
-            int budget = TILES_PER_FRAME;
+            int given = TILE_BUDGET.tiles();
+            int budget = given;
+            TILE_CLOCK.begin();
             SurfaceAtlas.Job job = first;
             while (job != null && budget > 0) {
                 budget = bakeTiles(job, budget, settings.reach());
@@ -699,6 +708,7 @@ public final class LightSurfaces {
                     job = ATLAS.current();
                 }
             }
+            TILE_CLOCK.end(given - budget);
         } finally {
             leavePass();
         }

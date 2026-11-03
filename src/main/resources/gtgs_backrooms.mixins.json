@@ -41,7 +41,13 @@
     "client.MixinSoundEngine",
     "client.SourceAccessor",
     "client.MixinSource",
-    "client.WeightedSoundSetAccessor"
+    "client.WeightedSoundSetAccessor",
+    "client.MixinEntityRenderDispatcher",
+    "client.ModelPartAccessor",
+    "client.CuboidAccessor",
+    "client.AnimalModelAccessor",
+    "client.LivingEntityRendererAccessor",
+    "client.PlayerEntityRendererAccessor"
   ],
   "mixins": [
     "MixinMinecraftServer",

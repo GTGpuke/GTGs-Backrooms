@@ -161,6 +161,16 @@ public final class LookUniformUploader {
         return locations[AT_ID] >= 0;
     }
 
+    /** {@code true} si le terrain de la vue courante lit la lumiere cuite : ses shaders portent le look, et la zone couvre sa camera. */
+    public static boolean bakedLight() {
+        LookProfile look = LookState.current();
+        return LookState.shadersCarryLook() && !look.vanilla() && covered(look);
+    }
+
+    private static boolean covered(LookProfile look) {
+        return LightVolume.covers(look, LookState.cameraBlockX(), LookState.cameraBlockY(), LookState.cameraBlockZ());
+    }
+
     /**
      * Envoie le look courant au programme actif.
      *
@@ -171,7 +181,7 @@ public final class LookUniformUploader {
         // Un mod qui dessine le terrain par ses propres shaders : le look part dans le post, les shaders patches restent vanilla.
         boolean carried = LookState.shadersCarryLook() && !look.vanilla();
         GL20.glUniform1i(locations[AT_ID], carried ? look.id() : 0);
-        boolean baked = carried && LightVolume.covers(look, LookState.cameraBlockX(), LookState.cameraBlockY(), LookState.cameraBlockZ());
+        boolean baked = carried && covered(look);
         if (locations[AT_BAKED_LIGHT] >= 0) {
             GL20.glUniform1f(locations[AT_BAKED_LIGHT], baked ? 1.0f : 0.0f);
         }

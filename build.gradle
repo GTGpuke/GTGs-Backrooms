@@ -83,6 +83,8 @@ loom {
             vmArg "-Dgtgsbackrooms.look.verifyNeonShader=${project.file('src/test/resources/neon_schedule_vectors.json').absolutePath}"
             // Le calcul d'une dalle, confronte a ses vecteurs communs sur le processeur graphique.
             vmArg "-Dgtgsbackrooms.clientTest.areaVectors=${project.file('src/test/resources/area_light_vectors.json').absolutePath}"
+            // Le passage d'un rayon dans une boite (ombres des corps), confronte a ses vecteurs communs sur le processeur graphique.
+            vmArg "-Dgtgsbackrooms.clientTest.boxVectors=${project.file('src/test/resources/body_box_vectors.json').absolutePath}"
             // Un monde distant sans portail est libere en cinq secondes (le plancher du delai), pas en une minute.
             vmArg '-Dgtgsbackrooms.portal.remoteWorldReleaseSeconds=5'
             activeSystemProperties.each { key, value -> vmArg "-D${key}=${value}" }

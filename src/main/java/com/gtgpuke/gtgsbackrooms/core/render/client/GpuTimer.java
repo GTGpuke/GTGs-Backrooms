@@ -117,7 +117,8 @@ public final class GpuTimer {
         openSection = null;
     }
 
-    private static boolean supported() {
+    /** {@code true} si le pilote a les requetes de temps (OpenGL 3.3 ou l'extension). */
+    static boolean supported() {
         if (supported < 0) {
             supported = GL.getCapabilities().GL_ARB_timer_query || GL.getCapabilities().OpenGL33 ? 1 : 0;
         }

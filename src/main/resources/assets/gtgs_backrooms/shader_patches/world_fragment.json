@@ -2,7 +2,7 @@
   "stage": "fragment",
   "targets": ["rendertype_*", "particle"],
   "excludes": ["rendertype_text*", "rendertype_gui*", "rendertype_outline", "rendertype_clouds"],
-  "imports": ["gtgs_backrooms:neon_schedule.glsl", "gtgs_backrooms:look_grade.glsl", "gtgs_backrooms:area_light.glsl", "gtgs_backrooms:block_march.glsl", "gtgs_backrooms:surface_light.glsl", "gtgs_backrooms:look.glsl"],
+  "imports": ["gtgs_backrooms:neon_schedule.glsl", "gtgs_backrooms:look_grade.glsl", "gtgs_backrooms:area_light.glsl", "gtgs_backrooms:block_march.glsl", "gtgs_backrooms:surface_light.glsl", "gtgs_backrooms:body_box.glsl", "gtgs_backrooms:look.glsl"],
   "inject": [
     { "point": "output", "function": "gtgs_applyLook" }
   ]

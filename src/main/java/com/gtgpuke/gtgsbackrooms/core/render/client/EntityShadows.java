@@ -4,6 +4,8 @@ import java.util.Arrays;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.entity.EntityRenderDispatcher;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
@@ -12,17 +14,20 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 import com.gtgpuke.gtgsbackrooms.core.render.light.ShadowCasters;
+import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
 
 /**
  * Les corps qui portent une ombre : chaque tick, les plus proches de l'ancrage dans le monde de la zone de lumiere ; a chaque vue,
- * leurs cylindres a la position affichee, relatifs au bloc de sa camera. Le joueur en fait partie, vue a la premiere personne comprise :
- * il voit son ombre au sol. Rien n'est alloue par image, et aucune entite n'est gardee apres son monde. Le releve de chaque tick prend un
+ * leurs formes a la position affichee, relatives au bloc de sa camera : les cubes du modele qui le dessine, poses et animes comme
+ * vanilla les dessine ({@link BodyModels}), ou la boite de sa collision. Le joueur en fait partie, vue a la premiere personne comprise : il
+ * voit son ombre au sol. Leurs ombres remplacent le disque d'ombre de vanilla. Rien n'est alloue ici par image (la pose d'un corps par
+ * vanilla alloue un peu, voir {@link BodyModels}), et aucune entite n'est gardee apres son monde. Le releve de chaque tick prend un
  * iterateur du monde, seul acces de vanilla a toutes ses entites.
  */
-final class EntityShadows {
+public final class EntityShadows {
 
-    /** Corps gardes : trois cylindres chacun. */
-    private static final int MAX_BODIES = ShadowCasters.MAX_CYLINDERS / 3;
+    /** Corps gardes. */
+    private static final int MAX_BODIES = ShadowCasters.MAX_BODIES;
     /** Distance a l'ancrage au-dela de laquelle un corps ne compte pas, en blocs : les tuiles s'arretent avant. */
     private static final double RANGE = 48.0;
     private static final LivingEntity[] BODIES = new LivingEntity[MAX_BODIES];
@@ -67,7 +72,7 @@ final class EntityShadows {
     }
 
     /**
-     * Les cylindres des corps de ce monde, a leur position affichee.
+     * Les formes des corps de ce monde, a leur position et dans leur pose affichees.
      *
      * @param view monde de la vue
      * @param originX bloc de la camera de la vue
@@ -83,9 +88,48 @@ final class EntityShadows {
         }
         for (int i = 0; i < count; i++) {
             LivingEntity body = BODIES[i];
-            out.add(MathHelper.lerp(tickDelta, body.lastRenderX, body.getX()) - originX, MathHelper.lerp(tickDelta, body.lastRenderY, body.getY()) - originY,
-                    MathHelper.lerp(tickDelta, body.lastRenderZ, body.getZ()) - originZ, body.getWidth(), body.getHeight());
+            double x = MathHelper.lerp(tickDelta, body.lastRenderX, body.getX()) - originX;
+            double y = MathHelper.lerp(tickDelta, body.lastRenderY, body.getY()) - originY;
+            double z = MathHelper.lerp(tickDelta, body.lastRenderZ, body.getZ()) - originZ;
+            if (!shape(body, x, y, z, tickDelta, out)) {
+                return;
+            }
         }
+    }
+
+    /**
+     * Ajoute la forme d'un corps, ses pieds a cette position : les cubes de son modele, poses comme vanilla le dessine, ou la boite de sa
+     * collision.
+     *
+     * @return {@code false} si la liste est pleine
+     */
+    public static boolean shape(LivingEntity body, double x, double y, double z, float tickDelta, ShadowCasters out) {
+        if (!out.begin(x, y, z)) {
+            return false;
+        }
+        EntityRenderDispatcher renderers = MinecraftClient.getInstance().getEntityRenderDispatcher();
+        if (!BodyModels.pose(renderers, body, tickDelta, x, y, z, out)) {
+            out.boxOf(body.getWidth(), body.getHeight(), MathHelper.lerpAngleDegrees(tickDelta, body.prevBodyYaw, body.bodyYaw));
+        }
+        out.end();
+        return true;
+    }
+
+    /**
+     * {@code true} si les ombres du mod remplacent le disque d'ombre de vanilla de cette entite : un corps retenu, dans la vue du joueur,
+     * dont le terrain lit la lumiere cuite. Ailleurs (vue de portail, corps au-dela des plus proches, terrain dessine par un autre mod, hors
+     * de la zone), vanilla garde son disque.
+     */
+    public static boolean replacesVanilla(Entity entity) {
+        if (LookState.depth() != 0 || !LookUniformUploader.bakedLight()) {
+            return false;
+        }
+        for (int i = 0; i < count; i++) {
+            if (BODIES[i] == entity) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Plus de zone de lumiere : plus aucun corps retenu. */

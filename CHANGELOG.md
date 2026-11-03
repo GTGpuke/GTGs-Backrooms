@@ -8,6 +8,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 ## [Unreleased]
 
 ### Fixed
+- **Lumière lente à suivre un bloc en Ultra** : après un bloc posé sous une dalle, la lumière directe suivait en 0,55 s et les rebonds en
+  2,9 s. Les tuiles et les rebonds se calculent maintenant autant par image que 1,5 ms en permettent, temps mesuré sur le processeur et la
+  carte graphique, au lieu d'un nombre fixe, et les rebonds du plus proche de la caméra au plus loin : 0,4 à 0,5 s et 0,7 s au banc, sans
+  perdre d'images par seconde.
 - **Partie figée sur la sauvegarde** : quitter juste après être revenu sur ses pas, ce que les portails rendent plus probable, pouvait
   bloquer la fermeture du monde sans fin. Le déchargement des chunks, boucle de vanilla, rend maintenant la main à chaque tour.
 - **Lumière et textures par carrés de chunks** : dans une grande salle ouverte, le cache de surfaces n'avait plus de tuiles, et une
@@ -32,6 +36,11 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   une autre dimension aura ses propres valeurs.
 
 ### Added
+- **Ombres des corps** : l'ombre d'un corps reprend les cubes de son modèle, posés et animés comme le jeu le dessine, pour toutes les
+  créatures : jambes, bras, torse et tête d'un joueur, pattes et corps d'une vache, bras d'une statue d'armure. Un cube transparent dans
+  la texture, comme le bord du chapeau d'un villageois sans métier, n'en fait pas. À tous les paliers,
+  Low et Medium compris, un corps assombrit doucement le sol à ses pieds et un mur tout proche. Dans le Level 0, ces ombres remplacent le
+  disque d'ombre de vanilla, qui s'ajoutait à elles.
 - **Matière des blocs** : à partir de High, ce qui brille et ce qui accroche la lumière s'écrit dans les textures du bloc, au pixel
   (`x_s.png`, `x_n.png`). La moquette est mate à tous les paliers, n'a plus de reflet de sol humide et a une vraie épaisseur, tirée du
   bruit de sa texture ; le fond du papier peint est mat et rugueux, et seul le sombre de son motif renvoie un peu les dalles. Medium n'a

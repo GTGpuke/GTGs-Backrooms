@@ -116,6 +116,7 @@ final class BlockMaterialClientTests {
     private static ClientScenario blockMaterials() {
         ClientScenario scenario = ClientScenario.named("block_materials")
                 .run("palier High", LevelZeroClientTests::highTier)
+                .run("joueur invisible", context -> invisible(context, true))
                 .run("entree dans le Level 0", LevelZeroClientTests::enterLevelZero)
                 .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, 1200)
                 .await("terrain du Level 0 construit", context -> context.client().worldRenderer.getCompletedChunkCount() > 40, 1200)
@@ -185,6 +186,7 @@ final class BlockMaterialClientTests {
                     ClientTestContext.require(hidden <= shine * MAX_HIDDEN_SHINE, "Un reflet passe a travers un bloc : " + percent(hidden) + " %.");
                 })
                 .cleanup(context -> setUnderNeons(context, false))
+                .cleanup(context -> invisible(context, false))
                 .cleanup(context -> sheen(context, true))
                 .cleanup(context -> LookResources.applySettings(LookSettings.current().with(LookOption.RELIEF, true), context.client()))
                 .cleanup(context -> {
@@ -241,6 +243,14 @@ final class BlockMaterialClientTests {
                 .run("reflets remis, " + tier, context -> sheen(context, true))
                 .ticks(4)
                 .await("repos avec reflets, " + tier, BlockMaterialClientTests::settled, SETTLE_TICKS);
+    }
+
+    /**
+     * Le joueur invisible ou non : invisible, il ne fait pas d'ombre. Celle de son corps suit le balancement de ses bras au repos, et d'une
+     * image a l'autre, elle changerait le sol qu'on compare.
+     */
+    private static void invisible(ClientTestContext context, boolean hidden) {
+        context.onServer(server -> ClientTestContext.serverPlayer(server).setInvisible(hidden));
     }
 
     private static boolean settled(ClientTestContext context) {

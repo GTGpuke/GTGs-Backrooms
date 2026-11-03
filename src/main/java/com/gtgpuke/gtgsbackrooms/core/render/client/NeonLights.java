@@ -155,20 +155,24 @@ public final class NeonLights {
         upload();
     }
 
-    /** Les corps qui portent une ombre et ce qu'il faut savoir des dalles pour la calculer : rien dans une vue de portail, plafonnee sous ce palier. */
+    /**
+     * Les corps qui portent une ombre et ce qu'il faut savoir des dalles pour la calculer, rien dans une vue de portail, plafonnee sous ce
+     * palier : leur ombre de contact a tous les paliers a lumiere cuite, leurs ombres portees aux paliers qui ont des rayons.
+     */
     private static void casters(FloatBuffer block, World world, LookProfile look, int originX, int originY, int originZ, float tickDelta) {
         LookProfile.BakedLight baked = look.bakedLight();
-        int rays = depth == 0 && baked.any() ? LookResources.quality().casterRays() : 0;
-        if (rays == 0) {
-            CASTERS.clear();
-        } else {
+        boolean shown = depth == 0 && baked.any();
+        int rays = shown ? LookResources.quality().casterRays() : 0;
+        if (shown) {
             EntityShadows.write(world, originX, originY, originZ, tickDelta, CASTERS);
+        } else {
+            CASTERS.clear();
         }
         block.position(CASTERS_OFFSET);
-        block.put(CASTERS.values(), 0, CASTERS.cylinders() * ShadowCasters.CYLINDER_VALUES);
+        block.put(CASTERS.values(), 0, CASTERS.bodies() * ShadowCasters.BODY_VALUES);
         LookProfile.Neons neons = look.neons();
         float emission = Math.max(neons.red(), Math.max(neons.green(), neons.blue())) * baked.emission();
-        block.put(CASTER_RAYS_OFFSET, CASTERS.cylinders()).put(CASTER_RAYS_OFFSET + 1, rays).put(CASTER_RAYS_OFFSET + 3, baked.reach());
+        block.put(CASTER_RAYS_OFFSET, CASTERS.bodies()).put(CASTER_RAYS_OFFSET + 1, rays).put(CASTER_RAYS_OFFSET + 3, baked.reach());
         block.put(CASTER_LIGHT_OFFSET, (float) Math.cos(Math.toRadians(baked.angle()))).put(CASTER_LIGHT_OFFSET + 1, baked.size())
                 .put(CASTER_LIGHT_OFFSET + 2, emission > 0.0f ? TILE_MAX_LIGHT / emission : 0.0f).put(CASTER_LIGHT_OFFSET + 3, emission);
     }

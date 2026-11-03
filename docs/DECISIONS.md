@@ -285,6 +285,24 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   l'horizontale, avec les rebonds d'une pièce moyenne mesurée dans la zone ; au-delà, la pièce moyenne seule remplace la lightmap. L'Ultra
   ne change qu'au-delà de 40 blocs (recapture contre sa référence : écart signé nul, seul un couloir lointain change, 4 niveaux sur un bloc
   de 64 pixels, et prend le ton des murs proches). Écart au document de qualité, qui ne prévoit pas de troisième niveau de lumière cuite.
+- Lumière de l'Ultra plus rapide à suivre un bloc, et ombres des corps refaites (demande de l'auteur du 3 novembre 2026 : la vraie raison
+  du retard, puis « applique toutes les corrections que tu proposes »). Le retard venait d'un nombre fixe de tuiles par image (96), alors
+  que la carte avait de la marge : le budget est maintenant un temps, 1,5 ms par image, mesuré sur le processeur et la carte graphique
+  (horodatages lus sans attendre), et le balayage des rebonds va du plus proche au plus loin. Ne recalculer que les tuiles proches d'un
+  changement a été écarté : un rayon porte à 24 blocs et le second tour relit le premier, un changement touche presque tout le cache, et
+  les rebonds doivent rester identiques au bit près à un recalcul complet. Les ombres des corps : silhouette d'humanoïde animée comme le
+  modèle de vanilla marche, puis, à la demande de l'auteur le même jour (« quelque chose qui colle au modèle, même cubique, là c'est trop
+  rond »), les cubes mêmes du modèle de chaque créature, posés par les appels de son dessin, sans les cubes que sa texture laisse
+  transparents ni ceux contenus dans un autre ; seize par corps au plus. Les couches ajoutées au modèle (armure, objet tenu) n'en font
+  pas partie. Pour garder le coût des cylindres (plus de boîtes, et des ombres plus grandes, donc plus de rayons arrêtés), la grille des
+  blocs ne se parcourt plus qu'une fois par dalle, vers son centre, tant que ce centre est visible : un rayon vers le bord d'une dalle
+  à demi cachée par un mur compte alors comme s'il passait, ce qui ne change l'ombre d'un corps qu'au bord exact de l'ombre d'un mur.
+  Écart à la règle « aucune allocation par image » : poser un corps rejoue les appels de son dessin, et le `setupTransforms` de vanilla
+  alloue le quaternion de sa rotation (32 octets par corps et par image, mesurés) et relit le nom d'un corps qui en porte un. Recopier
+  la pose de chaque créature pour l'éviter reprendrait le code de vanilla ; seul le joueur, toujours là, se tourne sans lui quand il est
+  debout ou en marche, sans quoi il allouait 770 octets par image. Ombre de contact à tous les paliers sur la
+  lumière qui revient de la pièce (Low et Medium n'avaient aucune ombre de corps, seulement le disque de vanilla), et disque de vanilla
+  retiré là où ces ombres se dessinent. L'Ultra recapturé ne change que par l'ombre du joueur lui-même, désormais en cubes.
 - Le loin se cuit comme la zone, sans valeur propre au Level 0 dans le shader (demande de l'auteur du 2 novembre 2026 : « fais en sorte
   que ça soit intelligent, pour ne pas avoir à le refaire plus tard », et la différence se voyait encore de loin). Ses rebonds étaient
   une pièce moyenne fixe, mesurée une fois dans le Level 0 et écrite dans le shader commun : elle aurait été fausse dans toute autre

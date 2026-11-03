@@ -215,7 +215,8 @@ La zone ne connaît la lumière qu'au bloc près. En qualité complète, le cach
 pixel de texture : c'est une lightmap, une tuile de 32 × 32 par face de bloc, calculée par le processeur graphique dans une
 texture de 4096 × 8192 (`SurfaceAtlas` : 32 768 tuiles, 128 Mio, rendues quand une section sort).
 
-La section cuite donne ses surfaces et ses neons, et ses tuiles se calculent à 96 par image, la plus proche d'abord, avec le
+La section cuite donne ses surfaces et ses neons, et ses tuiles se calculent la plus proche d'abord, autant par image que 1,5 ms en
+permettent (`TileBudget`, nourri du temps du processeur et de la carte graphique relevé par `TileClock`), avec le
 shader `shaders/bake/surface.fsh`. Chaque tuile reçoit ses propres néons, les 24 plus proches parmi ceux de sa section
 (`LightSurfaces.tileLights`). Pour chaque pixel de texture d'une face, le shader écrit quatre valeurs séparées :
 
@@ -390,16 +391,34 @@ jumeau Java de ce calcul.
 
 #### Ombres des corps
 
-En High et en Ultra, le joueur et les créatures portent une ombre sur le terrain. Chaque tick, `EntityShadows` retient les huit
-corps vivants les plus proches de l'ancrage de la zone ; à chaque image, leur position affichée part dans le bloc d'uniformes,
-sous forme de cylindres debout (`ShadowCasters` : jambes, torse et tête pour un corps debout, un seul pour un corps bas). Le
-joueur en fait partie, y compris à la première personne.
+Le joueur et les créatures font de l'ombre au terrain. Chaque tick, `EntityShadows` retient les huit corps vivants les plus proches de
+l'ancrage de la zone ; à chaque image, leur forme, à leur position et dans leur pose affichées, part dans le bloc d'uniformes
+(`ShadowCasters`) : une enveloppe (un cylindre debout qui contient le corps) et ses boîtes, seize au plus. Ce sont les cubes du modèle
+qui le dessine, posés par les mêmes appels que son dessin (`BodyModels` : marche, tête, bras, accroupi, nage, taille, petit), quel que
+soit le corps, joueur, villageois, vache ou golem. Un cube dont la texture du corps laisse plus de la moitié des pixels transparents ne
+fait pas d'ombre (le bord du chapeau d'un villageois sans métier) : chaque texture est relue une fois sur la carte graphique. Un cube qui tient dans un autre
+(un calque de la peau sur le cube qu'il recouvre, le corps d'un villageois sous sa blouse) ne compte qu'une fois. Un modèle que le mod ne
+sait pas lire (ni d'une seule pièce, ni en tête et corps) laisse au corps la boîte de sa collision, tournée selon lui. Le joueur en fait
+partie, y compris à la première personne.
 
-Le terrain lit l'ombre au pixel de texture (`gtgs_casterShade`) : pour chaque dalle à portée, des rayons vers toute sa surface.
-L'ombre est donc nette au contact et se dilue en s'éloignant. Un rayon arrêté par un corps ne compte que si la grille des blocs
-le laissait passer : un corps ne fait pas d'ombre à une dalle qu'on ne voit pas d'ici. Le retrait se fait après la courbe du cache,
-en part de ce que la surface reçoit vraiment. Un préfiltre garde le coût : seuls les corps à moins de 10 blocs comptent, et seul
-un rayon vers le centre de la dalle qui frôle un corps lance les autres.
+- **Ombre de contact**, à tous les paliers : près d'un corps, la lumière qui revient de la pièce passe moins
+  (`gtgs_bodyOcclusion`). Chaque boîte cache ce que trois sphères de la taille de sa section, le long de son axe le plus long,
+  cacheraient d'un ciel uniforme : un sol s'assombrit
+  sous les pieds, un mur près d'une épaule, jamais de plus de 70 %. En Low et en Medium, c'est la seule ombre des corps, sur toute la
+  lumière cuite.
+- **Ombres portées**, en High et en Ultra : le terrain les lit au pixel de texture (`gtgs_casterShade`), par des rayons vers toute la
+  surface de chaque dalle à portée. L'ombre est donc nette au contact et se dilue en s'éloignant. Un rayon arrêté par un corps ne compte
+  que si la grille des blocs le laissait passer : un corps ne fait pas d'ombre à une dalle qu'on ne voit pas d'ici. La grille se parcourt
+  une fois par dalle, vers son centre, au premier rayon arrêté ; si les blocs cachent ce centre, chaque rayon arrêté refait la sienne. Le
+  retrait se fait après la courbe du cache, en part de ce que la surface reçoit vraiment. Un tri garde le coût : seuls les corps à moins
+  de 10 blocs comptent, puis, par dalle, seules les boîtes que le rayon vers son centre frôle, boîte grossie de la demi-taille de la
+  dalle (`gtgs_hitsBox`, `shaders/include/body_box.glsl`) : tout autre rayon vers elle passe à moins de cette distance de lui. Les reflets
+  s'arrêtent aux mêmes boîtes. Au banc, 1080p, RTX 5070 Ti, vue plongeante sur un corps à trois blocs : un villageois, une vache ou un
+  golem coûtent 1,3 à 1,8 ms de GPU en Ultra, 0,8 à 1,1 ms en High, autant ou moins que les cylindres qui les remplaçaient.
+
+Ces ombres remplacent le disque d'ombre de vanilla (`MixinEntityRenderDispatcher`) : sous un corps retenu, dans la vue du joueur dont
+le terrain lit la lumière cuite. Ailleurs (Overworld, vue de portail, terrain dessiné par un autre mod, corps au-delà des huit), vanilla
+garde son disque.
 
 Les entités et la main reçoivent le même calcul de dalle que le terrain, à sa même échelle. En High et en Ultra, un rayon par dalle
 dans la grille les laisse dans l'ombre des murs : l'ombre d'un bloc les traverse, en marches sur une grille de seize par bloc.
@@ -436,8 +455,11 @@ qui ne vaut que pour les autres paliers. La part vue d'une dalle n'est plus mise
   arrive sans que sa lumière change, et le balayage suivant lui donne ses rebonds tracés, à 1 % près dans une grande salle. Un gain
   fixe sur la lumière directe relue la laissait 2 à 15 % trop claire selon les réglages, puis la faisait retomber à la fin du balayage.
   Un balayage repasse ensuite
-  partout une fois le cache de surfaces au repos, 96 tuiles par image. Les coins s'assombrissent d'eux-mêmes : seul le fond du profil
-  garde encore l'ouverture.
+  partout une fois le cache de surfaces au repos, de la tuile la plus proche de la caméra à la plus loin, autant par image que 1,5 ms en
+  permettent, comme les tuiles. Un rayon porte à 24 blocs et le second tour relit le premier : un bloc changé touche le cache presque
+  entier, et c'est ce temps par image qui fait la vitesse du balayage. Au banc, 1080p, RTX 5070 Ti : après un bloc posé sous une dalle,
+  la lumière directe suit en 0,4 à 0,5 s et les rebonds en 0,7 s (0,55 s et 2,9 s à 96 tuiles par image), à 118 images par seconde, comme au
+  repos. Les coins s'assombrissent d'eux-mêmes : seul le fond du profil garde encore l'ouverture.
 - **Reflets** : ceux de la [matière](#matière-des-blocs), qui visent toute la dalle par quatre rayons au lieu d'un.
 
 La grille des blocs porte l'indice de la matière, et `gtgs_Materials` sa couleur moyenne et si elle émet. Cette grille ne couvre que la
@@ -637,7 +659,12 @@ terrain et le post, que le pas de la grille arrive au terrain, que le terrain li
 l'ignore dans l'Overworld, où l'ombrage vanilla reste.
 
 `LookSettingsTest` vérifie les réglages : fichier, options, presets, et ce que chaque palier retire au look, sans jamais toucher
-à la lumière. `SurfaceAtlasTest` vérifie la vie des tuiles : bande de hauteur, file, section recuite qui garde ses tuiles, faces
+à la lumière. `ShadowCastersTest` vérifie les formes des corps : boîtes et leur axe le plus long, boîte tournée, boîte
+contenue ou contenante, boîte plate, corps plein, boîte de collision, chaque coin dans l'enveloppe, liste bornée. Dans un vrai client,
+`TracedLightClientTests` confronte `gtgs_hitsBox` sur le processeur graphique aux vecteurs de `body_box_vectors.json`, écrits par un
+programme indépendant (boîtes tournées, grossies ou non, segments parallèles à une face, partis de la boîte ou arrêtés avant elle). `TileBudgetTest` vérifie le budget de tuiles : prudent avant toute
+mesure, puis le temps permis sur le coût mesuré, lissé et borné. `SurfaceAtlasTest` vérifie la vie des tuiles : bande de hauteur,
+file, section recuite qui garde ses tuiles, faces
 qui suivent un bloc, ombres touchées par un bloc et rien d'autre, cache plein, section servie à moitié puis reprise, premier néon d'une
 section.
 
@@ -723,9 +750,15 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
 - La lumière cuite n'atteint que le terrain des shaders patchés, et un mod de terrain garde la lightmap. En Low et en Medium, la lumière
   des entités ignore les murs : un néon derrière une cloison les éclaire. Il n'y a qu'une zone à la fois : une vue vers un autre endroit du même
   monde, loin de la caméra, garde la lightmap, et son image change à la traversée.
-- Seuls les corps vivants portent une ombre (ni objets, ni véhicules, ni invisibles), huit au plus, sur le terrain seulement : un
-  corps n'en porte pas sur un autre, et il n'y en a pas en Low ni en Medium, ni dans une vue de portail, plafonnée sous ce palier.
-  Sa silhouette est faite de cylindres : l'ombre ne suit ni ses bras ni sa pose. Sous ses pieds, elle retire au plus 80 %.
+- Seuls les corps vivants font de l'ombre (ni objets, ni véhicules, ni invisibles), huit au plus, sur le terrain seulement : un
+  corps n'en fait pas sur un autre, ni dans une vue de portail, plafonnée sous ce palier. En Low et en Medium, seule l'ombre de contact.
+  La forme suit le dessin du modèle, pas ce que ses couches ajoutent (armure, objet tenu, selle, laine d'un mouton) ; seize cubes au
+  plus par corps, les plus grands gardés. Poser un corps passe par les appels de son dessin, qui allouent un peu : 32 octets par corps et
+  par image (le quaternion de sa rotation), et quelques chaînes pour un corps qui porte un nom ; le joueur, debout ou en marche, se
+  tourne sans eux. Une dalle large d'un bloc adoucit les bords de l'ombre et fond celles des membres fins,
+  comme le ferait une vraie lampe de cette taille. Un corps vu à la première personne a ses pieds dans le noir sous la caméra : le
+  joueur voit l'ombre de son propre corps, que le jeu ne dessine pas.
+  Une ombre portée retire au plus 80 %.
 - Le vacillement du calendrier n'entre pas dans la lumière cuite : seuls les néons morts et les secteurs en panne sont retirés, et
   les cris modulent la surface. Une ombre de bloc non opaque (dalle,
   escalier, vitre) n'existe pas : seuls les blocs pleins arrêtent la lumière. Le relief suppose l'orientation d'un cube simple : une face

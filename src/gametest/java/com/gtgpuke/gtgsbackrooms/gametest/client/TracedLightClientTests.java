@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -17,29 +18,39 @@ import org.lwjgl.opengl.GL20;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.texture.NativeImage;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.EulerAngle;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.World;
 
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
+import com.gtgpuke.gtgsbackrooms.core.render.client.EntityShadows;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightBounces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightCopy;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightSurfaces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LightVolume;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookUniformUploader;
+import com.gtgpuke.gtgsbackrooms.core.render.light.ShadowCasters;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookOption;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 
 /**
  * La lumiere des paliers hauts, dans un vrai client : l'ombre d'un corps sur le terrain et le palier Ultra, tout ce qui part en
- * rayons. Un corps fait de l'ombre en High et en Ultra, pas en Low, et son ombre part avec lui. En Ultra, chaque surface a son
- * rebond, le sol et le plafond ne refletent rien, et apres un bloc pose les rebonds reviennent a ce que donne un recalcul complet.
+ * rayons. Un corps porte une ombre en High et en Ultra, pas en Low (seule son ombre de contact, a ses pieds), et son ombre part avec
+ * lui ; dans le Level 0, elle remplace le disque d'ombre de vanilla, que l'Overworld garde. En Ultra, chaque surface a son rebond, le
+ * sol et le plafond ne refletent rien, et apres un bloc pose les rebonds reviennent a ce que donne un recalcul complet.
  */
 final class TracedLightClientTests {
 
@@ -56,12 +67,75 @@ final class TracedLightClientTests {
             }
             """;
     private static final float AREA_TOLERANCE = 2.0e-4f;
+    private static final Identifier BODY_BOX = Identifier.of(ModConstants.MOD_ID, "shaders/include/body_box.glsl");
+    /** Cas des vecteurs de la boite, au plus : six tableaux de quatre valeurs par cas tiennent dans les uniformes d'un fragment. */
+    private static final int BOX_CASES = 40;
+    private static final String BOX_MAIN = """
+            uniform vec4 gtgs_TestStart[40];
+            uniform vec4 gtgs_TestToTarget[40];
+            uniform vec4 gtgs_TestCenter[40];
+            uniform vec4 gtgs_TestU[40];
+            uniform vec4 gtgs_TestV[40];
+            uniform vec4 gtgs_TestW[40];
+            out vec4 fragColor;
+            void main() {
+                int i = int(gl_FragCoord.x);
+                bool hit = i < 40 && gtgs_hitsBox(gtgs_TestStart[i].xyz, gtgs_TestToTarget[i].xyz, gtgs_TestCenter[i].xyz, gtgs_TestU[i].xyz, gtgs_TestV[i].xyz,
+                        gtgs_TestW[i].xyz, gtgs_TestStart[i].w);
+                fragColor = vec4(hit ? 1.0 : 0.0, 0.0, 0.0, 1.0);
+            }
+            """;
     /** La moitie basse de l'image, sous les pieds du corps : du sol, jamais le corps lui-meme. */
     private static final double FLOOR_TOP = 0.62;
     /** Assombri d'au moins ceci, un pixel du sol est dans l'ombre. */
     private static final double SHADED = 0.9;
+    /** Ce que le grain du film change d'une image a l'autre, en luminance : un pixel sombre ne s'assombrit pas pour si peu. */
+    private static final double GRAIN = 6.0;
     private static final double MIN_SHADOW_SHARE = 0.005;
     private static final double MAX_STRAY_SHARE = 0.0005;
+    /**
+     * Autour des pieds du corps, en parts de l'image : a quatre blocs devant le joueur, qui regarde 20 degres sous l'horizon, ils tombent
+     * au milieu de l'image, au-dessus du sol mesure sous eux. C'est la que vanilla pose son disque d'ombre.
+     */
+    private static final double FEET_LEFT = 0.38;
+    private static final double FEET_RIGHT = 0.62;
+    private static final double FEET_TOP = 0.42;
+    /**
+     * Ce que le disque d'ombre de vanilla retire au moins a la lumiere autour des pieds, et ce qu'elle peut perdre sans lui. Mesure : 2,9 %
+     * dans l'Overworld ; dans le Level 0, 0,01 % sans disque, 0,5 % avec (la lumiere de vanilla y est faible, et le disque pale).
+     */
+    private static final double MIN_DISC_DROP = 0.015;
+    private static final double MAX_DISC_DROP = 0.0015;
+    /** Cubes d'une statue d'armure aux bras visibles, au moins : tete, corps, bras, jambes, baguettes et base. */
+    private static final int MIN_STAND_BOXES = 8;
+    /** Haut de la tete d'une statue d'armure, et l'ecart permis a ses bords. */
+    private static final double STAND_HEIGHT = 1.876;
+    private static final double STAND_EDGE = 0.05;
+    /** Ce que le bras tendu deplace au moins un cube, en blocs : un bras de douze pixels qui passe de baisse a tendu. */
+    private static final double MIN_POSE_MOVE = 0.15;
+    /**
+     * Le second demi-axe d'un cube de villageois, au plus, en blocs : ses cubes ont au plus huit pixels de large (un quart de bloc de
+     * demi-axe) ; le bord de son chapeau, une plaque de seize pixels de cote, mais transparente dans sa texture, en aurait un d'un
+     * demi-bloc.
+     */
+    private static final double MAX_VILLAGER_WIDTH = 0.4;
+    /** Le second demi-axe d'un cube, dans ses valeurs : apres le centre et le plus long. */
+    private static final int SECOND_AXIS = 8;
+    /** L'orientation donnee au joueur, en degres, et l'accord demande entre la largeur de son torse et le travers de son regard. */
+    private static final float PLAYER_YAW = 30.0f;
+    private static final double MIN_TORSO_ACROSS = 0.99;
+    /** Le torse d'un joueur : quatre pixels de demi-largeur, a sa taille de 0,9375, a un bloc du sol environ. */
+    private static final double TORSO_HALF_WIDTH = 0.234;
+    private static final double TORSO_LOW = 0.75;
+    private static final double TORSO_HIGH = 1.5;
+    private static final double SIZE_EDGE = 0.01;
+    private static final int STAND_BOTTOM = 1;
+    private static final int STAND_TOP = 4;
+    private static final int STAND_BOXES = 5;
+    /** Part de l'image qu'assombrit au moins l'ombre de contact d'un corps proche, en Low. */
+    private static final double MIN_CONTACT_SHARE = 0.001;
+    /** Ecart de teinte (les trois composantes rapportees a leur moyenne) au-dela duquel un pixel montre autre chose : le corps lui-meme. */
+    private static final double SAME_TINT = 0.12;
     /** Part de leur moyenne dont les rebonds peuvent bouger pendant un calcul : un pilier n'en change que le voisinage. */
     private static final double BOUNCE_DRIFT = 0.01;
     /** Ce que couper les reflets peut changer au plus a une surface mate, en luminance moyenne. */
@@ -86,6 +160,9 @@ final class TracedLightClientTests {
     private static final BlockPos[] PILLAR = {new BlockPos(0, 1, 4), new BlockPos(0, 2, 4), new BlockPos(0, 3, 4)};
     private static int quiet;
     private static int[] before;
+    private static int[] empty;
+    private static final UUID[] STANDS = new UUID[2];
+    private static UUID villager;
     private static Long2LongOpenHashMap bounces;
     private static Long2LongOpenHashMap direct;
     private static double bounceMean;
@@ -98,7 +175,7 @@ final class TracedLightClientTests {
     }
 
     static List<ClientScenario> scenarios() {
-        return List.of(bodyShadows(), tracedLight());
+        return List.of(bodyShadows(), contactShadow(), shadowFollowsTheModel(), tracedLight());
     }
 
     private static boolean settled(ClientTestContext context) {
@@ -121,7 +198,11 @@ final class TracedLightClientTests {
     }
 
     private static ClientScenario arrival(String name, LookQuality quality) {
-        return ClientScenario.named(name)
+        return arrival(ClientScenario.named(name), quality);
+    }
+
+    private static ClientScenario arrival(ClientScenario scenario, LookQuality quality) {
+        return scenario
                 .run("palier", context -> tier(context, quality))
                 .run("entree dans le Level 0", LevelZeroClientTests::enterLevelZero)
                 .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, 1200)
@@ -131,10 +212,15 @@ final class TracedLightClientTests {
     }
 
     private static void spawn(ClientTestContext context) {
+        spawn(context, BackroomsConstants.LEVEL_ZERO_WORLD);
+    }
+
+    /** Un villageois immobile a quatre blocs devant le joueur, un peu sur sa droite. */
+    private static void spawn(ClientTestContext context, RegistryKey<World> key) {
         Vec3d feet = context.player().getPos();
         double yaw = Math.toRadians(20.0);
         context.onServer(server -> {
-            ServerWorld world = ClientTestContext.serverWorld(server, BackroomsConstants.LEVEL_ZERO_WORLD);
+            ServerWorld world = ClientTestContext.serverWorld(server, key);
             VillagerEntity villager = EntityType.VILLAGER.create(world);
             villager.setAiDisabled(true);
             villager.refreshPositionAndAngles(feet.x - Math.sin(yaw) * 4.0, feet.y, feet.z + Math.cos(yaw) * 4.0, 200.0f, 0.0f);
@@ -168,18 +254,69 @@ final class TracedLightClientTests {
 
     /** La part du sol assombrie depuis la premiere image, dans le bas de l'image. */
     private static double shadedShare(NativeImage image) {
-        int top = (int) (FLOOR_TOP * image.getHeight());
+        return shadedShare(image, FLOOR_TOP);
+    }
+
+    /** La part assombrie depuis la premiere image, a partir de cette hauteur de l'image. */
+    private static double shadedShare(NativeImage image, double fromTop) {
+        int top = (int) (fromTop * image.getHeight());
         int shaded = 0;
         int total = 0;
         for (int y = top; y < image.getHeight(); y++) {
             for (int x = 0; x < image.getWidth(); x++) {
                 total++;
-                if (luminance(image.getColor(x, y)) < luminance(before[y * image.getWidth() + x]) * SHADED) {
+                if (darker(image.getColor(x, y), before[y * image.getWidth() + x])) {
                     shaded++;
                 }
             }
         }
         return shaded / (double) total;
+    }
+
+    /** La part de l'image assombrie depuis cette image d'avant sans changer de teinte : une ombre sur le decor, pas le corps qui le cache. */
+    private static double shadowShare(NativeImage image, int[] reference) {
+        int shaded = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int now = image.getColor(x, y);
+                int was = reference[y * image.getWidth() + x];
+                if (darker(now, was) && tint(now, was) < SAME_TINT) {
+                    shaded++;
+                }
+            }
+        }
+        return shaded / (double) (image.getWidth() * image.getHeight());
+    }
+
+    /** Ce que l'image a perdu de lumiere autour des pieds du corps depuis l'image d'avant, en part de cette lumiere, hors du corps. */
+    private static double feetDrop(NativeImage image) {
+        double now = 0.0;
+        double was = 0.0;
+        for (int y = (int) (FEET_TOP * image.getHeight()); y < (int) (FLOOR_TOP * image.getHeight()); y++) {
+            for (int x = (int) (FEET_LEFT * image.getWidth()); x < (int) (FEET_RIGHT * image.getWidth()); x++) {
+                int at = y * image.getWidth() + x;
+                if (tint(before[at], empty[at]) < SAME_TINT) {
+                    now += luminance(image.getColor(x, y));
+                    was += luminance(before[at]);
+                }
+            }
+        }
+        return 1.0 - now / was;
+    }
+
+    private static boolean darker(int now, int was) {
+        double lit = luminance(was);
+        return luminance(now) < Math.min(lit * SHADED, lit - GRAIN);
+    }
+
+    private static double tint(int now, int was) {
+        double nowMean = ((now & 0xFF) + (now >> 8 & 0xFF) + (now >> 16 & 0xFF)) / 3.0 + 1.0;
+        double wasMean = ((was & 0xFF) + (was >> 8 & 0xFF) + (was >> 16 & 0xFF)) / 3.0 + 1.0;
+        double sum = 0.0;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            sum += Math.abs((now >> shift & 0xFF) / nowMean - (was >> shift & 0xFF) / wasMean);
+        }
+        return sum;
     }
 
     private static void requireLitBody(NativeImage image) {
@@ -250,6 +387,209 @@ final class TracedLightClientTests {
                 });
     }
 
+    private static void entityShadows(ClientTestContext context, boolean shown) {
+        context.client().options.getEntityShadows().setValue(shown);
+    }
+
+    /**
+     * Un corps devant le joueur, l'option d'ombres des entites de vanilla coupee : il assombrit le decor de son ombre de contact dans le
+     * Level 0, et seulement la ou il se dessine dans l'Overworld. Puis l'option : seul son disque peut assombrir l'image.
+     */
+    private static ClientScenario disc(ClientScenario scenario, String where, boolean kept) {
+        return scenario
+                .run("regard, " + where, context -> {
+                    look(context, 20.0f, 20.0f);
+                    entityShadows(context, false);
+                })
+                .frames(8)
+                .capture("sans corps, " + where, image -> empty = pixels(image))
+                .run("un corps arrive, " + where, context -> spawn(context, context.world().getRegistryKey()))
+                .ticks(10)
+                .frames(8)
+                .capture(kept ? "aucune ombre de contact, " + where : "son ombre de contact, " + where, image -> {
+                    before = pixels(image);
+                    double share = shadowShare(image, empty);
+                    ModConstants.LOGGER.info("[Test client] Ombre de contact, {} : {} % de l'image assombri.", where, String.format(Locale.ROOT, "%.3f", share * 100.0));
+                    ClientTestContext.require(kept ? share <= MAX_STRAY_SHARE : share >= MIN_CONTACT_SHARE,
+                            String.format(Locale.ROOT, "Ombre de contact %s, %s : %.3f %% de l'image assombri.", kept ? "dessinee" : "absente", where, share * 100.0));
+                })
+                .run("ombres d'entites, " + where, context -> entityShadows(context, true))
+                .frames(8)
+                .capture(kept ? "le disque de vanilla, " + where : "aucun disque de vanilla, " + where, image -> {
+                    double drop = feetDrop(image);
+                    ModConstants.LOGGER.info("[Test client] Disque d'ombre de vanilla, {} : {} % de lumiere en moins autour des pieds.", where,
+                            String.format(Locale.ROOT, "%.2f", drop * 100.0));
+                    ClientTestContext.require(kept ? drop >= MIN_DISC_DROP : Math.abs(drop) <= MAX_DISC_DROP,
+                            String.format(Locale.ROOT, "Disque d'ombre de vanilla %s, %s : %.2f %% de lumiere en moins autour des pieds.", kept ? "absent" : "dessine", where,
+                                    drop * 100.0));
+                })
+                .run("le corps part, " + where, TracedLightClientTests::removeBody)
+                .ticks(10);
+    }
+
+    /**
+     * L'ombre de contact d'un corps et le disque d'ombre de vanilla : l'Overworld n'a que le disque, le Level 0 n'a que l'ombre de
+     * contact, jusqu'en Low, ou c'est la seule ombre des corps.
+     */
+    private static ClientScenario contactShadow() {
+        ClientScenario scenario = ClientScenario.named("contact_shadow_replaces_disc")
+                .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD, 1200);
+        scenario = arrival(disc(scenario, "Overworld", true), LookQuality.LOW);
+        return disc(scenario, "Level 0", false)
+                .cleanup(TracedLightClientTests::removeBody)
+                .cleanup(context -> {
+                    entityShadows(context, true);
+                    LevelZeroClientTests.defaultTier(context);
+                    LevelZeroClientTests.backToOverworld(context);
+                });
+    }
+
+    /** Les cubes de la forme d'un corps du client, ses pieds a l'origine. */
+    private static ShadowCasters shapeOf(ClientTestContext context, UUID id) {
+        ShadowCasters casters = new ShadowCasters();
+        for (Entity entity : context.world().getEntities()) {
+            if (entity instanceof LivingEntity living && living.getUuid().equals(id)) {
+                EntityShadows.shape(living, 0.0, 0.0, 0.0, 1.0f, casters);
+            }
+        }
+        ClientTestContext.require(casters.bodies() == 1, "Corps absent du client.");
+        return casters;
+    }
+
+    private static boolean bodiesArrived(ClientTestContext context) {
+        int found = 0;
+        for (Entity entity : context.world().getEntities()) {
+            UUID id = entity.getUuid();
+            if (id.equals(STANDS[0]) || id.equals(STANDS[1]) || id.equals(villager)) {
+                found++;
+            }
+        }
+        return found == STANDS.length + 1;
+    }
+
+    private static double center(ShadowCasters shape, int box, int axis) {
+        return shape.values()[ShadowCasters.BOUNDS_VALUES + box * ShadowCasters.BOX_VALUES + axis];
+    }
+
+    /** La plus grande distance d'un cube de la premiere forme au cube le plus proche de la seconde : ce que la pose a deplace. */
+    private static double moved(ShadowCasters from, ShadowCasters to) {
+        double farthest = 0.0;
+        for (int k = 0; k < (int) from.values()[STAND_BOXES]; k++) {
+            double nearest = Double.MAX_VALUE;
+            for (int j = 0; j < (int) to.values()[STAND_BOXES]; j++) {
+                double dx = center(from, k, 0) - center(to, j, 0);
+                double dy = center(from, k, 1) - center(to, j, 1);
+                double dz = center(from, k, 2) - center(to, j, 2);
+                nearest = Math.min(nearest, Math.sqrt(dx * dx + dy * dy + dz * dz));
+            }
+            farthest = Math.max(farthest, nearest);
+        }
+        return farthest;
+    }
+
+    private static void spawnStands(ClientTestContext context) {
+        Vec3d feet = context.player().getPos();
+        context.onServer(server -> {
+            ServerWorld world = ClientTestContext.serverWorld(server, World.OVERWORLD);
+            for (int i = 0; i < STANDS.length; i++) {
+                ArmorStandEntity stand = EntityType.ARMOR_STAND.create(world);
+                NbtCompound arms = new NbtCompound();
+                arms.putBoolean("ShowArms", true);
+                stand.readCustomDataFromNbt(arms);
+                if (i == 0) {
+                    stand.setRightArmRotation(new EulerAngle(-90.0f, 0.0f, 0.0f));
+                }
+                stand.refreshPositionAndAngles(feet.x + (i == 0 ? 2.0 : -2.0), feet.y, feet.z + 3.0, 0.0f, 0.0f);
+                world.spawnEntity(stand);
+                STANDS[i] = stand.getUuid();
+            }
+            VillagerEntity resident = EntityType.VILLAGER.create(world);
+            resident.setAiDisabled(true);
+            resident.refreshPositionAndAngles(feet.x, feet.y, feet.z + 5.0, 0.0f, 0.0f);
+            world.spawnEntity(resident);
+            villager = resident.getUuid();
+        });
+    }
+
+    private static void requireStandShapes(ClientTestContext context) {
+        ShadowCasters raised = shapeOf(context, STANDS[0]);
+        ShadowCasters lowered = shapeOf(context, STANDS[1]);
+        float[] shape = raised.values();
+        double move = moved(raised, lowered);
+        ModConstants.LOGGER.info("[Test client] Forme d'une statue : {} cubes, de {} a {} ; bras tendu, un cube deplace de {} bloc.", (int) shape[STAND_BOXES],
+                String.format(Locale.ROOT, "%.3f", shape[STAND_BOTTOM]), String.format(Locale.ROOT, "%.3f", shape[STAND_TOP]), String.format(Locale.ROOT, "%.3f", move));
+        ClientTestContext.require(shape[STAND_BOXES] >= MIN_STAND_BOXES && lowered.values()[STAND_BOXES] == shape[STAND_BOXES],
+                "Une statue n'a pas les cubes de son modele : " + (int) shape[STAND_BOXES] + " et " + (int) lowered.values()[STAND_BOXES] + ".");
+        ClientTestContext.require(Math.abs(shape[STAND_BOTTOM]) < STAND_EDGE && Math.abs(shape[STAND_TOP] - STAND_HEIGHT) < STAND_EDGE,
+                String.format(Locale.ROOT, "Statue de %.3f a %.3f au lieu de 0 a %.3f.", shape[STAND_BOTTOM], shape[STAND_TOP], STAND_HEIGHT));
+        ClientTestContext.require(move > MIN_POSE_MOVE, String.format(Locale.ROOT, "Le bras tendu n'a deplace aucun cube : %.3f bloc.", move));
+        ShadowCasters resident = shapeOf(context, villager);
+        double widest = 0.0;
+        for (int k = 0; k < (int) resident.values()[STAND_BOXES]; k++) {
+            widest = Math.max(widest, Math.sqrt(center(resident, k, SECOND_AXIS) * center(resident, k, SECOND_AXIS)
+                    + center(resident, k, SECOND_AXIS + 1) * center(resident, k, SECOND_AXIS + 1) + center(resident, k, SECOND_AXIS + 2) * center(resident, k, SECOND_AXIS + 2)));
+        }
+        ModConstants.LOGGER.info("[Test client] Forme d'un villageois : {} cubes, le plus large de {} bloc de demi-cote.", (int) resident.values()[STAND_BOXES],
+                String.format(Locale.ROOT, "%.3f", widest));
+        ClientTestContext.require(widest < MAX_VILLAGER_WIDTH, String.format(Locale.ROOT, "Le bord transparent du chapeau compte : un cube de %.3f bloc de demi-cote.", widest));
+        requirePlayerTurned(context);
+    }
+
+    /**
+     * Le joueur debout se tourne sans vanilla, qui relirait son nom a chaque image : tourne de 30 degres, la largeur de son torse est en
+     * travers de son regard, comme vanilla le dessine.
+     */
+    private static void requirePlayerTurned(ClientTestContext context) {
+        LivingEntity player = context.player();
+        player.setYaw(PLAYER_YAW);
+        player.setBodyYaw(PLAYER_YAW);
+        player.prevBodyYaw = PLAYER_YAW;
+        player.setHeadYaw(PLAYER_YAW);
+        player.prevHeadYaw = PLAYER_YAW;
+        ShadowCasters shape = new ShadowCasters();
+        EntityShadows.shape(player, 0.0, 0.0, 0.0, 1.0f, shape);
+        double angle = Math.toRadians(PLAYER_YAW);
+        double across = -1.0;
+        for (int k = 0; k < (int) shape.values()[STAND_BOXES]; k++) {
+            double x = center(shape, k, SECOND_AXIS);
+            double y = center(shape, k, SECOND_AXIS + 1);
+            double z = center(shape, k, SECOND_AXIS + 2);
+            double width = Math.sqrt(x * x + y * y + z * z);
+            double height = center(shape, k, 1);
+            if (Math.abs(width - TORSO_HALF_WIDTH) < SIZE_EDGE && height > TORSO_LOW && height < TORSO_HIGH) {
+                across = Math.abs(x * Math.cos(angle) + z * Math.sin(angle)) / width;
+            }
+        }
+        ModConstants.LOGGER.info("[Test client] Torse du joueur tourne de {} degres : largeur en travers du regard a {}.", PLAYER_YAW,
+                String.format(Locale.ROOT, "%.4f", across));
+        ClientTestContext.require(across > MIN_TORSO_ACROSS, String.format(Locale.ROOT, "Le torse du joueur n'est pas tourne comme lui : %.4f.", across));
+    }
+
+    /**
+     * La forme d'un corps suit son modele et sa pose : deux statues d'armure, l'une le bras droit tendu devant elle, l'autre le bras
+     * baisse, ont chacune les cubes du modele (pas une boite de collision), de la base plate au haut de la tete, et le bras tendu deplace
+     * un cube de l'une par rapport a l'autre. Le bord du chapeau d'un villageois, transparent dans sa texture, n'en fait pas partie. Le
+     * shader arrete un rayon a ces cubes comme le dit un programme independant ({@code body_box_vectors.json}).
+     */
+    private static ClientScenario shadowFollowsTheModel() {
+        return ClientScenario.named("shadow_follows_the_model")
+                .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD, 1200)
+                .run("deux statues, bras tendu et bras baisse, et un villageois", TracedLightClientTests::spawnStands)
+                .await("corps chez le client", TracedLightClientTests::bodiesArrived, 200)
+                .frames(4)
+                .run("leurs cubes", TracedLightClientTests::requireStandShapes)
+                .check("le passage d'un rayon dans une boite suit les vecteurs communs", TracedLightClientTests::requireBodyBoxMatches)
+                .cleanup(context -> context.onServer(server -> {
+                    ServerWorld world = ClientTestContext.serverWorld(server, World.OVERWORLD);
+                    for (UUID id : new UUID[] {STANDS[0], STANDS[1], villager}) {
+                        Entity spawned = id == null ? null : world.getEntity(id);
+                        if (spawned != null) {
+                            spawned.discard();
+                        }
+                    }
+                }));
+    }
+
     /** Le calcul d'une dalle, sur le processeur graphique, contre les vecteurs communs que Java suit aussi. */
     private static void requireAreaLightMatches(ClientTestContext context) {
         JsonArray vectors;
@@ -273,6 +613,39 @@ final class TracedLightClientTests {
             float expected = vectors.get(i).getAsJsonObject().get("received").getAsFloat();
             ClientTestContext.require(Math.abs(pixels[i * 4] - expected) <= AREA_TOLERANCE,
                     String.format(Locale.ROOT, "Vecteur %d : %.5f au lieu de %.5f.", i, pixels[i * 4], expected));
+        }
+    }
+
+    private static void vector(int program, String name, int i, JsonObject v, String key, float w) {
+        JsonArray values = v.getAsJsonArray(key);
+        GL20.glUniform4f(GL20.glGetUniformLocation(program, name + "[" + i + "]"), values.get(0).getAsFloat(), values.get(1).getAsFloat(), values.get(2).getAsFloat(), w);
+    }
+
+    /** Le passage d'un rayon dans une boite, sur le processeur graphique, contre les vecteurs d'un programme independant. */
+    private static void requireBodyBoxMatches(ClientTestContext context) {
+        JsonArray vectors;
+        try {
+            vectors = JsonParser.parseString(Files.readString(Path.of(System.getProperty("gtgsbackrooms.clientTest.boxVectors")), StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonArray("vectors");
+        } catch (IOException exception) {
+            throw new IllegalStateException("Vecteurs de la boite illisibles.", exception);
+        }
+        ClientTestContext.require(vectors.size() <= BOX_CASES, "Trop de vecteurs de la boite : " + vectors.size() + ".");
+        String source = "#version 150\n" + LookGradeClientTests.library(context.client(), BODY_BOX) + "\n" + BOX_MAIN;
+        float[] pixels = LookGradeClientTests.render(source, 1, program -> {
+            for (int i = 0; i < vectors.size(); i++) {
+                JsonObject v = vectors.get(i).getAsJsonObject();
+                vector(program, "gtgs_TestStart", i, v, "start", v.get("grow").getAsFloat());
+                vector(program, "gtgs_TestToTarget", i, v, "toTarget", 0.0f);
+                vector(program, "gtgs_TestCenter", i, v, "center", 0.0f);
+                vector(program, "gtgs_TestU", i, v, "u", 0.0f);
+                vector(program, "gtgs_TestV", i, v, "v", 0.0f);
+                vector(program, "gtgs_TestW", i, v, "w", 0.0f);
+            }
+        });
+        for (int i = 0; i < vectors.size(); i++) {
+            boolean expected = vectors.get(i).getAsJsonObject().get("hits").getAsBoolean();
+            ClientTestContext.require(pixels[i * 4] > 0.5f == expected, String.format(Locale.ROOT, "Boite, vecteur %d : %s au lieu de %s.", i, !expected, expected));
         }
     }
 
