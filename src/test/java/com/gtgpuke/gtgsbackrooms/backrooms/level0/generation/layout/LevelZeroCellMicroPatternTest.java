@@ -13,8 +13,6 @@ class LevelZeroCellMicroPatternTest {
     @Test
     @DisplayName("Les motifs pleins ouvrent ou ferment les neuf blocs")
     void fullPatterns() {
-        assertEquals(9, LevelZeroCellMicroPattern.openCount(LevelZeroCellMicroPattern.FULL_OPEN), "Neuf blocs ouverts.");
-        assertEquals(0, LevelZeroCellMicroPattern.openCount(LevelZeroCellMicroPattern.FULL_CLOSED), "Aucun bloc ouvert.");
         for (int x = 0; x < 3; x++) {
             for (int z = 0; z < 3; z++) {
                 assertTrue(LevelZeroCellMicroPattern.isOpen(LevelZeroCellMicroPattern.FULL_OPEN, x, z), "Ouvert en " + x + "," + z);
@@ -32,6 +30,5 @@ class LevelZeroCellMicroPatternTest {
         int pattern = LevelZeroCellMicroPattern.bit(1, 1);
         assertTrue(LevelZeroCellMicroPattern.isOpen(pattern, 1, 1), "Le centre est ouvert.");
         assertFalse(LevelZeroCellMicroPattern.isOpen(pattern, 0, 1), "Le bord est ferme.");
-        assertEquals(1, LevelZeroCellMicroPattern.openCount(pattern), "Un seul bloc ouvert.");
     }
 }

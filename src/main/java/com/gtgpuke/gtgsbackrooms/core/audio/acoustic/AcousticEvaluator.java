@@ -220,7 +220,7 @@ public final class AcousticEvaluator {
             double px = sx + DETOURS[i * 3];
             double py = sy + DETOURS[i * 3 + 1];
             double pz = sz + DETOURS[i * 3 + 2];
-            if (window.at(floor(px), floor(py), floor(pz)) != OcclusionTrace.AIR) {
+            if (window.at(OcclusionTrace.floor(px), OcclusionTrace.floor(py), OcclusionTrace.floor(pz)) != OcclusionTrace.AIR) {
                 continue;
             }
             float via = Math.min(rule.max(), OcclusionTrace.combine(OcclusionTrace.occlusion(sx, sy, sz, px, py, pz, window, rule),
@@ -267,18 +267,18 @@ public final class AcousticEvaluator {
     private void march(SolidityWindow window, double ox, double oy, double oz, double dx, double dy, double dz, @Nullable PortalPlanes portals) {
         int portal = portals == null ? -1 : portals.intersect(ox, oy, oz, dx, dy, dz, MAX_RAY);
         double portalDistance = portal < 0 ? Double.POSITIVE_INFINITY : portals.hitDistance();
-        int x = floor(ox);
-        int y = floor(oy);
-        int z = floor(oz);
-        int stepX = step(dx);
-        int stepY = step(dy);
-        int stepZ = step(dz);
-        double tMaxX = boundary(ox, x, dx, stepX);
-        double tMaxY = boundary(oy, y, dy, stepY);
-        double tMaxZ = boundary(oz, z, dz, stepZ);
-        double tDeltaX = delta(dx);
-        double tDeltaY = delta(dy);
-        double tDeltaZ = delta(dz);
+        int x = OcclusionTrace.floor(ox);
+        int y = OcclusionTrace.floor(oy);
+        int z = OcclusionTrace.floor(oz);
+        int stepX = OcclusionTrace.step(dx);
+        int stepY = OcclusionTrace.step(dy);
+        int stepZ = OcclusionTrace.step(dz);
+        double tMaxX = OcclusionTrace.boundary(ox, x, dx, stepX);
+        double tMaxY = OcclusionTrace.boundary(oy, y, dy, stepY);
+        double tMaxZ = OcclusionTrace.boundary(oz, z, dz, stepZ);
+        double tDeltaX = OcclusionTrace.delta(dx);
+        double tDeltaY = OcclusionTrace.delta(dy);
+        double tDeltaZ = OcclusionTrace.delta(dz);
         this.hitDistance = MAX_RAY;
         this.hitAxis = NOTHING;
         while (true) {
@@ -321,25 +321,5 @@ public final class AcousticEvaluator {
                 return;
             }
         }
-    }
-
-    private static int floor(double value) {
-        return (int) Math.floor(value);
-    }
-
-    private static int step(double direction) {
-        return direction > 0.0 ? 1 : direction < 0.0 ? -1 : 0;
-    }
-
-    private static double boundary(double start, int cell, double direction, int step) {
-        if (step == 0) {
-            return Double.POSITIVE_INFINITY;
-        }
-        double next = step > 0 ? cell + 1.0 : cell;
-        return (next - start) / direction;
-    }
-
-    private static double delta(double direction) {
-        return direction == 0.0 ? Double.POSITIVE_INFINITY : Math.abs(1.0 / direction);
     }
 }

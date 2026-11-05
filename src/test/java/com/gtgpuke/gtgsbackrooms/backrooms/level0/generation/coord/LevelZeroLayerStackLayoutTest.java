@@ -59,10 +59,6 @@ class LevelZeroLayerStackLayoutTest {
     void yClassification() {
         assertEquals(1, LevelZeroLayerStackLayout.sliceAtY(14).layerIndex(), "Y=14 est dans le layer 1.");
         assertEquals(4, LevelZeroLayerStackLayout.sliceAtY(49).layerIndex(), "Y=49 est dans le layer 4.");
-        assertTrue(LevelZeroLayerStackLayout.isInteriorY(1, 11), "Y=11 est de l'air du layer 1.");
-        assertFalse(LevelZeroLayerStackLayout.isInteriorY(1, 10), "Y=10 est le sol du layer 1.");
-        assertTrue(LevelZeroLayerStackLayout.isInterLayerBedrockY(1, 19), "Y=19 est la bedrock du layer 1.");
-        assertFalse(LevelZeroLayerStackLayout.isInterLayerBedrockY(1, 20), "Y=20 appartient au layer 2.");
         assertTrue(LevelZeroLayerStackLayout.isCanonicalWallBaseY(21), "Y=21 est la base des murs du layer 2.");
         assertFalse(LevelZeroLayerStackLayout.isCanonicalWallBaseY(22), "Y=22 n'est pas une base de mur.");
         assertTrue(LevelZeroLayerStackLayout.isInsideStack(0), "Y=0 est dans la pile.");
@@ -82,8 +78,5 @@ class LevelZeroLayerStackLayoutTest {
     @DisplayName("Hors de la pile ou hors du layer, les classifications de Y repondent non sans aller plus loin")
     void yClassificationOutside() {
         assertFalse(LevelZeroLayerStackLayout.isCanonicalWallBaseY(LevelZeroLayerStackLayout.MIN_Y - 1), "Sous la pile : pas une base de mur.");
-        assertFalse(LevelZeroLayerStackLayout.isInteriorY(1, LevelZeroLayerStackLayout.airMinY(1) - 1), "Sous l'air du layer 1.");
-        assertFalse(LevelZeroLayerStackLayout.isInteriorY(1, LevelZeroLayerStackLayout.airMaxY(1) + 1), "Au-dessus de l'air du layer 1.");
-        assertFalse(LevelZeroLayerStackLayout.isInterLayerBedrockY(1, LevelZeroLayerStackLayout.interLayerBedrockMinY(1) - 1), "Sous la bedrock du layer 1.");
     }
 }

@@ -311,7 +311,7 @@ public final class RemoteWorld {
         return this.particles;
     }
 
-    /** Particules de ce monde, vivantes et en attente ; aucune pour une vue secondaire (diagnostic). */
+    /** Particules de ce monde, vivantes et en attente ; aucune pour une vue secondaire (tests du client). */
     public int particleCount() {
         return this.particles == null ? 0 : this.particles.count(MinecraftClient.getInstance().particleManager);
     }

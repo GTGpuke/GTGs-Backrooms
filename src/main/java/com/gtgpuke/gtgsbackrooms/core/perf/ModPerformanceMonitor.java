@@ -83,7 +83,7 @@ public final class ModPerformanceMonitor {
         return enabled;
     }
 
-    /** Active ou desactive le monitoring a chaud (tests, commandes de debug) ; l'echantillonneur CPU suit. */
+    /** Active ou desactive le monitoring a chaud ; l'echantillonneur CPU suit (tests). */
     public static void setEnabled(boolean value) {
         enabled = value;
         if (value) {
@@ -177,7 +177,7 @@ public final class ModPerformanceMonitor {
         }
     }
 
-    /** Paquets et octets envoyes par type de payload depuis le dernier resume serveur, sans les remettre a zero. */
+    /** Paquets et octets envoyes par type de payload depuis le dernier resume serveur, sans les remettre a zero (tests en jeu). */
     public static String networkSummary() {
         return formatNetwork(false);
     }

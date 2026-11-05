@@ -145,16 +145,18 @@ public final class OcclusionTrace {
         return 0.5f * (gain + gainHf);
     }
 
-    private static int floor(double value) {
+    /** Cellule d'une coordonnee. Les quatre pas de la marche dans la grille servent aussi a {@link AcousticEvaluator}. */
+    static int floor(double value) {
         return (int) Math.floor(value);
     }
 
-    private static int step(double direction) {
+    /** Sens de la marche sur un axe : -1, 0 ou 1. */
+    static int step(double direction) {
         return direction > 0.0 ? 1 : direction < 0.0 ? -1 : 0;
     }
 
     /** Distance (en fraction du trajet) jusqu'a la prochaine face franchie sur cet axe ; infinie si l'axe ne bouge pas. */
-    private static double boundary(double start, int cell, double direction, int step) {
+    static double boundary(double start, int cell, double direction, int step) {
         if (step == 0) {
             return Double.POSITIVE_INFINITY;
         }
@@ -162,7 +164,8 @@ public final class OcclusionTrace {
         return (next - start) / direction;
     }
 
-    private static double delta(double direction) {
+    /** Distance entre deux faces franchies sur cet axe, en fraction du trajet ; infinie si l'axe ne bouge pas. */
+    static double delta(double direction) {
         return direction == 0.0 ? Double.POSITIVE_INFINITY : Math.abs(1.0 / direction);
     }
 }

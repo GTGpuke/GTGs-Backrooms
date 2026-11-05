@@ -458,7 +458,7 @@ public final class BackroomsPortalBlockEntity extends BlockEntity {
         configureTarget(target.dimension(), target.position(), target.facing());
     }
 
-    /** {@code true} tant que le bloc attend qu'un chunk de sa recherche d'arrivee se charge. */
+    /** {@code true} tant que le bloc attend qu'un chunk de sa recherche d'arrivee se charge (tests en jeu). */
     public boolean isSearchLoading() {
         return this.searchLoading;
     }

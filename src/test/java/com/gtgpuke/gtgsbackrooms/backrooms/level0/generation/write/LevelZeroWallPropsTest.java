@@ -2,6 +2,7 @@ package com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.write;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
@@ -19,7 +20,7 @@ class LevelZeroWallPropsTest {
     @DisplayName("Une colonne sans face exposee n'a aucun detail")
     void noExposureNoProps() {
         assertEquals(LevelZeroWallProps.NONE, LevelZeroWallProps.resolve(12, -7, 0, SLICE), "Rien sans face exposee.");
-        assertFalse(LevelZeroWallProps.NONE.hasBaseboard(), "Pas de plinthe.");
+        assertEquals(0, LevelZeroWallProps.NONE.baseboardFaceMask(), "Pas de plinthe.");
         assertFalse(LevelZeroWallProps.NONE.hasFixture(), "Pas d'element mural.");
     }
 
@@ -30,7 +31,7 @@ class LevelZeroWallPropsTest {
             int mask = LevelZeroWallpaperBlock.NORTH_MASK | (x % 2 == 0 ? LevelZeroWallpaperBlock.EAST_MASK : 0);
             LevelZeroWallProps props = LevelZeroWallProps.resolve(x, 3, mask, SLICE);
             assertEquals(mask, props.baseboardFaceMask(), "La plinthe suit exactement les faces exposees.");
-            assertTrue(props.hasBaseboard(), "Une plinthe est presente.");
+            assertNotEquals(0, props.baseboardFaceMask(), "Une plinthe est presente.");
             assertEquals(props, LevelZeroWallProps.resolve(x, 3, mask, SLICE), "Resolution deterministe.");
         }
     }
@@ -95,6 +96,6 @@ class LevelZeroWallPropsTest {
     void fixtureWithoutFaceIsNoFixture() {
         LevelZeroWallProps props = new LevelZeroWallProps(LevelZeroWallpaperBlock.NORTH_MASK, LevelZeroWallProps.Fixture.SWITCH, 0, 3);
         assertFalse(props.hasFixture(), "Sans face, pas d'element mural.");
-        assertTrue(props.hasBaseboard(), "La plinthe, elle, est la.");
+        assertNotEquals(0, props.baseboardFaceMask(), "La plinthe, elle, est la.");
     }
 }

@@ -570,7 +570,7 @@ public final class LightCopy {
         return target != null && target.zone.idle();
     }
 
-    /** Sections copiees du monde cible (diagnostic), ou 0. */
+    /** Sections copiees du monde cible, ou 0 (tests du client). */
     public static int copiedSections(@Nullable World world) {
         Target target = TARGETS.get(world);
         return target == null ? 0 : target.zone.blocks().sectionCount();

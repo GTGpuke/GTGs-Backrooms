@@ -100,7 +100,7 @@ public final class NeonShaderCheck {
         }
     }
 
-    /** Vecteurs que le processeur graphique a rendus identiques au fichier commun ; 0 sans verification reussie. */
+    /** Vecteurs que le processeur graphique a rendus identiques au fichier commun ; 0 sans verification reussie (tests du client). */
     public static int identicalVectors() {
         return identical;
     }

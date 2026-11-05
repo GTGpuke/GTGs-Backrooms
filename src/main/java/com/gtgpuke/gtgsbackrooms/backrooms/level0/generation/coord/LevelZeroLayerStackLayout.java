@@ -120,16 +120,6 @@ public final class LevelZeroLayerStackLayout {
         return SLICES.get(Math.floorDiv(y - MIN_Y, LAYER_PITCH));
     }
 
-    /** {@code true} si Y est dans l'air jouable du layer. */
-    public static boolean isInteriorY(int layerIndex, int y) {
-        return y >= airMinY(layerIndex) && y <= airMaxY(layerIndex);
-    }
-
-    /** {@code true} si Y est dans la bedrock technique du layer. */
-    public static boolean isInterLayerBedrockY(int layerIndex, int y) {
-        return y >= interLayerBedrockMinY(layerIndex) && y <= interLayerBedrockMaxY(layerIndex);
-    }
-
     private static void requireLayerIndex(int layerIndex) {
         if (layerIndex < 0 || layerIndex >= LAYER_COUNT) {
             throw new IllegalArgumentException(

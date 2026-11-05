@@ -1017,7 +1017,7 @@ rendu. La porte des Backrooms et le badge de la Gang sont retirés.
 
 Système de portails complet : porte des Backrooms, téléportation sans coupure (joueurs, objets, mobs, projectiles),
 synchronisation des chunks et des entités de l'autre dimension, rendu du monde distant à travers le cadre avec un
-niveau de portails imbriqués, et interaction à travers le cadre. Conception, protocole et limites dans [PORTALS.md](PORTALS.md).
+niveau de portails imbriqués, et interaction à travers le cadre. Conception, protocole et limites dans [PORTAILS.md](docs/systemes/PORTAILS.md).
 
 ### Added
 - **Porte des Backrooms** (`backrooms_door`) en item, dans un nouvel onglet créatif *GTG's Backrooms - Portails*.
@@ -1133,7 +1133,7 @@ niveau de portails imbriqués, et interaction à travers le cadre. Conception, p
 ## [0.8.0] - 2026-10-15
 
 Refonte complète du projet : structure, génération, tests, outillage et documentation.
-Détail et mesures dans [AUDIT.md](AUDIT.md).
+Détail et mesures dans l'audit d'octobre, retiré depuis ([décisions du 16 octobre 2026](docs/DECISIONS.md#16-octobre-2026)).
 
 ### Changed
 - **Outillage** : Gradle 9.8.1, Fabric Loom 1.17.21, Fabric Loader 0.19.5, Fabric API 0.116.17+1.21.1,

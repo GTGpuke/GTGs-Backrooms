@@ -65,11 +65,6 @@ public record LevelZeroWallProps(int baseboardFaceMask, Fixture fixture, int fix
         return new LevelZeroWallProps(exposedFaceMask, Fixture.NONE, 0, 0);
     }
 
-    /** {@code true} si au moins une face porte une plinthe. */
-    public boolean hasBaseboard() {
-        return baseboardFaceMask != 0;
-    }
-
     /** {@code true} si un interrupteur ou une prise est present. */
     public boolean hasFixture() {
         return fixture != Fixture.NONE && fixtureFaceMask != 0;

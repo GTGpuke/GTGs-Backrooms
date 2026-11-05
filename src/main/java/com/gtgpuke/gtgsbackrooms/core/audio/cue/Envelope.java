@@ -117,11 +117,6 @@ public final class Envelope {
         return this.windows.length;
     }
 
-    /** Duree du son, en secondes. */
-    public float durationSeconds() {
-        return this.windows.length * WINDOW_MS / MS_PER_SECOND;
-    }
-
     /**
      * Amplitude a une position de lecture, de 0 a 1, interpolee entre deux fenetres ; nulle avant le debut et apres la
      * fin.

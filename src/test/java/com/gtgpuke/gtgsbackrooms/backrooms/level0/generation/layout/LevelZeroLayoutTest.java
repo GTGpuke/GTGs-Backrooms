@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.coord.LevelZeroCoords;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.noise.LevelZeroSeedResolver;
-import com.gtgpuke.gtgsbackrooms.backrooms.level0.generation.sector.LevelZeroSectorRoomKind;
 
 @DisplayName("Layout de chunk du Level 0")
 class LevelZeroLayoutTest {
@@ -25,7 +24,6 @@ class LevelZeroLayoutTest {
         }
         assertTrue(LevelZeroLayout.isWalkableCell(999L, LevelZeroLayout.ORIGIN_SAFE_RADIUS, -LevelZeroLayout.ORIGIN_SAFE_RADIUS),
                 "Le coin de la zone de securite est ouvert.");
-        assertEquals(LevelZeroSectorRoomKind.NONE, LevelZeroLayout.roomKindCell(999L, 0, 0), "Pas de salle a l'origine.");
     }
 
     @Test

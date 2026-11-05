@@ -26,9 +26,4 @@ public final class LevelZeroCellMicroPattern {
     public static boolean isOpen(int pattern, int subCellX, int subCellZ) {
         return (pattern & bit(subCellX, subCellZ)) != 0;
     }
-
-    /** Nombre de blocs ouverts du motif. */
-    public static int openCount(int pattern) {
-        return Integer.bitCount(pattern & FULL_OPEN);
-    }
 }

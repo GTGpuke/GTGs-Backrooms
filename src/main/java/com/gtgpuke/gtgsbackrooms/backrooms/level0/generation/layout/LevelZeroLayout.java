@@ -183,18 +183,6 @@ public final class LevelZeroLayout {
     }
 
     /**
-     * Type de salle d'une cellule logique, lu dans le secteur en cache.
-     *
-     * @param layoutSeed seed du layer
-     * @param cellX coordonnee logique X
-     * @param cellZ coordonnee logique Z
-     * @return type de salle
-     */
-    public static LevelZeroSectorRoomKind roomKindCell(long layoutSeed, int cellX, int cellZ) {
-        return new SectorLookup(layoutSeed).roomKind(cellX, cellZ);
-    }
-
-    /**
      * Traversabilite brute d'une position monde.
      *
      * @param worldX coordonnee monde X

@@ -21,7 +21,6 @@ class EnvelopeTest {
     void silenceAndImpulse() {
         Envelope silence = Envelope.bake(new short[RATE], 1, RATE);
         assertEquals(50, silence.windows(), "Une seconde a mille echantillons : cinquante fenetres de vingt millisecondes.");
-        assertEquals(1.0f, silence.durationSeconds(), EPSILON, "Une seconde.");
         assertEquals(0.0f, silence.at(0.5f), EPSILON, "Rien.");
         short[] impulse = new short[RATE];
         impulse[600] = 20000;
