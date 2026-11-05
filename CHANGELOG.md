@@ -8,10 +8,17 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 ## [Unreleased]
 
 ### Fixed
-- **Mémoire graphique d'une vue de portail jamais rendue** : en High et en Ultra, la lumière d'une vue (environ 200 Mio de mémoire
-  graphique) restait prise jusqu'à la fin de la session dès qu'un portail avait montré un autre endroit des Backrooms. Elle est
-  maintenant rendue après une minute sans vue, comme un monde distant que plus aucun portail ne montre, et se recrée au retour
-  devant un cadre.
+- **Fond d'un couloir trop clair dans un portail, en Ultra** : ce que montre un cadre (le fond sombre d'un couloir qui continue celui du
+  joueur) était plus clair que le couloir sans portail, de 3,3 niveaux sur la pire bande de lignes au banc. La lumière qui sort d'un
+  portail se mesure maintenant comme les rebonds tracés la lisent : dans leurs soixante-quatre directions, depuis chaque quart du
+  cadre, sur leur longueur, sans la lumière de fond que le terrain ajoute à part, et un rayon la lit à sa place sur le cadre.
+  L'écart tombe à 1,5 près du cadre et à 2,2 au pire, sous les tubes. Le décor des autres paliers ne change pas ; la lumière qu'un
+  corps reçoit d'un portail, estimée plus finement, à tous les paliers, bouge de moins de 1 %.
+- **Mémoire graphique de la lumière jamais rendue** : en High et en Ultra, la lumière d'une vue de portail (environ 200 Mio de
+  mémoire graphique) restait prise jusqu'à la fin de la session dès qu'un portail avait montré un autre endroit des Backrooms, tout
+  comme celle du joueur une fois sorti des Backrooms, le cache de surfaces après un passage en Low ou en Medium, les rebonds tracés
+  après l'Ultra et les ombres des corps de chaque niveau de vue. Ce qui n'a servi à aucune image depuis une minute est maintenant
+  rendu, comme un monde distant que plus aucun portail ne montre, et se recrée quand il resert.
 - **Cadre sombre dans la vue d'un portail lointain du même monde** : un portail vers une autre dimension, vu par un cadre qui mène
   loin dans le monde du joueur, restait un cadre sombre faute de fenêtre de chunks. Il montre maintenant son autre monde, comme
   vu par un cadre vers une autre dimension.

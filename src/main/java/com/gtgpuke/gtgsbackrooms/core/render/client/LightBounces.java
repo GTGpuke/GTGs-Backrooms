@@ -49,6 +49,10 @@ public final class LightBounces {
     /** Echantillonneur des matieres dans les shaders patches. */
     public static final String SAMPLER_MATERIALS = "gtgs_Materials";
     private static final int UNIT_PREVIOUS = 15;
+    /** Unite de texture de ce qui sort des passages, lue par la seule passe des rebonds. */
+    private static final int UNIT_PASSAGES = 20;
+    /** Texels de la mesure d'un passage par ligne : une direction et un point chacun ; deux lignes par cadre. */
+    private static final int PASSAGE_TEXELS = LightZone.PASSAGE_DIRECTIONS * LightZone.PASSAGE_POINTS;
     private static final Identifier SHADER = Identifier.of(ModConstants.MOD_ID, "shaders/bake/bounce.fsh");
     private static final int TILE = 8;
     private static final int ATLAS_WIDTH = SurfaceAtlas.ACROSS * TILE;
@@ -65,10 +69,9 @@ public final class LightBounces {
     /** Cadres des portails pour les rayons, et ce qui sort de chaque passage, par direction ({@link LightZone#passageLight}). */
     private static final float[] FRAME_VALUES = new float[PortalLightUniforms.FRAMES * PortalLightUniforms.FRAME_FLOATS];
     private static final float[] SEEN_VALUES = new float[PortalLightUniforms.SEEN * PortalLightUniforms.SEEN_FLOATS];
-    private static final int PASSAGE_FLOATS = PortalLightUniforms.FRAMES * LightZone.PASSAGE_DIRECTIONS * 3;
     private static final FloatBuffer FRAMES = MemoryUtil.memAllocFloat(FRAME_VALUES.length);
-    private static final FloatBuffer PASSAGE_DIRECT = MemoryUtil.memAllocFloat(PASSAGE_FLOATS);
-    private static final FloatBuffer PASSAGE_ONCE = MemoryUtil.memAllocFloat(PASSAGE_FLOATS);
+    /** La mesure d'un passage, ses deux lignes : la lumiere directe, puis elle et un rebond, par direction et par point. */
+    private static final FloatBuffer PASSAGE_VALUES = MemoryUtil.memAllocFloat(PASSAGE_TEXELS * 2 * 4);
     /** Le drapeau d'un passage dont la sortie n'est pas encore mesuree, pour {@code bounce.fsh}. */
     private static final float UNMEASURED = 2.0f;
     private static int program;
@@ -86,8 +89,6 @@ public final class LightBounces {
     private static int locPortalOrigin;
     private static int locFrameCount;
     private static int locFrames;
-    private static int locPassageDirect;
-    private static int locPassageOnce;
     private static boolean programCreated;
     private static boolean programFailed;
 
@@ -104,12 +105,17 @@ public final class LightBounces {
     private int materials;
     private int framebuffer;
     private int firstRound;
+    private int passages;
     private int cursor;
     private int roundsLeft;
     private int materialCount;
     private boolean changed;
     private boolean failed;
     private boolean created;
+    /** {@code true} si une image a servi les rebonds depuis la derniere revue ({@link #releaseIdle}). */
+    private boolean used;
+    /** Derniere revue ou les rebonds servaient, en millisecondes. */
+    private long usedAt;
     /** {@code true} si ce jeu a calcule des tuiles a l'image en cours. */
     private boolean worked;
 
@@ -155,8 +161,6 @@ public final class LightBounces {
         locPortalOrigin = GL20.glGetUniformLocation(program, "gtgs_PortalOrigin");
         locFrameCount = GL20.glGetUniformLocation(program, "gtgs_FrameCount");
         locFrames = GL20.glGetUniformLocation(program, "gtgs_Frames");
-        locPassageDirect = GL20.glGetUniformLocation(program, "gtgs_PassageDirect");
-        locPassageOnce = GL20.glGetUniformLocation(program, "gtgs_PassageOnce");
         int previousProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         GL20.glUseProgram(program);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, LightVolume.SAMPLER), LightVolume.UNIT);
@@ -165,6 +169,7 @@ public final class LightBounces {
         GL20.glUniform1i(GL20.glGetUniformLocation(program, LightSurfaces.SAMPLER_BLOCKS), LightSurfaces.UNIT_BLOCKS);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, SAMPLER_MATERIALS), UNIT_MATERIALS);
         GL20.glUniform1i(GL20.glGetUniformLocation(program, "gtgs_BouncePrevious"), UNIT_PREVIOUS);
+        GL20.glUniform1i(GL20.glGetUniformLocation(program, "gtgs_Passages"), UNIT_PASSAGES);
         GL20.glUseProgram(previousProgram);
         array = GL30.glGenVertexArrays();
         return true;
@@ -187,6 +192,8 @@ public final class LightBounces {
         this.previous = texture(GL11.GL_LINEAR, GL11.GL_RGBA8, ATLAS_WIDTH, ATLAS_HEIGHT, GL11.GL_UNSIGNED_BYTE);
         GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_MATERIALS);
         this.materials = texture(GL11.GL_NEAREST, GL30.GL_RGBA32F, MATERIALS, 1, GL11.GL_FLOAT);
+        GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_PASSAGES);
+        this.passages = texture(GL11.GL_NEAREST, GL30.GL_RGBA32F, PASSAGE_TEXELS, PortalLightUniforms.FRAMES * 2, GL11.GL_FLOAT);
         GlStateManager._activeTexture(previousUnit);
         PixelUnpack.end();
         int previousFramebuffer = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
@@ -236,11 +243,40 @@ public final class LightBounces {
     }
 
     /**
-     * Rend ses textures et ses framebuffers a la carte graphique : tout se recree a la prochaine image qui en a besoin. Un shader
-     * refuse reste coupe pour la session.
+     * Rend ses textures et ses framebuffers a la carte graphique, avec son cache de surfaces : tout se recree a la prochaine image qui
+     * en a besoin. Un shader refuse reste coupe pour la session.
      */
     void freeTextures() {
         clearState();
+        deleteObjects();
+    }
+
+    /** {@code true} si ses textures sont sur la carte graphique. */
+    boolean allocated() {
+        return this.created && !this.failed;
+    }
+
+    /**
+     * Une fois par image, son cache de surfaces servi : des rebonds qu'aucune image n'a traces depuis {@link LightVolume#RELEASE_MS}
+     * (un palier sans rebonds traces) rendent leurs textures. Les surfaces qu'ils connaissent restent : recrees, ils les retracent
+     * toutes, par un balayage.
+     *
+     * @param now instant de l'image, en millisecondes
+     */
+    void releaseIdle(long now) {
+        if (this.used) {
+            this.used = false;
+            this.usedAt = now;
+        } else if (allocated() && now - this.usedAt > LightVolume.RELEASE_MS) {
+            deleteObjects();
+            this.fresh.clear();
+            this.cursor = 0;
+            this.roundsLeft = 0;
+            this.changed = true;
+        }
+    }
+
+    private void deleteObjects() {
         if (!this.created || this.failed) {
             return;
         }
@@ -249,11 +285,14 @@ public final class LightBounces {
         GL11.glDeleteTextures(this.atlas);
         GL11.glDeleteTextures(this.previous);
         GL11.glDeleteTextures(this.materials);
+        GL11.glDeleteTextures(this.passages);
+        this.passages = 0;
         this.framebuffer = 0;
         this.firstRound = 0;
         this.atlas = 0;
         this.previous = 0;
         this.materials = 0;
+        this.materialCount = 0;
         this.created = false;
     }
 
@@ -305,6 +344,7 @@ public final class LightBounces {
         if (this.failed) {
             return;
         }
+        this.used = true;
         uploadMaterials(blocks);
         bindForShaders();
         if (idle && turn && this.changed && this.roundsLeft == 0) {
@@ -348,41 +388,55 @@ public final class LightBounces {
     }
 
     /**
-     * Les cadres des portails a portee de la zone des tuiles, et ce qui sort de chaque passage par direction : la lumiere directe de
-     * l'autre cote pour le premier tour, elle et un rebond pour le second. Un passage pas encore mesure laisse passer les rayons.
+     * Les cadres des portails a portee de la zone des tuiles, et ce qui sort de chaque passage, par direction et par point du cadre : la
+     * lumiere directe de l'autre cote pour le premier tour, elle et un rebond pour le second. Un passage pas encore
+     * mesure laisse passer les rayons. La mesure de chaque passage mesure a portee part vers les deux lignes de sa place a chaque
+     * passe (8 Kio), et la passe ne lit que celles-la : rien ne peut y rester d'une mesure, ou d'un rangement des cadres, d'avant.
      */
-    private static void portals(LightZone zone, int[] origin) {
+    private void portals(LightZone zone, int[] origin) {
         PortalOpenings openings = zone.openings();
         LightZone.PassageLight measured = zone.passageLight();
         float[] light = measured != null && measured.openings() == openings ? measured.values() : null;
         PortalLightUniforms.pack(openings, origin, origin[0] + 8.0, origin[1] + 16.0, origin[2] + 8.0, LightSurfaces.FRAME_RANGE, FRAME_VALUES, SEEN_VALUES);
         int frames = PortalLightUniforms.frames();
-        PASSAGE_DIRECT.clear();
-        PASSAGE_ONCE.clear();
-        for (int slot = 0; slot < PortalLightUniforms.FRAMES; slot++) {
-            int opening = slot < frames ? PortalLightUniforms.frameOpening(slot) : -1;
-            boolean passage = opening >= 0 && FRAME_VALUES[slot * PortalLightUniforms.FRAME_FLOATS + 7] > 0.5f;
-            boolean measuredHere = passage && light != null;
-            if (passage && !measuredHere) {
-                // Pas encore mesure : le cadre laisse passer les rayons comme s'il n'etait pas la, plutot que de les arreter.
-                FRAME_VALUES[slot * PortalLightUniforms.FRAME_FLOATS + 7] = UNMEASURED;
+        int previousUnit = GlStateManager._getActiveTexture();
+        GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT_PASSAGES);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, this.passages);
+        for (int slot = 0; slot < frames; slot++) {
+            int flag = slot * PortalLightUniforms.FRAME_FLOATS + 7;
+            if (FRAME_VALUES[flag] < 0.5f) {
+                continue;
             }
-            for (int direction = 0; direction < LightZone.PASSAGE_DIRECTIONS; direction++) {
-                int at = opening * LightZone.PASSAGE_VALUES + direction * 6;
-                for (int channel = 0; channel < 3; channel++) {
-                    PASSAGE_DIRECT.put(measuredHere ? light[at + channel] : 0.0f);
-                    PASSAGE_ONCE.put(measuredHere ? light[at + 3 + channel] : 0.0f);
-                }
+            if (light == null) {
+                // Pas encore mesure : le cadre laisse passer les rayons comme s'il n'etait pas la, plutot que de les arreter.
+                FRAME_VALUES[flag] = UNMEASURED;
+            } else {
+                sendPassage(light, PortalLightUniforms.frameOpening(slot), slot);
             }
         }
-        PASSAGE_DIRECT.flip();
-        PASSAGE_ONCE.flip();
+        GlStateManager._activeTexture(previousUnit);
         FRAMES.clear().put(FRAME_VALUES).flip();
         GL20.glUniform3i(locPortalOrigin, origin[0], origin[1], origin[2]);
         GL20.glUniform1i(locFrameCount, frames);
         GL20.glUniform4fv(locFrames, FRAMES);
-        GL20.glUniform3fv(locPassageDirect, PASSAGE_DIRECT);
-        GL20.glUniform3fv(locPassageOnce, PASSAGE_ONCE);
+    }
+
+    /**
+     * La mesure d'un passage dans les deux lignes de la place de son cadre, dans la texture liee : une direction et un point par texel, la
+     * lumiere directe, puis elle et un rebond.
+     */
+    private static void sendPassage(float[] light, int opening, int slot) {
+        PASSAGE_VALUES.clear();
+        for (int line = 0; line < 2; line++) {
+            for (int sample = 0; sample < PASSAGE_TEXELS; sample++) {
+                int at = opening * LightZone.PASSAGE_VALUES + sample * LightZone.PASSAGE_SAMPLE + line * 3;
+                PASSAGE_VALUES.put(light[at]).put(light[at + 1]).put(light[at + 2]).put(0.0f);
+            }
+        }
+        PASSAGE_VALUES.flip();
+        PixelUnpack.begin();
+        GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, slot * 2, PASSAGE_TEXELS, 2, GL11.GL_RGBA, GL11.GL_FLOAT, PASSAGE_VALUES);
+        PixelUnpack.end();
     }
 
     /** Ou ecrit ce qui suit, et ce qu'il relit : jamais la texture qu'il ecrit. */

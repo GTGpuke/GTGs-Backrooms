@@ -202,6 +202,10 @@ public final class LightSurfaces {
     private boolean created;
     /** {@code true} si ce cache a calcule des tuiles a l'image en cours. */
     private boolean worked;
+    /** {@code true} si une image a servi ce cache depuis la derniere revue ({@link #releaseIdle}). */
+    private boolean used;
+    /** Derniere revue ou ce cache servait, en millisecondes. */
+    private long usedAt;
 
     private LightSurfaces(float milliseconds) {
         this.tileBudget = new TileBudget(milliseconds);
@@ -228,6 +232,28 @@ public final class LightSurfaces {
     /** {@code true} si ce cache tient ses textures sur la carte graphique. */
     boolean allocated() {
         return this.created && !this.failed;
+    }
+
+    /** {@code true} si ses rebonds traces tiennent leurs textures sur la carte graphique. */
+    boolean bouncesAllocated() {
+        return this.bounces.allocated();
+    }
+
+    /**
+     * Une fois par image, sa zone montree : un cache qu'aucune image n'a servi depuis {@link LightVolume#RELEASE_MS} (un palier sans
+     * cache de surfaces) rend ses textures, et se recree a la premiere image qui en a besoin ; un cache servi laisse ses rebonds
+     * juger des leurs.
+     *
+     * @param now instant de l'image, en millisecondes
+     */
+    void releaseIdle(long now) {
+        if (this.used) {
+            this.used = false;
+            this.usedAt = now;
+            this.bounces.releaseIdle(now);
+        } else if (allocated() && now - this.usedAt > LightVolume.RELEASE_MS) {
+            freeTextures();
+        }
     }
 
     /** Le programme des tuiles, une fois pour les deux caches ; {@code false} s'il est refuse. */
@@ -411,8 +437,8 @@ public final class LightSurfaces {
     }
 
     /**
-     * Rend ses textures, son framebuffer et ceux de ses rebonds a la carte graphique : la zone d'une vue apres un moment sans vue
-     * ({@link LightVolume}). Tout se recree a la prochaine image qui en a besoin. Un shader refuse reste coupe pour la session.
+     * Rend ses textures, son framebuffer et ceux de ses rebonds a la carte graphique, apres un moment sans usage
+     * ({@link #releaseIdle}). Tout se recree a la prochaine image qui en a besoin. Un shader refuse reste coupe pour la session.
      */
     void freeTextures() {
         clearState();
@@ -591,6 +617,7 @@ public final class LightSurfaces {
         if (this.failed) {
             return;
         }
+        this.used = true;
         this.lastBase = base;
         LightBakeSettings settings = zone.settings();
         for (int i = 0; i < this.sectionsCopied.size(); i++) {

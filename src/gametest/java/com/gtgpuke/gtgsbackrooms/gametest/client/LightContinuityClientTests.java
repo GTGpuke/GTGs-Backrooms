@@ -204,7 +204,7 @@ final class LightContinuityClientTests {
     private static final float PORTAL_LIGHT_GAIN = 0.02f;
 
     static List<ClientScenario> scenarios() {
-        return List.of(sectionsComeBack(), freshSurfacesAreBright(), farRoomStaysLit(), zoneMeetsTheTiles(), shortCacheServesTheNearest(),
+        return List.of(sectionsComeBack(), lightIsReleasedWhenUnused(), freshSurfacesAreBright(), farRoomStaysLit(), zoneMeetsTheTiles(), shortCacheServesTheNearest(),
                 otherHeightStartsClean(), texturesStayCalmBeyondTheGrid(), reloadedColumnIsCopiedAgain(), shaftAboveTheZone(),
                 viewReadsItsZone("view_reads_its_zone", VIEW_NEAR, false),
                 viewReadsItsZone("far_view_reads_its_zone", VIEW_FAR, true), portalLightReachesTheZone(), bodyBeyondShadesThroughTheFrame(),
@@ -807,7 +807,7 @@ final class LightContinuityClientTests {
                 });
     }
 
-    /** Ticks laisses a la liberation de la memoire graphique d'une vue sans vue : le delai des tests (cinq secondes), et de la marge. */
+    /** Ticks laisses a la liberation d'un cache de lumiere sans usage : le delai des tests (cinq secondes), et de la marge. */
     private static final int RELEASE_TICKS = 600;
     /** Ecart en dessous duquel deux centres de passages sont le meme, en blocs. */
     private static final float SAME_CENTER = 0.01f;
@@ -999,11 +999,12 @@ final class LightContinuityClientTests {
      * Ecart moyen tolere entre le portail et le couloir continu, par palier, en niveaux de 0 a 255, sur une bande de lignes : un saut de
      * lumiere au plan decale toute une bande. Mesure, de Low a High : 0,7 au plus (au pixel, la moquette des deux couloirs differe, ses
      * variantes de texture suivent la position) ; colle au cadre, sans l'ombre de contact du joueur de l'autre cote du plan, 13 en Low, et
-     * avec une penombre visee au centre des dalles vues par le cadre, 1,8 en High. En Ultra, 3,3 pres du cadre : sur le mur sombre du fond,
-     * les rebonds traces lisent ce qui sort du passage, mesure une fois pour tout le cadre (limite connue, docs/systemes/RENDU.md), plus
-     * clair que le couloir de quatre niveaux.
+     * avec une penombre visee au centre des dalles vues par le cadre, 1,8 en High. En Ultra, les rebonds traces lisent ce qui sort du
+     * passage, mesure par la cuisson dans ses cellules, plus grossieres que les tuiles : 2,2 au plus (sous les tubes, le fond sombre vu
+     * par le cadre), 1,5 pres du cadre, contre 2,9 et 3,3 quand la mesure se faisait en seize directions, la meme sur tout le cadre et fond compris.
+     * Une grille de quatre points par cote sur le cadre ramene le pire a 1,7, mais eclaircit de 0,5 le sol colle au plan : gardee a deux.
      */
-    private static final double[] MAX_SEAM_BAND = {1.5, 1.5, 1.5, 4.0};
+    private static final double[] MAX_SEAM_BAND = {1.5, 1.5, 1.5, 2.5};
     /** Age du joueur pendant les mesures : sa pose, et donc son ombre, ne changent pas d'une image a l'autre. */
     private static final int SEAM_AGE = 777;
     /**
@@ -1219,6 +1220,57 @@ final class LightContinuityClientTests {
                     double mean = sum / (image.getWidth() * image.getHeight());
                     ModConstants.LOGGER.info("[Test client] Retour dans une piece : ecart moyen {}.", String.format(Locale.ROOT, "%.2f", mean));
                     ClientTestContext.require(mean <= MAX_RETURN, String.format(Locale.ROOT, "La piece ne revient pas telle quelle : ecart moyen %.2f.", mean));
+                })
+                .cleanup(context -> {
+                    LevelZeroClientTests.defaultTier(context);
+                    LevelZeroClientTests.backToOverworld(context);
+                });
+    }
+
+    /**
+     * Un cache de lumiere sans usage rend sa memoire graphique apres le delai des tests (cinq secondes) : les rebonds traces au palier
+     * High, qui ne les lit pas, le cache de surfaces au palier Low, la zone du joueur dans l'Overworld, ce que chacun lit encore restant
+     * la. De retour dans le Level 0 en Ultra, tout se recree, et la piece revient telle qu'elle etait.
+     */
+    private static ClientScenario lightIsReleasedWhenUnused() {
+        return arrival("light_is_released_when_unused", LookQuality.ULTRA)
+                .run("regard", context -> {
+                    origin = context.player().getPos();
+                    look(context, 200.0f, 0.0f);
+                })
+                .frames(8)
+                .capture("la piece en Ultra", image -> before = pixels(image))
+                .check("tout est la en Ultra", context -> ClientTestContext.require(LightVolume.playerBouncesAllocated()
+                        && LightVolume.playerSurfacesAllocated(), "En Ultra, le cache de surfaces et les rebonds traces doivent etre la."))
+                .run("palier High, sans rebonds traces", context -> tier(context, LookQuality.HIGH))
+                .await("rebonds traces rendus", context -> !LightVolume.playerBouncesAllocated(), RELEASE_TICKS)
+                .check("le cache de surfaces, lu en High, reste", context -> ClientTestContext.require(LightVolume.playerSurfacesAllocated(),
+                        "Le cache de surfaces, que le High lit, a ete rendu."))
+                .run("palier Low, sans cache de surfaces", context -> tier(context, LookQuality.LOW))
+                .await("cache de surfaces rendu", context -> !LightVolume.playerSurfacesAllocated(), RELEASE_TICKS)
+                .check("la zone, lue en Low, reste", context -> ClientTestContext.require(LightVolume.playerAllocated(),
+                        "La zone du joueur, que le Low lit, a ete rendue."))
+                .run("dans l'Overworld, sans lumiere cuite", LevelZeroClientTests::backToOverworld)
+                .await("zone du joueur rendue", context -> !LightVolume.playerAllocated(), RELEASE_TICKS)
+                .run("palier Ultra", context -> tier(context, LookQuality.ULTRA))
+                .run("retour dans le Level 0", LevelZeroClientTests::enterLevelZero)
+                .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, 1200)
+                .run("a la meme place", context -> teleport(context, origin.x, origin.y, origin.z))
+                .ticks(60)
+                .await("repos au retour", LightContinuityClientTests::settled, SETTLE_TICKS)
+                .run("meme regard", context -> look(context, 200.0f, 0.0f))
+                .frames(8)
+                .capture("la piece, tout recree", image -> {
+                    double sum = 0.0;
+                    for (int y = 0; y < image.getHeight(); y++) {
+                        for (int x = 0; x < image.getWidth(); x++) {
+                            sum += Math.abs(luminance(image.getColor(x, y)) - luminance(before[y * image.getWidth() + x]));
+                        }
+                    }
+                    double mean = sum / (image.getWidth() * image.getHeight());
+                    ModConstants.LOGGER.info("[Test client] Cache de lumiere rendu puis recree : ecart moyen {}.", String.format(Locale.ROOT, "%.2f", mean));
+                    ClientTestContext.require(mean <= MAX_RETURN, String.format(Locale.ROOT,
+                            "La piece ne revient pas telle quelle apres la liberation du cache de lumiere : ecart moyen %.2f.", mean));
                 })
                 .cleanup(context -> {
                     LevelZeroClientTests.defaultTier(context);

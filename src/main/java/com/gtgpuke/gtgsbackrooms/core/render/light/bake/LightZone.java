@@ -71,10 +71,14 @@ public final class LightZone {
     private static final int ROOM_SECTION_VALUES = 6;
     /** Ce qu'une surface doit recevoir au moins, en parts du fond, pour compter dans la piece moyenne : une piece eclairee. */
     private static final float ROOM_LIT = 3.0f;
-    /** Directions de la lumiere qui sort d'un passage, pour les shaders. */
+    /** Directions de la lumiere qui sort d'un passage, pour les rebonds traces. */
     public static final int PASSAGE_DIRECTIONS = SectionBaker.PASSAGE_DIRECTIONS;
-    /** Valeurs de la lumiere qui sort d'un passage : par direction, la lumiere directe puis elle et un rebond, en rouge, vert et bleu. */
-    public static final int PASSAGE_VALUES = PASSAGE_DIRECTIONS * 6;
+    /** Points du cadre d'ou part chaque direction : une grille reguliere sur le cadre. */
+    public static final int PASSAGE_POINTS = SectionBaker.PASSAGE_POINTS;
+    /** Valeurs par direction et par point : la lumiere directe, puis elle et un rebond, en rouge, vert et bleu. */
+    public static final int PASSAGE_SAMPLE = SectionBaker.PASSAGE_SAMPLE;
+    /** Valeurs de la lumiere qui sort d'un passage, par direction puis par point. */
+    public static final int PASSAGE_VALUES = PASSAGE_DIRECTIONS * PASSAGE_POINTS * PASSAGE_SAMPLE;
     /** Attente apres le dernier changement de l'autre cote d'un passage avant de recuire pres de son cadre, en nanosecondes. */
     private static final long CROSS_DELAY = 250_000_000L;
     /** Sections copiees au-dela de la fenetre : les rayons et les rebonds les lisent. */
@@ -102,13 +106,16 @@ public final class LightZone {
     }
 
     /**
-     * La lumiere qui sort des passages de la zone, mesuree de l'autre cote, pour les shaders : par passage, {@value #PASSAGE_VALUES}
-     * valeurs au format de {@link SectionBaker#measurePassage}, zero pour un autre element.
+     * La lumiere qui sort des passages de la zone, mesuree de l'autre cote : par passage, {@value #PASSAGE_VALUES} valeurs au format de
+     * {@link SectionBaker#measurePassage}, zero pour un autre element, pour les rebonds traces, sans la lumiere de fond ; et ce qu'un
+     * corps en recoit, comme d'une fenetre.
      *
      * @param openings les portails mesures : un autre jeu ne se lit pas avec elle
      * @param values les valeurs, element par element
+     * @param window par element, la moyenne de ce qui sort, avec un rebond et le fond, en rouge, vert et bleu : ce qu'une surface touchee
+     *     a portee des rebonds de la cuisson renvoie, sur toutes les directions et tous les points
      */
-    public record PassageLight(PortalOpenings openings, float[] values) {
+    public record PassageLight(PortalOpenings openings, float[] values, float[] window) {
     }
 
     /**
@@ -1034,7 +1041,8 @@ public final class LightZone {
     private void measurePassages() {
         PortalOpenings current = this.openings;
         float[] values = new float[current.count() * PASSAGE_VALUES];
-        int reach = (int) Math.ceil(SectionBaker.BOUNCE_LENGTH) + 1;
+        float[] window = new float[current.count() * 3];
+        int reach = (int) Math.ceil(SectionBaker.TRACED_LENGTH) + 1;
         for (int i = 0; i < current.count(); i++) {
             LightZone beyond = current.zone(i);
             if (beyond == null) {
@@ -1047,9 +1055,9 @@ public final class LightZone {
             beyond.incoming.add(this);
             beyond.prepareAround(this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], reach, FINAL_STAGE - 1);
             this.baker.openings(current);
-            this.baker.measurePassage(i, values, i * PASSAGE_VALUES);
+            this.baker.measurePassage(i, values, i * PASSAGE_VALUES, window, i * 3);
         }
-        this.passageLight = new PassageLight(current, values);
+        this.passageLight = new PassageLight(current, values, window);
     }
 
     /**

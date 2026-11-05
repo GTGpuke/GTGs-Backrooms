@@ -58,12 +58,14 @@ public final class ModConfig {
             intProperty("gtgsbackrooms.portal.remoteWorldReleaseSeconds", 60);
 
     /**
-     * Secondes sans aucune vue de portail qui lise la zone de lumiere d'une vue avant que sa memoire graphique (texture de zone, loin,
-     * cache de surfaces et rebonds traces, environ 200 Mio) soit rendue : un reglage de memoire, comme celui des mondes distants. Une
-     * vue qui revient ensuite recree tout et reprend ses tuiles ; une valeur tres grande revient a ne jamais liberer.
+     * Secondes sans usage avant qu'un cache de la lumiere cuite ne rende sa memoire graphique : la zone du joueur hors d'un monde a
+     * lumiere cuite, celle d'une vue sans vue (texture de zone, loin, cache de surfaces et rebonds traces : environ 200 Mio en High et
+     * en Ultra), le cache de surfaces a un palier qui n'en a pas, les rebonds traces hors de l'Ultra, les ombres des corps d'un niveau
+     * de vue sans passe. Un reglage de memoire, comme celui des mondes distants : ce qui revient ensuite se recree et reprend ses
+     * tuiles. Jamais moins de cinq secondes ; une valeur tres grande revient a ne jamais liberer.
      */
-    public static final int LOOK_VIEW_LIGHT_RELEASE_SECONDS =
-            intProperty("gtgsbackrooms.look.viewLightReleaseSeconds", 60);
+    public static final int LOOK_LIGHT_RELEASE_SECONDS =
+            intProperty("gtgsbackrooms.look.lightReleaseSeconds", 60);
 
     /**
      * Saute le dessin des vues dont le cadre est prouve cache derriere des blocs pleins et opaques deja affiches

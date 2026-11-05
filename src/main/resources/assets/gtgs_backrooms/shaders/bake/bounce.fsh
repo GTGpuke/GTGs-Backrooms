@@ -5,7 +5,8 @@
 // voit tout ce qui est sur le chemin : les coins s'assombrissent d'eux-memes, et un mur eclaire teinte ce qui lui fait face. Le second
 // tour compte aussi les rebonds suivants, par une part fixe de ce qu'il ajoute : une estimation par pixel y mettrait des taches. Rien
 // de tire au hasard : au repos, deux calculs donnent la meme tuile. Le cadre d'un portail arrete un rayon ; celui d'un passage, entre
-// par sa face, lui rend ce qui sort de l'autre cote dans sa direction, mesure par la cuisson dans la lumiere de la-bas.
+// par sa face, lui rend ce qui sort de l'autre cote dans sa direction, a sa place sur le cadre, mesure par la cuisson dans la lumiere
+// de la-bas.
 
 #pragma gtgs_includes
 
@@ -33,9 +34,9 @@ uniform float gtgs_Fresh;
 uniform ivec3 gtgs_PortalOrigin;
 uniform int gtgs_FrameCount;
 uniform vec4 gtgs_Frames[12];
-// Ce qui sort de chaque passage, par direction : la lumiere directe de l'autre cote, puis elle et un rebond, deja teinte par l'albedo.
-uniform vec3 gtgs_PassageDirect[64];
-uniform vec3 gtgs_PassageOnce[64];
+// Ce qui sort de chaque passage, par direction et par point d'une grille sur le cadre, deja teint par l'albedo : deux lignes par cadre,
+// la lumiere directe de l'autre cote, puis elle et un rebond.
+uniform sampler2D gtgs_Passages;
 
 out vec4 fragColor;
 
@@ -45,11 +46,14 @@ const float RAY_LENGTH = 24.0;
 const float FOLLOWING = 2.0;
 const float MAX_BOUNCE = 4.0;
 const float OFFSET = 0.02;
-const int PASSAGE_DIRECTIONS = 16;
+// Directions mesurees, reparties comme les rayons, et points du cadre d'ou part chacune, par cote puis en tout (SectionBaker).
+const int PASSAGE_DIRECTIONS = 64;
+const int PASSAGE_GRID = 2;
+const int PASSAGE_POINTS = PASSAGE_GRID * PASSAGE_GRID;
 
-// Le cadre que le segment passe en premier, -1 s'il n'en passe aucun. Les deux faces d'un portail double sont dans le meme plan : a
-// egalite, celle par laquelle le segment entre l'emporte.
-int nearestFrame(vec3 from, vec3 to, vec3 shift) {
+// Le cadre que le segment passe en premier, -1 s'il n'en passe aucun, et ou il le passe, en parts du segment. Les deux faces d'un
+// portail double sont dans le meme plan : a egalite, celle par laquelle le segment entre l'emporte.
+int nearestFrame(vec3 from, vec3 to, vec3 shift, out float crossing) {
     int nearest = -1;
     float best = 2.0;
     for (int i = 0; i < gtgs_FrameCount; i++) {
@@ -64,14 +68,18 @@ int nearestFrame(vec3 from, vec3 to, vec3 shift) {
             nearest = i;
         }
     }
+    crossing = best;
     return nearest;
 }
 
-// Ce qui sort d'un passage dans une direction qui y entre : la plus proche des directions mesurees, reparties comme les rayons.
-vec3 passageLight(int frame, vec3 direction) {
+// Ce qui sort d'un passage pour un rayon qui y entre a cette place (relative au centre du cadre), dans cette direction : la plus proche
+// des directions mesurees, reparties comme les rayons, entre les points du cadre qui entourent l'entree.
+vec3 passageLight(int frame, vec3 entry, vec3 direction) {
     vec3 normal = GTGS_FACE_NORMAL[int(gtgs_Frames[frame * 3].w)];
-    vec3 w = normalize(gtgs_Frames[frame * 3 + 1].xyz);
-    vec3 h = normalize(gtgs_Frames[frame * 3 + 2].xyz);
+    vec3 halfWidth = gtgs_Frames[frame * 3 + 1].xyz;
+    vec3 halfHeight = gtgs_Frames[frame * 3 + 2].xyz;
+    vec3 w = normalize(halfWidth);
+    vec3 h = normalize(halfHeight);
     int best = 0;
     float closest = -2.0;
     for (int k = 0; k < PASSAGE_DIRECTIONS; k++) {
@@ -84,8 +92,20 @@ vec3 passageLight(int frame, vec3 direction) {
             best = k;
         }
     }
-    int at = frame * PASSAGE_DIRECTIONS + best;
-    return gtgs_PreviousShare > 0.5 ? gtgs_PassageOnce[at] : gtgs_PassageDirect[at];
+    // L'entree dans la grille des points, sur la largeur puis la hauteur : 0 au premier point, PASSAGE_GRID - 1 au dernier. Les points
+    // vont de la largeur a la hauteur.
+    vec2 across = vec2(dot(entry, halfWidth) / dot(halfWidth, halfWidth), dot(entry, halfHeight) / dot(halfHeight, halfHeight)) * 0.5 + 0.5;
+    vec2 place = clamp(across * float(PASSAGE_GRID) - 0.5, 0.0, float(PASSAGE_GRID - 1));
+    ivec2 low = min(ivec2(place), ivec2(PASSAGE_GRID - 2));
+    vec2 part = place - vec2(low);
+    vec3 sum = vec3(0.0);
+    for (int corner = 0; corner < 4; corner++) {
+        ivec2 at = low + ivec2(corner >> 1, corner & 1);
+        float weight = (corner < 2 ? 1.0 - part.x : part.x) * ((corner & 1) == 0 ? 1.0 - part.y : part.y);
+        ivec2 texel = ivec2(best * PASSAGE_POINTS + at.x * PASSAGE_GRID + at.y, frame * 2 + (gtgs_PreviousShare > 0.5 ? 1 : 0));
+        sum += weight * texelFetch(gtgs_Passages, texel, 0).rgb;
+    }
+    return sum;
 }
 
 // Le premier tour a cette place de sa tuile, au pixel : une lecture filtree dependrait de la place de la tuile dans le cache, et un
@@ -130,10 +150,13 @@ void main() {
         ivec3 hit;
         int face;
         float t = gtgs_trace(gtgs_Cell, start, direction, hit, face);
-        int frame = gtgs_FrameCount == 0 ? -1 : nearestFrame(start, start + direction * min(t, 1.0), shift);
+        float reach = min(t, 1.0);
+        float crossing = 0.0;
+        int frame = gtgs_FrameCount == 0 ? -1 : nearestFrame(start, start + direction * reach, shift, crossing);
         if (frame >= 0) {
             if (gtgs_Frames[frame * 3 + 1].w > 0.5 && dot(direction, GTGS_FACE_NORMAL[int(gtgs_Frames[frame * 3].w)]) < 0.0) {
-                sum += gtgs_BounceColor * passageLight(frame, normalize(direction));
+                vec3 entry = start + direction * (reach * crossing) - (gtgs_Frames[frame * 3].xyz + shift);
+                sum += gtgs_BounceColor * passageLight(frame, entry, normalize(direction));
             }
             continue;
         }

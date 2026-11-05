@@ -224,16 +224,16 @@ public final class NeonLights {
 
     /**
      * Les passages des portails dans le monde de la vue, ceux que la cuisson de sa zone compte, au plus {@value #OPENINGS}, a portee de la
-     * camera : centre relatif au bloc de la camera et face, puis ce qui en sort, mesure dans la lumiere cuite de l'autre cote (la moyenne
-     * de ses directions, avec un rebond, comme une surface le renvoie). Les corps la recoivent a tous les paliers.
+     * camera : centre relatif au bloc de la camera et face, puis ce qui en sort, mesure dans la lumiere cuite de l'autre cote (sa moyenne,
+     * avec un rebond, comme une surface le renvoie : {@link LightZone.PassageLight#window}). Les corps la recoivent a tous les paliers.
      */
     private static void openings(FloatBuffer block, World world, Vec3d cameraPos, float reach, int originX, int originY, int originZ) {
         PortalOpenings openings = LightCopy.openings(world);
         LightZone.PassageLight measured = LightCopy.passageLight(world);
         LightBakeSettings settings = LightCopy.zoneSettings(world);
-        float[] light = measured != null && measured.openings() == openings ? measured.values() : null;
+        float[] window = measured != null && measured.openings() == openings ? measured.window() : null;
         int count = 0;
-        for (int i = 0; light != null && settings != null && i < openings.count() && count < OPENINGS; i++) {
+        for (int i = 0; window != null && settings != null && i < openings.count() && count < OPENINGS; i++) {
             if (openings.kind(i) != PortalOpenings.PASSAGE) {
                 continue;
             }
@@ -249,11 +249,7 @@ public final class NeonLights {
             int at = OPENINGS_OFFSET + count * OPENING_FLOATS;
             block.put(at, x - originX).put(at + 1, y - originY).put(at + 2, z - originZ).put(at + 3, openings.face(i));
             for (int channel = 0; channel < 3; channel++) {
-                float sum = 0.0f;
-                for (int direction = 0; direction < LightZone.PASSAGE_DIRECTIONS; direction++) {
-                    sum += light[i * LightZone.PASSAGE_VALUES + direction * 6 + 3 + channel];
-                }
-                block.put(at + 4 + channel, sum / LightZone.PASSAGE_DIRECTIONS * settings.bounce());
+                block.put(at + 4 + channel, window[i * 3 + channel] * settings.bounce());
             }
             block.put(at + 7, 0.0f);
             count++;

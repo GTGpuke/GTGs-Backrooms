@@ -54,14 +54,28 @@ final class SectionBaker {
     private static final int CROSS_UNKNOWN = 2;
     /** Ecart entre deux passages d'un segment sous lequel deux cadres sont dans le meme plan, en parts du segment. */
     private static final float SAME_PLANE = 1.0e-4f;
-    /** Directions de la lumiere qui sort d'un passage, mesuree pour les shaders. */
-    static final int PASSAGE_DIRECTIONS = 16;
+    /**
+     * Directions de la lumiere qui sort d'un passage, mesuree pour les rebonds traces : autant que leurs rayons, reparties comme eux
+     * ({@code bounce.fsh}), et un rayon d'une surface face au cadre retrouve exactement la sienne.
+     */
+    static final int PASSAGE_DIRECTIONS = 64;
+    /**
+     * Points du cadre par cote d'ou part chaque direction : le milieu de chaque case d'une grille reguliere, ici de chaque quart. Un rayon
+     * lit les quatre qui entourent son entree. Au banc de la couture, quatre par cote rapprochent du bord les rayons rasants et ameliorent
+     * le fond vu par le cadre, mais leur font lire les cellules que coupe le plan d'arrivee, d'un bloc entier, et eclaircissent le sol
+     * colle au plan : deux, ou aucune vue n'est moins bonne qu'avant la mesure par point.
+     */
+    static final int PASSAGE_GRID = 2;
+    /** Points du cadre d'ou part chaque direction. */
+    static final int PASSAGE_POINTS = PASSAGE_GRID * PASSAGE_GRID;
+    /** Valeurs par direction et par point : la lumiere directe, puis elle et un rebond, en rouge, vert et bleu. */
+    static final int PASSAGE_SAMPLE = 6;
+    /** Longueur de la marche de la mesure, en blocs : celle des rayons traces ({@code RAY_LENGTH} de {@code bounce.fsh}). */
+    static final float TRACED_LENGTH = 24.0f;
+    /** Sections par cote de la fenetre de la mesure : la marche de {@link #TRACED_LENGTH} blocs y reste depuis toute arrivee. */
+    private static final int PASSAGE_WINDOW = 5;
     /** Ecart entre deux directions successives, autour de l'axe du cadre : l'angle d'or, comme les rayons des shaders. */
     private static final double GOLDEN_ANGLE = 2.3999632;
-    /** Ecart au centre du cadre des points d'ou part chaque direction, en parts de ses cotes : le milieu de chacun de ses quarts. */
-    private static final float QUARTER = 0.25f;
-    /** Part de chacun des quatre points d'ou part une direction, dans ce qu'elle ramene. */
-    private static final float POINT_SHARE = 0.25f;
     private static final int SECTION = 16;
     private static final int MASK = SECTION - 1;
     private static final int NEIGHBORS = 27;
@@ -99,6 +113,8 @@ final class SectionBaker {
     private final int[] crossFrames = new int[CROSSINGS];
     private int crossCount;
     private final BlockRay crossRay = new BlockRay();
+    /** Les blocs autour de l'arrivee d'un passage mesure : assez pour toute la marche de la mesure. */
+    private final LightWindow passageWindow = new LightWindow(PASSAGE_WINDOW);
     private final float[] crossPoint = new float[3];
     private final float[] crossDirection = new float[3];
     /** L'etat de l'autre cote que lisent les rayons de rebond qui passent un cadre ; 0, ils n'y lisent rien. */
@@ -794,24 +810,36 @@ final class SectionBaker {
     }
 
     /**
-     * La lumiere qui sort d'un passage, pour les shaders, qui ne marchent que dans les blocs de leur monde : pour chaque direction qui
-     * entre dans le cadre par sa face, ce que ramene de l'autre cote un rayon parti de chacun de ses quarts, en moyenne, teint par
-     * l'albedo de la surface touchee. Six valeurs par direction : la lumiere directe, puis elle et un premier rebond, en rouge, vert et
-     * bleu. Les directions sont reparties selon le cosinus autour de l'axe du cadre, d'un angle d'or a la suivante, comme les rayons des
-     * shaders, qui retrouvent la plus proche.
+     * La lumiere qui sort d'un passage, pour les rebonds traces, qui ne marchent que dans les blocs de leur monde : pour chaque direction
+     * qui entre dans le cadre par sa face, et pour chaque point d'une grille sur le cadre ({@link #PASSAGE_GRID} par cote), ce que ramene
+     * de l'autre cote un rayon parti de ce point, sur la longueur des rayons traces, teint par l'albedo de la surface touchee. Six valeurs
+     * par direction et par point : la lumiere directe, puis elle et un premier rebond, en rouge, vert et bleu. Les directions sont
+     * reparties selon le cosinus autour de l'axe du cadre, d'un angle d'or a la suivante, comme les rayons des shaders : un rayon reprend
+     * la plus proche, entre les points qui entourent son entree. Ce qu'il a deja parcouru avant le cadre ne compte pas : plus une surface
+     * est loin du cadre, plus elle le voit petit, et ses rayons qui le passent pesent peu (au banc de la couture, les couper au reste de
+     * leur longueur ne change rien au centieme, fond du couloir de 7,5 ou de 15,5 blocs). Comme ce
+     * qu'un rayon trace lit sur une surface de son monde (sa tuile), la lumiere mesuree n'a pas la lumiere de fond, que le terrain ajoute
+     * a part : avec elle, chaque rayon qui passe un cadre ramenait le fond de la-bas en plus.
+     *
+     * <p>Ce qu'un corps en recoit, comme d'une fenetre, garde sa definition : la moyenne, sur toutes les directions et tous les points,
+     * de ce que renvoie avec un rebond, fond compris, une surface touchee a portee des rebonds de la cuisson ({@link #BOUNCE_LENGTH}).
      *
      * @param frame rang du passage, qui a sa zone de l'autre cote
      * @param out tableau a remplir
      * @param at premiere valeur a ecrire
+     * @param window ce qu'un corps recoit, a remplir : rouge, vert et bleu
+     * @param windowAt premiere valeur a ecrire dans {@code window}
      */
-    void measurePassage(int frame, float[] out, int at) {
+    void measurePassage(int frame, float[] out, int at, float[] window, int windowAt) {
         PortalOpenings current = this.openings;
         LightZone zone = current.zone(frame);
+        LightBakeSettings settings = zone.settings();
+        float sampleShare = 1.0f / (PASSAGE_DIRECTIONS * PASSAGE_POINTS);
         for (int axis = 0; axis < 3; axis++) {
             this.crossPoint[axis] = current.center(frame, axis);
         }
         current.toArrival(frame, this.crossPoint);
-        LightWindow beyond = this.crossWindows[0];
+        LightWindow beyond = this.passageWindow;
         beyond.fill(zone.blocks(), ChunkSectionPos.getSectionCoord(this.crossPoint[0]), ChunkSectionPos.getSectionCoord(this.crossPoint[1]),
                 ChunkSectionPos.getSectionCoord(this.crossPoint[2]));
         float[] albedos = zone.blocks().albedos();
@@ -833,33 +861,40 @@ final class SectionBaker {
             float dx = LightCell.NORMAL_X[face] * back + wx / width * along + hx / height * across;
             float dy = LightCell.NORMAL_Y[face] * back + wy / width * along + hy / height * across;
             float dz = LightCell.NORMAL_Z[face] * back + wz / width * along + hz / height * across;
-            int to = at + k * 6;
-            for (int point = 0; point < 4; point++) {
-                float su = point < 2 ? -QUARTER : QUARTER;
-                float sv = (point & 1) == 0 ? -QUARTER : QUARTER;
+            for (int point = 0; point < PASSAGE_POINTS; point++) {
+                float su = (point / PASSAGE_GRID + 0.5f) / PASSAGE_GRID - 0.5f;
+                float sv = (point % PASSAGE_GRID + 0.5f) / PASSAGE_GRID - 0.5f;
+                int to = at + (k * PASSAGE_POINTS + point) * PASSAGE_SAMPLE;
                 cross(frame, current.center(frame, 0) + wx * su + hx * sv, current.center(frame, 1) + wy * su + hy * sv, current.center(frame, 2) + wz * su + hz * sv,
                         dx, dy, dz);
                 if (!inBlock(beyond) && this.crossRay.march(beyond, this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], this.crossDirection[0], this.crossDirection[1],
-                        this.crossDirection[2], BOUNCE_LENGTH)) {
+                        this.crossDirection[2], TRACED_LENGTH)) {
                     long key = ChunkSectionPos.asLong(this.crossRay.cellX() >> 4, this.crossRay.cellY() >> 4, this.crossRay.cellZ() >> 4);
                     int index = LightCell.index(this.crossRay.cellX() & MASK, this.crossRay.cellY() & MASK, this.crossRay.cellZ() & MASK, this.crossRay.face());
                     int material = (this.crossRay.block() & 0xFF) * 3;
-                    add(out, to, zone.peek(key, 1), index, albedos, material);
-                    add(out, to + 3, zone.peek(key, 2), index, albedos, material);
+                    int[] once = zone.peek(key, 2);
+                    store(out, to, zone.peek(key, 1), index, albedos, material, settings);
+                    store(out, to + 3, once, index, albedos, material, settings);
+                    if (this.crossRay.distance() <= BOUNCE_LENGTH) {
+                        int value = once == null ? 0 : once[index];
+                        window[windowAt] += LightCell.red(value) * albedos[material] * sampleShare;
+                        window[windowAt + 1] += LightCell.green(value) * albedos[material + 1] * sampleShare;
+                        window[windowAt + 2] += LightCell.blue(value) * albedos[material + 2] * sampleShare;
+                    }
                 }
             }
         }
     }
 
     /**
-     * Ajoute le quart de ce que renvoie une surface touchee, teint par son albedo : un des quatre points du cadre. Une cellule sans
-     * surface, ou d'une section pas encore cuite, vaut 0 : ses couleurs aussi.
+     * Ce que renvoie une surface touchee, sans la lumiere de fond, teint par son albedo. Une cellule sans surface, ou d'une section pas
+     * encore cuite, vaut 0 : ses couleurs aussi.
      */
-    private static void add(float[] out, int at, int @Nullable [] state, int index, float[] albedos, int material) {
+    private static void store(float[] out, int at, int @Nullable [] state, int index, float[] albedos, int material, LightBakeSettings settings) {
         int value = state == null ? 0 : state[index];
-        out[at] += LightCell.red(value) * albedos[material] * POINT_SHARE;
-        out[at + 1] += LightCell.green(value) * albedos[material + 1] * POINT_SHARE;
-        out[at + 2] += LightCell.blue(value) * albedos[material + 2] * POINT_SHARE;
+        out[at] = Math.max(LightCell.red(value) - settings.ambientRed(), 0.0f) * albedos[material];
+        out[at + 1] = Math.max(LightCell.green(value) - settings.ambientGreen(), 0.0f) * albedos[material + 1];
+        out[at + 2] = Math.max(LightCell.blue(value) - settings.ambientBlue(), 0.0f) * albedos[material + 2];
     }
 
     /** Indice d'une section parmi les vingt-sept autour d'une autre, centre a {@code 13}. */

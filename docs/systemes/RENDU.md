@@ -210,10 +210,15 @@ pour les rebonds) : la vue se remplit moins vite, mais une image ne coûte pas p
 contre 354 au dernier commit, sans vue au palier choisi ; en marchant devant lui, 3,4 ms par image en moyenne contre 3,0. Le cache d'une vue pèse
 environ 150 Mio de mémoire graphique (128 pour les tuiles, 16 pour les rebonds, 6 pour l'indirection), créé à la première vue qui en a
 besoin, en High et en Ultra, plus 9 Mio par niveau de vue pour le cache des ombres des corps (`BodyShadows`). Avec sa texture de zone
-(24 Mio) et son loin (30 Mio), la zone d'une vue tient environ 200 Mio. Une minute sans vue qui la montre, elle les rend à la carte
-graphique (`LightVolume.releaseIdleView`, option `gtgsbackrooms.look.viewLightReleaseSeconds`), comme un monde distant que plus aucun
-portail ne montre : un aller-retour devant un cadre ne coûte rien, une vue qui revient plus tard recrée tout et reprend ses tuiles,
-avec la lumière de sa zone le temps de les calculer.
+(24 Mio) et son loin (30 Mio), la zone d'une vue tient environ 200 Mio.
+
+Ce cache de lumière ne reste pas pris pour rien. Ce qui n'a servi à aucune image depuis une minute rend sa mémoire graphique
+(`LightVolume.releaseIdle`, option `gtgsbackrooms.look.lightReleaseSeconds`), comme un monde distant que plus aucun portail ne montre :
+la zone d'une vue sans vue, celle du joueur hors d'un monde à lumière cuite (dans l'Overworld), un cache de surfaces à un palier qui
+n'en a pas (Low, Medium), des rebonds tracés hors de l'Ultra, les ombres des corps d'un niveau de vue sans passe. Un aller-retour devant
+un cadre, ou un palier changé puis remis, ne coûte rien ; ce qui revient plus tard se recrée et reprend ses tuiles, avec la lumière de
+sa zone le temps de les calculer. Des rebonds rendus seuls gardent les surfaces qu'ils connaissent, et les retracent toutes par un
+balayage quand ils reviennent (le changement de palier, qui les rappelle, recuit déjà tout).
 
 #### Lumière à travers un portail
 
@@ -238,10 +243,16 @@ passage (`PortalOpenings`, relevés à chaque tick par `PortalOpeningLights`) :
     ni de l'autre jusqu'au néon. Le faisceau a la forme de l'ouverture et sa direction, et les blocs des deux côtés lui font de l'ombre.
     Les tuiles le calculent au pixel ; sans les blocs de l'autre côté, elles ne vérifient que le chemin d'un néon à l'arrivée, de ces
     cinq points ;
-  - pour les shaders, qui ne marchent que dans les blocs de leur monde, la cuisson mesure ce qui sort du passage (`LightZone.passageLight`) :
-    seize directions qui entrent par sa face, réparties comme les rayons, chacune partie des quatre quarts du cadre dans les blocs de
-    l'autre côté. Un rebond tracé de l'Ultra qui entre dans le passage reprend la direction mesurée la plus proche ; les corps
-    reçoivent leur moyenne, comme d'une fenêtre.
+  - pour les shaders, qui ne marchent que dans les blocs de leur monde, la cuisson mesure ce qui sort du passage
+    (`LightZone.passageLight`), comme un rayon tracé de l'Ultra le lirait : soixante-quatre directions qui entrent par sa face,
+    réparties exactement comme ses rayons, chacune partie du milieu de chaque quart du cadre, marchée sur 24 blocs comme eux, dans une
+    fenêtre de cinq sections de côté autour de l'arrivée. Chaque point garde ce qu'il touche, teint par l'albédo, sans la lumière de
+    fond (le terrain l'ajoute à part, et un rayon qui touche une surface d'ici ne la ramène pas). Un rebond tracé qui entre dans le
+    passage reprend la direction mesurée la plus proche, entre les quarts qui entourent son entrée (une texture de la passe des
+    rebonds, que chaque passe remplit des passages mesurés à portée). Ce qu'il a parcouru avant le cadre ne compte pas : une surface
+    loin du cadre le voit petit, et le couper au reste de sa longueur ne change rien au centième au banc. Les corps reçoivent la
+    moyenne de ce qui sort, fond compris, comme d'une fenêtre (`PassageLight.window`), estimée sur les mêmes soixante-quatre directions
+    (à moins de 1 % de l'estimation sur seize, au test unitaire).
 
 Un portail sans cadre de retour (aller simple, ou sortie fugace hors du regard) a tout de même une arrivée : pour la lumière, elle est
 un passage vers l'entrée, avec la transformation inverse du portail, la zone qui cuit la lumière autour de l'entrée et les néons de là-bas
@@ -274,8 +285,10 @@ part, autre zone de l'autre côté) fait recuire les sections à portée et reca
 quatre cadres et seize néons vus au plus par vue (`PortalLightUniforms`). La continuité se vérifie par un portail qui mène à sa propre place : la lumière cuite autour de lui est celle sans portail, à 2 % près devant le cadre (`PortalOpeningsTest`). À l'image, le juge est la couture : un portail vers un couloir construit comme la suite exacte de celui
 qu'il bouche donne la même image que ce couloir sans portail, joueur visible (lumière, ombre du joueur, halo). Au banc du 4 novembre
 2026, aller-retour comme aller simple, l'écart moyen est de 0,2 niveau en Low et en Medium, 0,4 à 0,5 en High et 1,2 en Ultra. Le test
-(`portal_matches_a_continuous_corridor`) tolère sur une bande de lignes 1,5 niveau de Low à High et 4 en Ultra, où le mur sombre du
-fond reçoit trop de ce qui sort du passage (limite plus bas). Un petit cadre reste une porte : d'une salle éclairée à un couloir sombre, le sol devant un cadre d'un bloc sur deux reçoit ce qu'une porte de cette taille laisse passer.
+(`portal_matches_a_continuous_corridor`) tolère sur une bande de lignes 1,5 niveau de Low à High et 2,5 en Ultra. Au banc du 5 novembre
+2026, la pire bande vaut 1,0 en Low et en Medium, 0,85 en High ; en Ultra, 1,51 près du cadre, 1,16 collé au cadre, 0,21 de loin et
+2,16 sous les tubes, contre 3,32, 1,22, 0,45 et 2,88 quand la mesure du passage se faisait en seize directions, la même sur tout
+le cadre et fond compris (limite plus bas). Un petit cadre reste une porte : d'une salle éclairée à un couloir sombre, le sol devant un cadre d'un bloc sur deux reçoit ce qu'une porte de cette taille laisse passer.
 
 Dans le noir, chaque pixel de texture tire un petit écart de lumière, fixe (`dark_pixels`) : c'est l'effet sombre pixelisé. Il
 s'efface en pleine lumière et entre 8 et 20 blocs, où il ne ferait que du bruit. La face d'un néon brille d'elle-même, et les
@@ -893,8 +906,13 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
   cuite), et les tuiles ne vérifient son chemin de l'autre côté que depuis l'arrivée. Les corps ne font d'ombre qu'aux néons vus par le
   portail, en High et en Ultra, pas à ce que renvoient les murs de là-bas ; l'ombre d'un corps de l'autre côté ne tient pas compte
   des blocs de là-bas entre lui et le néon. En
-  Ultra, ce qui sort d'un passage est mesuré en seize directions, la même sur tout le cadre (au banc de la couture, le mur sombre au
-  fond d'un couloir vu par le cadre en reçoit trop : 16,6 de luminance contre 12,4 dans le couloir continu, 7,1 sans cette lumière), et un liseré un peu plus sombre, de deux
+  Ultra, un rebond tracé qui passe un cadre lit la mesure de la cuisson, ses cellules d'un bloc et son rebond, là où un rayon qui touche
+  une surface d'ici lit sa tuile, au pixel, et le premier tour des rebonds tracés : au banc de la couture, ce que montre le cadre (le
+  fond sombre d'un couloir) reste un peu plus clair que le couloir continu, de 1,5 à 2,2 niveaux sur la pire bande. Lire les tuiles de
+  l'autre côté ne suffirait pas : à 60 blocs de la caméra, le cache de surfaces n'en a pas (essayé : un rayon qui continue sa marche
+  de l'autre côté de la même zone n'y trouve que la texture de zone, sa lumière totale, et l'image s'éclaircissait de 4 à 8 niveaux).
+  Une grille de quatre points par côté sur le cadre ramène le pire à 1,7, mais éclaircit le sol collé au plan (les rayons rasants
+  lisent les cellules que le plan d'arrivée coupe) : deux points par côté, où aucune vue n'est moins bonne qu'avant. Un liseré un peu plus sombre, de deux
   ou trois pixels, reste au pied d'un cadre vu de près (cause non trouvée ; le High ne l'a pas). La continuité suppose la même géométrie
   des deux côtés : un cadre debout au milieu d'une salle reçoit aussi, par ses côtés, la lumière des néons qui sont derrière lui, que
   l'autre côté ne voit pas si son cadre bouche un couloir ; d'où un écart d'environ 10 % au plan, mesuré dans une copie d'un monde de

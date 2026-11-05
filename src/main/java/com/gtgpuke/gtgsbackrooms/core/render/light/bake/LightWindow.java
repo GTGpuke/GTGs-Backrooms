@@ -5,32 +5,49 @@ import java.util.Arrays;
 import net.minecraft.util.math.ChunkSectionPos;
 
 /**
- * Une section et ses vingt-six voisines, a plat : la lecture d'un bloc pendant la cuisson ne coute qu'un acces a un
- * tableau. Une section absente, comme tout ce qui sort de la fenetre, est opaque ({@link LightBlocks#UNKNOWN}) : aucune
- * lumiere n'en vient. Une fenetre appartient au thread de cuisson et se reutilise.
+ * Une section et ses voisines, a plat : la lecture d'un bloc pendant la cuisson ne coute qu'un acces a un tableau. Une
+ * section absente, comme tout ce qui sort de la fenetre, est opaque ({@link LightBlocks#UNKNOWN}) : aucune lumiere n'en
+ * vient. Une fenetre appartient au thread de cuisson et se reutilise.
  */
 final class LightWindow {
 
-    /** Blocs par cote : trois sections. */
+    /** Blocs par cote d'une fenetre ordinaire : trois sections, la section et ses vingt-six voisines. */
     static final int SIZE = 48;
     private static final int SECTION = 16;
     private static final int SECTION_SHIFT = 4;
     private static final int MASK = SECTION - 1;
 
-    private final byte[] blocks = new byte[SIZE * SIZE * SIZE];
+    /** Sections par cote, en nombre impair : la section du centre et autant de chaque cote. */
+    private final int sections;
+    /** Blocs par cote. */
+    private final int size;
+    private final byte[] blocks;
     private int originX;
     private int originY;
     private int originZ;
 
-    /** Recopie les vingt-sept sections autour d'une section. */
+    /** Une fenetre ordinaire, de trois sections par cote. */
+    LightWindow() {
+        this(3);
+    }
+
+    /** @param sections sections par cote, en nombre impair */
+    LightWindow(int sections) {
+        this.sections = sections;
+        this.size = sections * SECTION;
+        this.blocks = new byte[this.size * this.size * this.size];
+    }
+
+    /** Recopie les sections autour d'une section, elle au centre. */
     void fill(LightBlocks source, int sectionX, int sectionY, int sectionZ) {
-        this.originX = (sectionX - 1) << SECTION_SHIFT;
-        this.originY = (sectionY - 1) << SECTION_SHIFT;
-        this.originZ = (sectionZ - 1) << SECTION_SHIFT;
-        for (int sz = 0; sz < 3; sz++) {
-            for (int sy = 0; sy < 3; sy++) {
-                for (int sx = 0; sx < 3; sx++) {
-                    copy(source.section(ChunkSectionPos.asLong(sectionX - 1 + sx, sectionY - 1 + sy, sectionZ - 1 + sz)), sx, sy, sz);
+        int half = this.sections / 2;
+        this.originX = (sectionX - half) << SECTION_SHIFT;
+        this.originY = (sectionY - half) << SECTION_SHIFT;
+        this.originZ = (sectionZ - half) << SECTION_SHIFT;
+        for (int sz = 0; sz < this.sections; sz++) {
+            for (int sy = 0; sy < this.sections; sy++) {
+                for (int sx = 0; sx < this.sections; sx++) {
+                    copy(source.section(ChunkSectionPos.asLong(sectionX - half + sx, sectionY - half + sy, sectionZ - half + sz)), sx, sy, sz);
                 }
             }
         }
@@ -54,8 +71,8 @@ final class LightWindow {
         return (z & MASK) << 8 | (y & MASK) << SECTION_SHIFT | x & MASK;
     }
 
-    private static int index(int x, int y, int z) {
-        return (z * SIZE + y) * SIZE + x;
+    private int index(int x, int y, int z) {
+        return (z * this.size + y) * this.size + x;
     }
 
     /** La matiere d'un bloc, en coordonnees du monde ; {@link LightBlocks#UNKNOWN} hors de la fenetre. */
@@ -63,7 +80,7 @@ final class LightWindow {
         int wx = x - this.originX;
         int wy = y - this.originY;
         int wz = z - this.originZ;
-        if ((wx | wy | wz) < 0 || wx >= SIZE || wy >= SIZE || wz >= SIZE) {
+        if ((wx | wy | wz) < 0 || wx >= this.size || wy >= this.size || wz >= this.size) {
             return LightBlocks.UNKNOWN;
         }
         return this.blocks[index(wx, wy, wz)];

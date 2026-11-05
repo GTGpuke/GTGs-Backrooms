@@ -99,6 +99,10 @@ public final class BodyShadows {
         private int framebuffer;
         /** {@code true} si la table pointe des emplacements : elle est a vider si plus rien ne se calcule. */
         private boolean filled;
+        /** {@code true} si une passe a servi ce niveau depuis la derniere revue ({@link #releaseIdle}). */
+        private boolean used;
+        /** Derniere revue ou ce niveau servait, en millisecondes. */
+        private long usedAt;
     }
 
     private BodyShadows() {
@@ -121,6 +125,7 @@ public final class BodyShadows {
             level = create();
             LEVELS[depth] = level;
         }
+        level.used = true;
         ShadowCasters casters = NeonLights.casters();
         LightSurfaces surfaces = LightVolume.boundSurfaces();
         int count = 0;
@@ -267,14 +272,57 @@ public final class BodyShadows {
         return true;
     }
 
+    /**
+     * Une fois par image : un niveau qu'aucune passe n'a servi depuis {@link LightVolume#RELEASE_MS} (plus de vue a ce niveau, ou plus
+     * de cache de surfaces) rend son atlas, 9 Mio, recree a la premiere passe qui en a besoin.
+     *
+     * @param now instant de l'image, en millisecondes
+     */
+    static void releaseIdle(long now) {
+        for (int i = 0; i < LEVELS.length; i++) {
+            @Nullable Level level = LEVELS[i];
+            if (level == null) {
+                continue;
+            }
+            if (level.used) {
+                level.used = false;
+                level.usedAt = now;
+            } else if (now - level.usedAt > LightVolume.RELEASE_MS) {
+                delete(level);
+                LEVELS[i] = null;
+            }
+        }
+    }
+
+    /**
+     * {@code true} si un niveau tient encore son atlas : celui de l'image du joueur, ou un niveau de vue.
+     *
+     * @param views {@code true} pour les niveaux de vue, {@code false} pour celui de l'image du joueur
+     */
+    static boolean allocated(boolean views) {
+        if (!views) {
+            return LEVELS[0] != null;
+        }
+        for (int i = 1; i < LEVELS.length; i++) {
+            if (LEVELS[i] != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void delete(Level level) {
+        GL30.glDeleteFramebuffers(level.framebuffer);
+        GL11.glDeleteTextures(level.shadows);
+        GL11.glDeleteTextures(level.slots);
+    }
+
     /** Fin de partie : textures, framebuffers et programme sont rendus. */
     public static void close() {
         for (int i = 0; i < LEVELS.length; i++) {
             @Nullable Level level = LEVELS[i];
             if (level != null) {
-                GL30.glDeleteFramebuffers(level.framebuffer);
-                GL11.glDeleteTextures(level.shadows);
-                GL11.glDeleteTextures(level.slots);
+                delete(level);
                 LEVELS[i] = null;
             }
         }

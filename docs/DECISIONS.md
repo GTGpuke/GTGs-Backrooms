@@ -414,6 +414,20 @@ pratique de modding, game sense, mais aussi de développement de jeu en généra
 - Un portail vu par un cadre vers un endroit lointain du monde du joueur (dans l'ailleurs) ouvre sa propre fenêtre, comme un portail
   vu par un cadre vers une autre dimension : son cadre restait sombre, ce qui n'était pas une limite voulue mais un oubli (la fenêtre
   se cherchait sous la clef du monde, pas sous celle de l'ailleurs).
-- Accesseurs gardés pour les seuls tests : pas de méthode publique sans appelant dans le mod. `BodyShadowTiles.count()`, que seul un
-  test lisait, est retiré ; `LookState.depth()` et `PortalOpenings.value()`, lus par les tests de leur paquet, passent en visibilité
-  de paquet.
+- Accesseurs gardés pour les seuls tests : un test de son propre paquet lit en visibilité de paquet, jamais par une méthode publique.
+  `BodyShadowTiles.count()`, que seul un test lisait, est retiré ; `LookState.depth()` et `PortalOpenings.value()`, lus par les tests
+  de leur paquet, passent en visibilité de paquet. Les tests du client, dans un autre mod (`src/gametest`), lisent l'état par des
+  méthodes publiques marquées « (tests du client) », comme avant.
+- Suite, à la demande de l'auteur (« corrige ça avec les mêmes paramètres ») : la règle de la mémoire d'une vue vaut pour tout le
+  cache de la lumière cuite, ombres des corps comprises. Ce qui n'a servi à aucune image depuis une minute rend sa mémoire graphique :
+  la zone d'une vue, celle du joueur hors d'un monde à lumière cuite, un cache de surfaces ou des rebonds tracés que le palier
+  n'utilise pas, les ombres des corps (9 Mio) d'un niveau de vue. L'option devient `gtgsbackrooms.look.lightReleaseSeconds` (jamais
+  publiée sous son premier nom).
+- L'Ultra change à travers les portails, à la demande de l'auteur (la limite « le mur du fond d'une vue est plus clair d'environ 4
+  niveaux », « corrige ça ») : la mesure de ce qui sort d'un passage suit maintenant ce que lit un rebond tracé (ses directions, sa
+  longueur, son point d'entrée par quart du cadre, sans lumière de fond). Rien ne change sans portail ; aux autres paliers, le terrain
+  est identique (couture au centième), et la lumière qu'un corps reçoit d'un passage, estimée sur soixante-quatre directions au lieu de
+  seize, bouge de moins de 1 % (0,3003 contre 0,3028 au test unitaire). Un reste est assumé et documenté (1,5 à 2,2 niveaux sur la pire
+  bande) : la mesure lit les cellules de la cuisson, et à 60 blocs de la caméra il n'y a pas de tuiles à lire de l'autre côté. La
+  grille de quatre points par côté, meilleure au pire, est écartée parce qu'elle rend une vue moins bonne qu'avant (le sol collé au
+  plan, de 0,5 niveau).

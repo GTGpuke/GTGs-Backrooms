@@ -39,13 +39,11 @@ public final class LightVolume {
     /** Parmi elles, celles dont la zone avait son cache de surfaces : la qualite choisie dans la vue (tests du client). */
     private static int viewSurfaceEntries;
     private static int lastViewSurfaceEntries;
-    /** Dernier instant ou une zone de vue etait montree, en millisecondes. */
-    private static long viewShownAt;
     /**
-     * Delai sans vue avant de rendre la memoire graphique de sa zone, en millisecondes : jamais sous cinq secondes, comme pour un
-     * monde distant, sans quoi une vue qui clignote (cadre cache puis revu) recreerait tout a chaque image.
+     * Delai sans usage avant qu'un cache de lumiere rende sa memoire graphique, en millisecondes : jamais sous cinq secondes, comme
+     * pour un monde distant, sans quoi une vue qui clignote (cadre cache puis revu) recreerait tout a chaque image.
      */
-    private static final long VIEW_RELEASE_MS = Math.max(5, ModConfig.LOOK_VIEW_LIGHT_RELEASE_SECONDS) * 1000L;
+    static final long RELEASE_MS = Math.max(5, ModConfig.LOOK_LIGHT_RELEASE_SECONDS) * 1000L;
 
     private LightVolume() {
         throw new UnsupportedOperationException("Classe utilitaire.");
@@ -78,7 +76,7 @@ public final class LightVolume {
         LightSurfaces.beginFrame();
         PLAYER.frame();
         VIEW.frame();
-        releaseIdleView();
+        releaseIdle();
         PLAYER.bind();
         depth = 0;
         BOUND[0] = PLAYER;
@@ -207,22 +205,37 @@ public final class LightVolume {
     }
 
     /**
-     * La zone d'une vue rend sa memoire graphique (environ 200 Mio) apres {@link ModConfig#LOOK_VIEW_LIGHT_RELEASE_SECONDS} sans vue
-     * qui la montre, comme un monde distant que plus aucun portail ne montre : une vue qui revient ensuite la recree et reprend ses
-     * tuiles, en gardant le temps de les prendre la lumiere de sa zone. Un aller-retour devant un portail ne coute rien.
+     * Ce qui n'a servi a aucune image depuis {@link #RELEASE_MS} rend sa memoire graphique, comme un monde distant que plus aucun
+     * portail ne montre : la zone d'une vue sans vue (environ 200 Mio), celle du joueur hors d'un monde a lumiere cuite, un cache de
+     * surfaces ou des rebonds traces que le palier n'utilise pas, les ombres des corps d'un niveau de vue. Ce qui revient ensuite se
+     * recree et reprend ses tuiles, en gardant le temps de les prendre la lumiere de sa zone. Un aller-retour devant un portail, ou un
+     * palier change puis remis, ne coute rien.
      */
-    private static void releaseIdleView() {
+    private static void releaseIdle() {
         long now = Util.getMeasuringTimeMs();
-        if (VIEW.showing()) {
-            viewShownAt = now;
-        } else if (VIEW.allocated() && now - viewShownAt > VIEW_RELEASE_MS) {
-            VIEW.freeTextures();
-        }
+        PLAYER.releaseIdle(now);
+        VIEW.releaseIdle(now);
+        BodyShadows.releaseIdle(now);
     }
 
-    /** {@code true} si la zone d'une vue tient encore de la memoire graphique (tests du client). */
+    /** {@code true} si la zone d'une vue, ou les ombres des corps d'un niveau de vue, tiennent de la memoire graphique (tests du client). */
     public static boolean viewAllocated() {
-        return VIEW.allocated();
+        return VIEW.allocated() || BodyShadows.allocated(true);
+    }
+
+    /** {@code true} si la zone du joueur, ou les ombres des corps de son image, tiennent de la memoire graphique (tests du client). */
+    public static boolean playerAllocated() {
+        return PLAYER.allocated() || BodyShadows.allocated(false);
+    }
+
+    /** {@code true} si le cache de surfaces de la zone du joueur tient ses textures (tests du client). */
+    public static boolean playerSurfacesAllocated() {
+        return PLAYER.cache().allocated();
+    }
+
+    /** {@code true} si les rebonds traces de la zone du joueur tiennent leurs textures (tests du client). */
+    public static boolean playerBouncesAllocated() {
+        return PLAYER.cache().bouncesAllocated();
     }
 
     /** Plus de zone de vue : aucun portail ne montre d'endroit que la zone du joueur ne couvre pas. */

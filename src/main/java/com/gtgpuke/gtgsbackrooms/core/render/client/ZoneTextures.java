@@ -54,6 +54,8 @@ final class ZoneTextures {
     private int anchorZ;
     private int base;
     private int cameraY;
+    /** Derniere image ou une zone etait montree, en millisecondes. */
+    private long shownAt;
 
     /** {@code true} si le cache de surfaces de cette zone porte la lumiere directe du terrain. */
     boolean surfaces() {
@@ -175,9 +177,19 @@ final class ZoneTextures {
         this.surfaces.freeTextures();
     }
 
-    /** {@code true} si une zone est montree. */
-    boolean showing() {
-        return this.zone != null;
+    /**
+     * Une fois par image : une zone que rien ne montre depuis {@link LightVolume#RELEASE_MS} rend tout ce qu'elle tient ; une zone
+     * montree laisse son cache de surfaces juger du sien.
+     *
+     * @param now instant de l'image, en millisecondes
+     */
+    void releaseIdle(long now) {
+        if (this.zone != null) {
+            this.shownAt = now;
+            this.surfaces.releaseIdle(now);
+        } else if (allocated() && now - this.shownAt > LightVolume.RELEASE_MS) {
+            freeTextures();
+        }
     }
 
     /** {@code true} si la zone tient de la memoire graphique : sa texture, ou celle de son cache de surfaces. */

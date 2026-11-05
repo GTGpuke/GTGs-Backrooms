@@ -703,6 +703,14 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
 - Tests du client : `LookResources.applySettings` (un réglage, les reflets compris) recuit toute la lumière (`LightVolume.rebake`) ; une
   capture prise quelques images après la bascule tombe dans le recalcul (zone et vue partielles) et le test devient instable selon
   l'ordre des tests. Après toute bascule de réglage, attendre le repos (`settled`, vue comprise) avant de capturer.
+- Lumière à travers un portail en Ultra : ce qu'un rebond tracé lit dans la mesure d'un passage (`SectionBaker.measurePassage`) doit
+  être la même grandeur que ce qu'il lit sur une surface de ce côté : la cellule de la cuisson a la lumière de fond, la tuile non ; le
+  repli de `lightAt` sur la texture de zone donne la lumière totale, pas celle d'un tour ; à 60 blocs de la caméra, le cache de surfaces
+  n'a pas de tuiles. Un changement de la mesure se juge à la couture en profil signé, bande par bande et à tous les paliers : une
+  variante meilleure au pire peut rendre une autre vue moins bonne (grille de quatre points par côté). La mesure part vers la texture
+  de la passe des rebonds à chaque passe, pour les seuls passages mesurés à portée (`LightBounces.sendPassage`) : un envoi « seulement
+  si elle a changé » ajoutait deux règles (mesure refaite après le premier envoi, cadre qui change de place) qu'aucun test ne
+  provoque, et la mutation de chacune survivait.
 
 ## Avant de push
 

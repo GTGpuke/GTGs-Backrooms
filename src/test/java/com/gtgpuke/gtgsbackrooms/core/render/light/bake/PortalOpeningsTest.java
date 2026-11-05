@@ -514,38 +514,53 @@ class PortalOpeningsTest {
         byte sparseStone = sparse.addMaterial(0.5f, 0.5f, 0.5f, false);
         fill(sparse, emptyRoom(sparseStone), sparseStone, LightZone.RADIUS);
         LightZone thin = zone(sparse);
-        float[] values = new float[PortalOpenings.VALUES * 4];
+        // Une piece sans neon : la lumiere n'y est que le fond.
+        LightBlocks dark = new LightBlocks();
+        byte darkStone = dark.addMaterial(0.5f, 0.5f, 0.5f, false);
+        fill(dark, emptyRoom(darkStone), darkStone, LightZone.RADIUS + LightZone.COPY_MARGIN);
+        LightZone unlit = zone(dark);
+        float[] values = new float[PortalOpenings.VALUES * 5];
         PortalOpenings.writeWall(values, 0, new double[] {-20.0, 2.0, 8.5}, HALF_WIDTH, HALF_HEIGHT, WEST);
         PortalOpenings.writePassage(values, 1, FRAME, HALF_WIDTH, HALF_HEIGHT, WEST, IDENTITY, FRAME);
         // Une arrivee haut et loin de l'autre cote, hors de ce que sa zone copie, et une vers les blocs qui manquent.
         PortalOpenings.writePassage(values, 2, new double[] {-30.0, 2.0, 8.5}, HALF_WIDTH, HALF_HEIGHT, WEST, IDENTITY, new double[] {70.0, 20.0, 8.5});
         PortalOpenings.writePassage(values, 3, new double[] {-40.0, 2.0, 8.5}, HALF_WIDTH, HALF_HEIGHT, WEST, IDENTITY, new double[] {40.0, 2.0, 8.5});
-        PortalOpenings openings = PortalOpenings.of(values, new LightZone[] {null, beyond, beyond, thin}, 4);
+        PortalOpenings.writePassage(values, 4, new double[] {-50.0, 2.0, 8.5}, HALF_WIDTH, HALF_HEIGHT, WEST, IDENTITY, FRAME);
+        PortalOpenings openings = PortalOpenings.of(values, new LightZone[] {null, beyond, beyond, thin, unlit}, 5);
         here.openings(openings);
         drain(here);
         LightZone.PassageLight measured = here.passageLight();
         assertNotNull(measured, "Mesuree une fois la zone au repos.");
         assertSame(openings, measured.openings(), "Pour ces portails.");
-        assertEquals(4 * LightZone.PASSAGE_VALUES, measured.values().length, "Toutes les directions de chaque element.");
+        assertEquals(5 * LightZone.PASSAGE_VALUES, measured.values().length, "Toutes les directions et tous les points de chaque element.");
+        assertEquals(5 * 3, measured.window().length, "Ce qu'un corps recoit de chaque element.");
+        int samples = LightZone.PASSAGE_DIRECTIONS * LightZone.PASSAGE_POINTS;
         float wallLight = 0.0f;
         float direct = 0.0f;
         float once = 0.0f;
-        for (int direction = 0; direction < LightZone.PASSAGE_DIRECTIONS; direction++) {
-            wallLight += measured.values()[direction * 6];
-            direct += measured.values()[LightZone.PASSAGE_VALUES + direction * 6];
-            once += measured.values()[LightZone.PASSAGE_VALUES + direction * 6 + 3];
-        }
-        assertEquals(0.0f, wallLight, "Un mur ne laisse rien sortir.");
         float high = 0.0f;
         float missing = 0.0f;
-        for (int direction = 0; direction < LightZone.PASSAGE_DIRECTIONS; direction++) {
-            high += measured.values()[2 * LightZone.PASSAGE_VALUES + direction * 6 + 3];
-            missing += measured.values()[3 * LightZone.PASSAGE_VALUES + direction * 6 + 3];
+        float unlitDirect = 0.0f;
+        for (int sample = 0; sample < samples; sample++) {
+            int at = sample * LightZone.PASSAGE_SAMPLE;
+            wallLight += measured.values()[at];
+            direct += measured.values()[LightZone.PASSAGE_VALUES + at];
+            once += measured.values()[LightZone.PASSAGE_VALUES + at + 3];
+            high += measured.values()[2 * LightZone.PASSAGE_VALUES + at + 3];
+            missing += measured.values()[3 * LightZone.PASSAGE_VALUES + at + 3];
+            unlitDirect += measured.values()[4 * LightZone.PASSAGE_VALUES + at];
         }
+        assertEquals(0.0f, wallLight, "Un mur ne laisse rien sortir.");
+        assertEquals(0.0f, measured.window()[0], "Ni vers un corps.");
         assertEquals(0.0f, high, "Une arrivee hors de ce que copie la zone de la-bas ne ramene rien.");
         assertEquals(0.0f, missing, "Vers les blocs qui manquent la-bas, rien non plus.");
         assertTrue(direct > 0.0f, "La piece de l'autre cote renvoie sa lumiere directe : " + direct + ".");
         assertTrue(once >= direct, "Avec un rebond, au moins autant : " + once + ".");
+        assertTrue(measured.window()[3] > 0.0f, "Un corps recoit ce qui sort de la piece eclairee : " + measured.window()[3] + ".");
+        // Les rayons traces lisent la mesure sans le fond, que le terrain ajoute a part : d'une piece sans neon, il ne reste que l'arrondi
+        // du stockage d'une cellule. Un corps, lui, recoit ce qui sort avec le fond, comme d'une fenetre.
+        assertTrue(unlitDirect / samples < AMBIENT * 0.05f, "Sans neon, la mesure n'a pas le fond : " + unlitDirect / samples + ".");
+        assertTrue(measured.window()[12] > AMBIENT * 0.1f, "Un corps recoit le fond de la piece sans neon : " + measured.window()[12] + ".");
         assertFalse(here.step(), "Mesuree, rien a refaire.");
         assertSame(measured, here.passageLight(), "La meme mesure.");
         beyond.onChanged(CENTER_SECTION);
