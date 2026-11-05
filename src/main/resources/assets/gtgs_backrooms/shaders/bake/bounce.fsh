@@ -4,7 +4,8 @@
 // normale ; un rayon qui touche une surface y reprend sa lumiere, dans la couleur de son bloc. Une marche dans la grille des blocs
 // voit tout ce qui est sur le chemin : les coins s'assombrissent d'eux-memes, et un mur eclaire teinte ce qui lui fait face. Le second
 // tour compte aussi les rebonds suivants, par une part fixe de ce qu'il ajoute : une estimation par pixel y mettrait des taches. Rien
-// de tire au hasard : au repos, deux calculs donnent la meme tuile.
+// de tire au hasard : au repos, deux calculs donnent la meme tuile. Le cadre d'un portail arrete un rayon ; celui d'un passage, entre
+// par sa face, lui rend ce qui sort de l'autre cote dans sa direction, mesure par la cuisson dans la lumiere de la-bas.
 
 #pragma gtgs_includes
 
@@ -27,6 +28,14 @@ uniform vec3 gtgs_BounceColor;
 // 1 pour une surface neuve : elle garde les rebonds que la texture de zone lui donnait, et sa tuile arrive sans que sa lumiere change.
 // Le balayage suivant les trace.
 uniform float gtgs_Fresh;
+// Les cadres des portails : centre relatif a gtgs_PortalOrigin et face, demi-largeur et 1 pour un passage (2 pour un passage dont la
+// sortie n'est pas encore mesuree, que les rayons passent comme s'il n'etait pas la), demi-hauteur ; leur nombre.
+uniform ivec3 gtgs_PortalOrigin;
+uniform int gtgs_FrameCount;
+uniform vec4 gtgs_Frames[12];
+// Ce qui sort de chaque passage, par direction : la lumiere directe de l'autre cote, puis elle et un rebond, deja teinte par l'albedo.
+uniform vec3 gtgs_PassageDirect[64];
+uniform vec3 gtgs_PassageOnce[64];
 
 out vec4 fragColor;
 
@@ -36,6 +45,48 @@ const float RAY_LENGTH = 24.0;
 const float FOLLOWING = 2.0;
 const float MAX_BOUNCE = 4.0;
 const float OFFSET = 0.02;
+const int PASSAGE_DIRECTIONS = 16;
+
+// Le cadre que le segment passe en premier, -1 s'il n'en passe aucun. Les deux faces d'un portail double sont dans le meme plan : a
+// egalite, celle par laquelle le segment entre l'emporte.
+int nearestFrame(vec3 from, vec3 to, vec3 shift) {
+    int nearest = -1;
+    float best = 2.0;
+    for (int i = 0; i < gtgs_FrameCount; i++) {
+        if (gtgs_Frames[i * 3 + 1].w > 1.5) {
+            continue;
+        }
+        vec3 normal = GTGS_FACE_NORMAL[int(gtgs_Frames[i * 3].w)];
+        float t = gtgs_frameCrossing(from, to, gtgs_Frames[i * 3].xyz + shift, gtgs_Frames[i * 3 + 1].xyz, gtgs_Frames[i * 3 + 2].xyz, normal);
+        bool tie = nearest >= 0 && abs(t - best) < 1.0e-4;
+        if (t >= 0.0 && (tie ? dot(to - from, normal) < 0.0 : t < best)) {
+            best = min(t, best);
+            nearest = i;
+        }
+    }
+    return nearest;
+}
+
+// Ce qui sort d'un passage dans une direction qui y entre : la plus proche des directions mesurees, reparties comme les rayons.
+vec3 passageLight(int frame, vec3 direction) {
+    vec3 normal = GTGS_FACE_NORMAL[int(gtgs_Frames[frame * 3].w)];
+    vec3 w = normalize(gtgs_Frames[frame * 3 + 1].xyz);
+    vec3 h = normalize(gtgs_Frames[frame * 3 + 2].xyz);
+    int best = 0;
+    float closest = -2.0;
+    for (int k = 0; k < PASSAGE_DIRECTIONS; k++) {
+        float share = (float(k) + 0.5) / float(PASSAGE_DIRECTIONS);
+        float radius = sqrt(share);
+        float angle = float(k) * 2.3999632;
+        float along = dot(direction, -normal * sqrt(1.0 - share) + w * (cos(angle) * radius) + h * (sin(angle) * radius));
+        if (along > closest) {
+            closest = along;
+            best = k;
+        }
+    }
+    int at = frame * PASSAGE_DIRECTIONS + best;
+    return gtgs_PreviousShare > 0.5 ? gtgs_PassageOnce[at] : gtgs_PassageDirect[at];
+}
 
 // Le premier tour a cette place de sa tuile, au pixel : une lecture filtree dependrait de la place de la tuile dans le cache, et un
 // recalcul complet ne redonnerait pas le meme arrondi.
@@ -70,6 +121,7 @@ void main() {
     }
     vec3 start = vec3(0.5) - normal * (0.5 - OFFSET) + u * (st.x - 0.5) + v * (st.y - 0.5);
     vec3 sum = vec3(0.0);
+    vec3 shift = vec3(gtgs_PortalOrigin - gtgs_Cell);
     for (int r = 0; r < gtgs_Rays; r++) {
         float angle = float(r) * 2.3999632;
         float share = (float(r) + 0.5) / float(gtgs_Rays);
@@ -78,6 +130,13 @@ void main() {
         ivec3 hit;
         int face;
         float t = gtgs_trace(gtgs_Cell, start, direction, hit, face);
+        int frame = gtgs_FrameCount == 0 ? -1 : nearestFrame(start, start + direction * min(t, 1.0), shift);
+        if (frame >= 0) {
+            if (gtgs_Frames[frame * 3 + 1].w > 0.5 && dot(direction, GTGS_FACE_NORMAL[int(gtgs_Frames[frame * 3].w)]) < 0.0) {
+                sum += gtgs_BounceColor * passageLight(frame, normalize(direction));
+            }
+            continue;
+        }
         if (t < 2.0) {
             vec4 material = texelFetch(gtgs_Materials, ivec2(int(gtgs_material(gtgs_Cell + hit)), 0), 0);
             // La lumiere d'une dalle a deja ete comptee par le cache de surfaces.

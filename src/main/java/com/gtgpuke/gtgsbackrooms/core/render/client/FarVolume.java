@@ -20,7 +20,8 @@ import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightZone;
  * l'ancrage, comme celle de la zone, une cellule pour deux blocs a l'horizontale et un a la verticale ; une tranche de {@value #ROWS}
  * rangees par face pour l'eclairement complet, puis autant pour sa part indirecte. Elle prend le relais de la texture de zone au-dela de
  * ce qu'elle couvre. {@value #WIDTH} cellules de cote en X et en Z, qui se repetent : une section garde sa place tant que l'ancrage
- * avance, seules celles qui entrent s'envoient, et une section sortie est effacee (les shaders retombent sur la piece moyenne).
+ * avance, seules celles qui entrent s'envoient, et une section sortie est effacee (les shaders retombent sur la piece moyenne). Chaque
+ * zone a la sienne ({@link ZoneTextures}).
  */
 public final class FarVolume {
 
@@ -41,52 +42,48 @@ public final class FarVolume {
     private static final int UPLOADS_PER_FRAME = 8;
     private static final int CLEARS_PER_FRAME = 8;
     private static final long NONE = Long.MIN_VALUE;
-    private static final long[] OCCUPANT = new long[SLOTS];
     private static final IntBuffer VALUES = MemoryUtil.memAllocInt(LightZone.FAR_VALUES);
     private static final IntBuffer ZEROS = MemoryUtil.memCallocInt(FACE_VALUES);
-    private static int texture;
-    private static @Nullable LightZone zone;
-    private static int anchorX;
-    private static int anchorZ;
-    private static int base;
+    private final long[] occupant = new long[SLOTS];
+    private int texture;
+    private @Nullable LightZone zone;
+    private int anchorX;
+    private int anchorZ;
+    private int base;
 
-    static {
-        Arrays.fill(OCCUPANT, NONE);
-    }
-
-    private FarVolume() {
-        throw new UnsupportedOperationException("Classe utilitaire.");
+    FarVolume() {
+        Arrays.fill(this.occupant, NONE);
     }
 
     /**
-     * Le loin a montrer (thread de rendu) : celui de la zone de {@link LightVolume}. Une autre zone ou une autre fenetre vident la
-     * texture ; la zone republie alors ce qu'elle a deja cuit.
+     * Le loin a montrer (thread de rendu) : celui de la zone de son emplacement. Une autre zone ou une autre fenetre vident la texture ;
+     * la zone republie alors ce qu'elle a deja cuit.
      *
      * @param next zone, {@code null} pour n'en montrer aucune
      * @param sectionX section d'ancrage
      * @param baseSection premiere section de la fenetre, a la verticale
      * @param sectionZ section d'ancrage
      */
-    static void target(@Nullable LightZone next, int sectionX, int baseSection, int sectionZ) {
-        if (next != zone || baseSection != base) {
-            zone = next;
-            base = baseSection;
+    void target(@Nullable LightZone next, int sectionX, int baseSection, int sectionZ) {
+        if (next != this.zone || baseSection != this.base) {
+            this.zone = next;
+            this.base = baseSection;
             wipe();
         }
-        anchorX = sectionX;
-        anchorZ = sectionZ;
+        this.anchorX = sectionX;
+        this.anchorZ = sectionZ;
     }
 
     /** Vide toute la texture, d'un seul envoi : cela n'arrive qu'en changeant de monde ou de hauteur. */
-    private static void wipe() {
-        Arrays.fill(OCCUPANT, NONE);
-        if (texture == 0) {
+    private void wipe() {
+        Arrays.fill(this.occupant, NONE);
+        if (this.texture == 0) {
             return;
         }
         ByteBuffer zeros = MemoryUtil.memCalloc(WIDTH * HEIGHT * WIDTH * Integer.BYTES);
         int previousUnit = GlStateManager._getActiveTexture();
         GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT);
-        GL11.glBindTexture(GL12.GL_TEXTURE_3D, texture);
+        GL11.glBindTexture(GL12.GL_TEXTURE_3D, this.texture);
         PixelUnpack.begin();
         GL12.glTexSubImage3D(GL12.GL_TEXTURE_3D, 0, 0, 0, 0, WIDTH, HEIGHT, WIDTH, GL11.GL_RGBA, GL12.GL_UNSIGNED_INT_2_10_10_10_REV, zeros);
         PixelUnpack.end();
@@ -94,18 +91,18 @@ public final class FarVolume {
         MemoryUtil.memFree(zeros);
     }
 
-    /** Debut du rendu du monde : efface ce qui est sorti, envoie ce qui est cuit, et lie la texture a son unite. */
-    static void frame() {
-        if (zone == null) {
+    /** Debut du rendu du monde : efface ce qui est sorti et envoie ce qui est cuit, la texture liee a son unite. */
+    void frame() {
+        if (this.zone == null) {
             return;
         }
-        if (texture == 0) {
+        if (this.texture == 0) {
             create();
         }
         int previousUnit = GlStateManager._getActiveTexture();
         GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT);
-        GL11.glBindTexture(GL12.GL_TEXTURE_3D, texture);
-        LightZone.FarBaked baked = zone.pollFar();
+        GL11.glBindTexture(GL12.GL_TEXTURE_3D, this.texture);
+        LightZone.FarBaked baked = this.zone.pollFar();
         if (baked != null || hasStale()) {
             PixelUnpack.begin();
             clearStale();
@@ -113,18 +110,35 @@ public final class FarVolume {
             while (baked != null) {
                 upload(baked);
                 uploads++;
-                baked = uploads < UPLOADS_PER_FRAME ? zone.pollFar() : null;
+                baked = uploads < UPLOADS_PER_FRAME ? this.zone.pollFar() : null;
             }
             PixelUnpack.end();
         }
         GlStateManager._activeTexture(previousUnit);
     }
 
-    private static void create() {
-        texture = GL11.glGenTextures();
+    /** Lie la texture a son unite, pour les dessins qui suivent. */
+    void bind() {
         int previousUnit = GlStateManager._getActiveTexture();
         GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT);
-        GL11.glBindTexture(GL12.GL_TEXTURE_3D, texture);
+        GL11.glBindTexture(GL12.GL_TEXTURE_3D, this.texture);
+        GlStateManager._activeTexture(previousUnit);
+    }
+
+    /** Rend sa texture a la carte graphique : elle se recree, vide, a la prochaine image qui en a besoin. */
+    void freeTexture() {
+        Arrays.fill(this.occupant, NONE);
+        if (this.texture != 0) {
+            GL11.glDeleteTextures(this.texture);
+            this.texture = 0;
+        }
+    }
+
+    private void create() {
+        this.texture = GL11.glGenTextures();
+        int previousUnit = GlStateManager._getActiveTexture();
+        GlStateManager._activeTexture(GL13.GL_TEXTURE0 + UNIT);
+        GL11.glBindTexture(GL12.GL_TEXTURE_3D, this.texture);
         GL11.glTexParameteri(GL12.GL_TEXTURE_3D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL12.GL_TEXTURE_3D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
         GL11.glTexParameteri(GL12.GL_TEXTURE_3D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
@@ -139,24 +153,24 @@ public final class FarVolume {
         GlStateManager._activeTexture(previousUnit);
     }
 
-    private static boolean hasStale() {
+    private boolean hasStale() {
         for (int i = 0; i < SLOTS; i++) {
-            if (OCCUPANT[i] != NONE && !inFar(OCCUPANT[i])) {
+            if (this.occupant[i] != NONE && !inFar(this.occupant[i])) {
                 return true;
             }
         }
         return false;
     }
 
-    private static void clearStale() {
+    private void clearStale() {
         int cleared = 0;
         for (int i = 0; i < SLOTS && cleared < CLEARS_PER_FRAME; i++) {
-            if (OCCUPANT[i] != NONE && !inFar(OCCUPANT[i])) {
+            if (this.occupant[i] != NONE && !inFar(this.occupant[i])) {
                 clearSlot(i);
-                if (zone != null) {
-                    zone.forgetFar(OCCUPANT[i]);
+                if (this.zone != null) {
+                    this.zone.forgetFar(this.occupant[i]);
                 }
-                OCCUPANT[i] = NONE;
+                this.occupant[i] = NONE;
                 cleared++;
             }
         }
@@ -173,12 +187,12 @@ public final class FarVolume {
         }
     }
 
-    private static void upload(LightZone.FarBaked baked) {
+    private void upload(LightZone.FarBaked baked) {
         long key = baked.key();
-        int row = ChunkSectionPos.unpackY(key) - base;
+        int row = ChunkSectionPos.unpackY(key) - this.base;
         if (!inFar(key) || row < 0 || row >= LightZone.HEIGHT) {
-            if (zone != null) {
-                zone.forgetFar(key);
+            if (this.zone != null) {
+                this.zone.forgetFar(key);
             }
             return;
         }
@@ -193,23 +207,24 @@ public final class FarVolume {
         }
         int slot = (row * SLOTS_ACROSS + slotZ) * SLOTS_ACROSS + slotX;
         // Une section pas encore effacee a cette place : la zone l'oublie, sinon elle ne la renverrait pas si le loin revient sur elle.
-        if (OCCUPANT[slot] != NONE && OCCUPANT[slot] != key && zone != null) {
-            zone.forgetFar(OCCUPANT[slot]);
+        if (this.occupant[slot] != NONE && this.occupant[slot] != key && this.zone != null) {
+            this.zone.forgetFar(this.occupant[slot]);
         }
-        OCCUPANT[slot] = key;
+        this.occupant[slot] = key;
     }
 
-    private static boolean inFar(long key) {
-        return Math.abs(ChunkSectionPos.unpackX(key) - anchorX) <= LightZone.FAR_RADIUS && Math.abs(ChunkSectionPos.unpackZ(key) - anchorZ) <= LightZone.FAR_RADIUS;
+    private boolean inFar(long key) {
+        return Math.abs(ChunkSectionPos.unpackX(key) - this.anchorX) <= LightZone.FAR_RADIUS
+                && Math.abs(ChunkSectionPos.unpackZ(key) - this.anchorZ) <= LightZone.FAR_RADIUS;
     }
 
     /** Texture, 0 avant le premier loin (tests du client). */
-    public static int texture() {
-        return texture;
+    int texture() {
+        return this.texture;
     }
 
     /** La piece moyenne de la zone montree ({@link LightZone#room}), {@code null} sans zone ou avant sa premiere section. */
-    static float @Nullable [] room() {
-        return zone == null ? null : zone.room();
+    float @Nullable [] room() {
+        return this.zone == null ? null : this.zone.room();
     }
 }

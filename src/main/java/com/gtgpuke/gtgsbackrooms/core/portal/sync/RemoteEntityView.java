@@ -52,7 +52,7 @@ final class RemoteEntityView implements PlayerAssociatedNetworkHandler {
     /** Envoi enveloppe, cree une fois : le suivi vanilla le recoit pour chaque entity nouvellement suivie. */
     private final Consumer<Packet<ClientPlayPacketListener>> sender = this::sendPacket;
     /** Comme le suivi vanilla : un joueur spectateur n'est montre qu'aux spectateurs. Cree une fois. */
-    private final Predicate<Entity> shown = entity -> entity.canBeSpectated(getPlayer());
+    private final Predicate<Entity> shown = entity -> entity != getPlayer() && entity.canBeSpectated(getPlayer());
     /** Boite des chunks synchronises, reconstruite seulement quand leurs bornes changent. */
     private @Nullable Box window;
     private int windowMinChunkX;

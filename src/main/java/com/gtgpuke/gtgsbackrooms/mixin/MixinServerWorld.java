@@ -27,7 +27,9 @@ public abstract class MixinServerWorld {
     private ParticleS2CPacket backrooms$relayToPortalViewers(ParticleS2CPacket packet) {
         if (ModConfig.ENABLE_PORTAL_FEATURE) {
             ServerWorld self = (ServerWorld) (Object) this;
-            PortalViewTracker.relayToViewers(self.getRegistryKey(), packet.getX(), packet.getZ(), packet);
+            // Vanilla envoie ces particules a moins de 32 blocs, 512 pour celles de longue distance (sendToPlayerIfNearby).
+            PortalViewTracker.relayToViewers(self.getRegistryKey(), packet.getX(), packet.getY(), packet.getZ(),
+                    packet.isLongDistance() ? PortalViewTracker.LONG_PARTICLE_RANGE : PortalViewTracker.NEAR_RANGE, -1, false, packet);
         }
         return packet;
     }
@@ -36,7 +38,9 @@ public abstract class MixinServerWorld {
     private void backrooms$relayBreakingToPortalViewers(int entityId, BlockPos pos, int progress, CallbackInfo ci) {
         if (ModConfig.ENABLE_PORTAL_FEATURE && PortalViewTracker.watchedChunkCount() > 0) {
             ServerWorld self = (ServerWorld) (Object) this;
-            PortalViewTracker.relayToViewers(self.getRegistryKey(), pos.getX(), pos.getZ(), new BlockBreakingProgressS2CPacket(entityId, pos, progress));
+            // Vanilla envoie les fissures a moins de 32 blocs, sauf a celui qui mine.
+            PortalViewTracker.relayToViewers(self.getRegistryKey(), pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, PortalViewTracker.NEAR_RANGE,
+                    entityId, false, new BlockBreakingProgressS2CPacket(entityId, pos, progress));
         }
     }
 }

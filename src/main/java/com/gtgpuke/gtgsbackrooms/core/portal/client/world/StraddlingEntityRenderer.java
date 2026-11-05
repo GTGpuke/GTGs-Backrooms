@@ -330,7 +330,7 @@ public final class StraddlingEntityRenderer {
             Matrix4f positionMatrix,
             float tickDelta,
             @Nullable Entity hidden) {
-        World destination = RemoteWorldRegistry.worldOf(portal.destinationDim());
+        World destination = RemoteWorldRegistry.worldOf(portal);
         if (destination == null) {
             return;
         }

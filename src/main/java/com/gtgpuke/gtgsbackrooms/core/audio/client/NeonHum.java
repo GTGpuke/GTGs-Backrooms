@@ -58,6 +58,13 @@ public final class NeonHum {
     /** Distance de la camera, ou de l'arrivee d'un portail, au-dela de laquelle un tube ne bourdonne pas. */
     private static final double REACH = 12.0;
     private static final int PERIOD_TICKS = 10;
+    /**
+     * Revues manquees de suite qui font taire un tube qui bourdonne. A une traversee vers un endroit lointain du meme monde, le monde du
+     * joueur et son ailleurs s'echangent les chunks et les entites de l'arrivee sur quelques ticks, dans un ordre qui varie avec la
+     * charge : une revue qui tombait entre les deux ne retrouvait pas le tube qu'on venait de quitter, derriere le cadre de retour, et le
+     * coupait. Un tube vraiment hors de portee se tait une seconde plus tard.
+     */
+    private static final int MISSED_REVIEWS = 3;
     /** Ecart d'intensite a partir duquel le volume d'une source est repose. */
     private static final float STATE_STEP = 0.05f;
     /** Un tube est allume au-dessus de cette intensite : passer d'un cote a l'autre claque. */
@@ -76,6 +83,8 @@ public final class NeonHum {
     private static final long[] HUMMING = new long[CAPACITY];
     private static final SoundInstance[] INSTANCES = new SoundInstance[CAPACITY];
     private static final float[] STATES = new float[CAPACITY];
+    /** Revues de suite que chaque tube qui bourdonne a manquees. */
+    private static final int[] MISSED = new int[CAPACITY];
     private static int count;
     private static int ticks;
 
@@ -118,18 +127,25 @@ public final class NeonHum {
         Vec3d listener = client.gameRenderer.getCamera().getPos();
         collectCandidates(world, listener);
         for (int i = count - 1; i >= 0; i--) {
-            // Un tube hors de portee se tait ; un son que le moteur a lache (moteur de son relance, son arrete par vanilla)
-            // est oublie, et le tube repart a cette revue s'il est encore proche.
-            if (!candidate(HUM_DIMENSIONS[i], HUMMING[i]) || !client.getSoundManager().isPlaying(INSTANCES[i])) {
-                client.getSoundManager().stop(INSTANCES[i]);
-                count--;
-                HUM_DIMENSIONS[i] = HUM_DIMENSIONS[count];
-                HUMMING[i] = HUMMING[count];
-                INSTANCES[i] = INSTANCES[count];
-                STATES[i] = STATES[count];
-                HUM_DIMENSIONS[count] = null;
-                INSTANCES[count] = null;
+            // Un tube hors de portee se tait, apres quelques revues ; un son que le moteur a lache (moteur de son relance, son
+            // arrete par vanilla) est oublie aussitot, et le tube repart a cette revue s'il est encore proche.
+            boolean playing = client.getSoundManager().isPlaying(INSTANCES[i]);
+            if (playing && candidate(HUM_DIMENSIONS[i], HUMMING[i])) {
+                MISSED[i] = 0;
+                continue;
             }
+            if (playing && ++MISSED[i] < MISSED_REVIEWS) {
+                continue;
+            }
+            client.getSoundManager().stop(INSTANCES[i]);
+            count--;
+            HUM_DIMENSIONS[i] = HUM_DIMENSIONS[count];
+            HUMMING[i] = HUMMING[count];
+            INSTANCES[i] = INSTANCES[count];
+            STATES[i] = STATES[count];
+            MISSED[i] = MISSED[count];
+            HUM_DIMENSIONS[count] = null;
+            INSTANCES[count] = null;
         }
         for (int i = 0; i < candidates && count < CAPACITY; i++) {
             if (humming(CANDIDATE_DIMENSIONS[i], CANDIDATE_POSITIONS[i])) {
@@ -145,6 +161,7 @@ public final class NeonHum {
             HUM_DIMENSIONS[count] = CANDIDATE_DIMENSIONS[i];
             HUMMING[count] = CANDIDATE_POSITIONS[i];
             INSTANCES[count] = instance;
+            MISSED[count] = 0;
             STATES[count++] = 1.0f;
         }
         forgetCandidates();
@@ -203,24 +220,28 @@ public final class NeonHum {
 
     /**
      * Les tubes qui devraient bourdonner : ceux du monde du joueur a portee de la camera, puis, par portail visible et
-     * ouvert vers un autre monde a ambiance, ceux de ce monde a portee de l'arrivee du portail, vus par le cadre et
-     * audibles du joueur (devant le cadre, a portee du son). Rien n'est alloue : la geometrie se lit sans image.
+     * ouvert vers un monde a ambiance (un autre endroit du meme niveau compris), ceux de la-bas a portee de l'arrivee du
+     * portail, vus par le cadre et audibles du joueur (devant le cadre, a portee du son). Un tube a la fois proche de la
+     * camera et vu par un cadre ne compte qu'une fois, a sa place. Rien n'est alloue : la geometrie se lit sans image.
      */
     private static void collectCandidates(ClientWorld world, Vec3d listener) {
         candidates = 0;
         RegistryKey<World> playerDimension = world.getRegistryKey();
+        // Juste apres une traversee vers un endroit lointain du meme monde, ses tubes et ses cadres ne sont encore que dans l'ailleurs :
+        // les memes tubes, de la meme dimension, continuent de bourdonner.
+        ClientWorld around = RemoteWorldRegistry.holding(world, listener.x, listener.z);
         if (AudioProfiles.of(playerDimension).ambience().any()) {
-            NeonIndex.collect(world, listener.x, listener.y, listener.z, REACH, SELECTION);
+            NeonIndex.collect(around, listener.x, listener.y, listener.z, REACH, SELECTION);
             for (int i = 0; i < SELECTION.count(); i++) {
                 add(playerDimension.getValue(), SELECTION.position(i), null);
             }
         }
-        List<BackroomsPortalEntity> portals = ClientPortalIndex.portals(world);
+        List<BackroomsPortalEntity> portals = ClientPortalIndex.portals(around);
         int throughFrames = 0;
         for (int p = 0; p < portals.size() && throughFrames < THROUGH_FRAMES; p++) {
             BackroomsPortalEntity portal = portals.get(p);
             RegistryKey<World> destination = portal.destinationDim();
-            if (!portal.visible() || !portal.teleportable() || destination.equals(playerDimension)) {
+            if (!portal.visible() || !portal.teleportable()) {
                 continue;
             }
             AudioProfile.Ambience ambience = AudioProfiles.of(destination).ambience();
@@ -232,7 +253,7 @@ public final class NeonHum {
                     || portal.squaredDistanceToFrame(listener.x, listener.y, listener.z) > radius * radius) {
                 continue;
             }
-            ClientWorld remote = RemoteWorldRegistry.worldOf(destination);
+            ClientWorld remote = RemoteWorldRegistry.worldOf(portal);
             if (remote == null) {
                 continue;
             }
@@ -241,11 +262,12 @@ public final class NeonHum {
             NeonIndex.collect(remote, arrival.x, arrival.y, arrival.z, REACH, FRAME_SELECTION);
             for (int i = 0; i < FRAME_SELECTION.count() && throughFrames < THROUGH_FRAMES; i++) {
                 long packed = FRAME_SELECTION.position(i);
-                // Un tube devant le cadre d'arrivee (du cote d'ou l'on arrive) n'est pas vu par le cadre : son image serait de ce cote-ci.
-                double behind = facing.normal.x * (BlockPos.unpackLongX(packed) + 0.5 - arrival.x)
+                // Seul un tube du cote de la sortie (celui de la normale de l'arrivee) est vu par le cadre : derriere l'arrivee, son image
+                // serait de ce cote-ci du cadre d'entree, et aucun point du cadre ne laisserait passer son son.
+                double ahead = facing.normal.x * (BlockPos.unpackLongX(packed) + 0.5 - arrival.x)
                         + facing.normal.y * (BlockPos.unpackLongY(packed) + 0.5 - arrival.y)
                         + facing.normal.z * (BlockPos.unpackLongZ(packed) + 0.5 - arrival.z);
-                if (behind <= PortalSound.BEHIND_TOLERANCE && add(destination.getValue(), packed, portal)) {
+                if (ahead >= -PortalSound.BEHIND_TOLERANCE && add(destination.getValue(), packed, portal)) {
                     throughFrames++;
                 }
             }

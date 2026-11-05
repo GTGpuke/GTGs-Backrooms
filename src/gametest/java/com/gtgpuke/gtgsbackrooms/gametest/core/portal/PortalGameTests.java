@@ -276,7 +276,7 @@ public final class PortalGameTests implements FabricGameTest {
     public void remoteChunkPayloadSurvivesEncoding(TestContext context) {
         ServerWorld world = context.getWorld();
         WorldChunk chunk = world.getWorldChunk(context.getAbsolutePos(BlockPos.ORIGIN));
-        RemoteChunkPayload payload = RemoteChunkPayload.of(world, chunk);
+        RemoteChunkPayload payload = RemoteChunkPayload.of(world.getRegistryKey(), world, chunk);
         RegistryByteBuf buf = new RegistryByteBuf(Unpooled.buffer(), world.getRegistryManager());
         RemoteChunkPayload.CODEC.encode(buf, payload);
         RemoteChunkPayload decoded = RemoteChunkPayload.CODEC.decode(buf);

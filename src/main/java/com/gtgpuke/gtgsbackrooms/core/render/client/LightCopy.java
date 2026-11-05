@@ -35,15 +35,18 @@ import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.PortalFacing;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBakeSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightBlocks;
 import com.gtgpuke.gtgsbackrooms.core.render.light.bake.LightZone;
+import com.gtgpuke.gtgsbackrooms.core.render.light.bake.PortalOpenings;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
 
 /**
  * Ce que la cuisson de la lumiere lit du monde client : autour de la camera dans un monde a lumiere cuite, ou autour de
- * l'arrivee du premier portail visible vers un tel monde, les sections sont copiees sur le thread de rendu, les plus
+ * l'arrivee du premier portail visible vers un tel monde, et autour de la camera de la vue du portail visible le plus proche quand
+ * cette vue montre un endroit que la premiere zone ne couvre pas, les sections sont copiees sur le thread de rendu, les plus
  * proches d'abord et quelques-unes par tick, chaque etat de bloc distinct n'etant classe qu'une fois (matiere : albedo moyen
  * de sa texture, emission du neon du profil). Un bloc change pose sa matiere dans une nouvelle copie de sa section, tout de
  * suite : le cache de surfaces le voit des l'image suivante, et la section repart a cuire. Un bloc que la lumiere traverse
@@ -63,11 +66,14 @@ public final class LightCopy {
     private static final float CHANNEL = 255.0f;
     private static final long NOWHERE = Long.MIN_VALUE;
     private static final Map<World, Target> TARGETS = new IdentityHashMap<>();
+    /** La copie et la cuisson de la zone d'une vue, par monde : un autre endroit que la zone du joueur, meme dans son monde. */
+    private static final Map<World, Target> VIEW_TARGETS = new IdentityHashMap<>();
     private static final Map<Identifier, float[]> ALBEDOS = new HashMap<>();
     private static final BlockPos.Mutable CURSOR = new BlockPos.Mutable();
     private static final float[] NO_SPRITE = new float[4];
     private static int ticks;
     private static @Nullable Target current;
+    private static @Nullable Target view;
 
     /** La copie et la cuisson d'un monde. */
     private static final class Target {
@@ -111,7 +117,7 @@ public final class LightCopy {
                 BackroomsPortalEntity portal = portals.get(i);
                 RegistryKey<World> destination = portal.destinationDim();
                 if (portal.visible() && portal.teleportable() && LookProfiles.of(destination).bakedLight().any()) {
-                    target = RemoteWorldRegistry.worldOf(destination);
+                    target = RemoteWorldRegistry.worldOf(portal);
                     anchor = portal.destinationPos();
                 }
             }
@@ -120,20 +126,28 @@ public final class LightCopy {
             LightVolume.target(null, null, 0, 0, 0, 0);
             LightWorker.target(null);
             EntityShadows.clear();
+            clearView();
             return;
         }
         follow(target, anchor);
+        followView(world, client.gameRenderer.getCamera().getPos());
     }
 
-    private static void follow(ClientWorld world, Vec3d anchor) {
-        Target target = TARGETS.get(world);
+    /** La copie et la cuisson d'un monde dans une table, creees a sa premiere rencontre. */
+    private static Target targetOf(Map<World, Target> targets, ClientWorld world) {
+        Target target = targets.get(world);
         if (target == null) {
             RegistryKey<World> key = world.getRegistryKey();
             LookProfile profile = LookProfiles.of(key);
             target = new Target(new LightZone(new LightBlocks(), LightBakeSettings.of(profile, key.getValue()), world.getBottomSectionCoord(),
                     world.getTopSectionCoord()));
-            TARGETS.put(world, target);
+            targets.put(world, target);
         }
+        return target;
+    }
+
+    private static void follow(ClientWorld world, Vec3d anchor) {
+        Target target = targetOf(TARGETS, world);
         int sectionX = ChunkSectionPos.getSectionCoord(anchor.x);
         int sectionZ = ChunkSectionPos.getSectionCoord(anchor.z);
         int base = LightZone.baseFor(target.base, (int) Math.floor(anchor.y));
@@ -142,15 +156,80 @@ public final class LightCopy {
         LightVolume.target(target.zone, world.getRegistryKey().getValue(), sectionX, base, sectionZ, (int) Math.floor(anchor.y));
         current = target;
         LightWorker.target(target.zone);
-        EntityShadows.tick(world, anchor);
-        copyAround(world, target, sectionX, base, sectionZ);
+        EntityShadows.tick(world, anchor.x, anchor.y, anchor.z);
+        PortalOpeningLights.update(world, target.zone);
+        copyAround(world, target, sectionX, base, sectionZ, LightSurfaces.PLAYER);
         if (++ticks % RETAIN_PERIOD_TICKS == 0) {
             target.zone.blocks().retainAround(sectionX, base, sectionZ, KEEP_RADIUS);
         }
     }
 
-    /** Copie les sections manquantes, anneau par anneau depuis la section d'ancrage. */
-    private static void copyAround(ClientWorld world, Target target, int sectionX, int base, int sectionZ) {
+    /**
+     * La zone d'une vue : celle du portail visible le plus proche de la camera, vers un monde a lumiere cuite, dont la camera de la
+     * vue est hors de la zone du joueur (une autre dimension, ou le meme monde, loin). Elle suit la camera de la vue, comme celle du
+     * joueur suit la sienne ; sans tel portail, il n'y en a pas.
+     */
+    private static void followView(ClientWorld world, Vec3d camera) {
+        BackroomsPortalEntity nearest = null;
+        double best = Double.MAX_VALUE;
+        List<BackroomsPortalEntity> portals = ClientPortalIndex.portals(world);
+        for (int i = 0; i < portals.size(); i++) {
+            BackroomsPortalEntity portal = portals.get(i);
+            RegistryKey<World> destination = portal.destinationDim();
+            double distance = portal.getPos().squaredDistanceTo(camera);
+            if (distance < best && portal.visible() && portal.teleportable() && LookProfiles.of(destination).bakedLight().any()
+                    && !LightVolume.playerCovers(destination.getValue(), viewBlock(portal, camera, 0), viewBlock(portal, camera, 1), viewBlock(portal, camera, 2))) {
+                nearest = portal;
+                best = distance;
+            }
+        }
+        ClientWorld seen = nearest == null ? null : RemoteWorldRegistry.worldOf(nearest);
+        if (seen == null) {
+            clearView();
+            return;
+        }
+        double x = viewCoordinate(nearest, camera, 0);
+        double y = viewCoordinate(nearest, camera, 1);
+        double z = viewCoordinate(nearest, camera, 2);
+        Target target = targetOf(VIEW_TARGETS, seen);
+        int sectionX = ChunkSectionPos.getSectionCoord(x);
+        int sectionZ = ChunkSectionPos.getSectionCoord(z);
+        int base = LightZone.baseFor(target.base, (int) Math.floor(y));
+        target.base = base;
+        target.zone.anchor(sectionX, base, sectionZ);
+        LightVolume.targetView(target.zone, seen.getRegistryKey().getValue(), sectionX, base, sectionZ, (int) Math.floor(y));
+        view = target;
+        LightWorker.targetView(target.zone);
+        EntityShadows.tickView(seen, x, y, z);
+        PortalOpeningLights.update(seen, target.zone);
+        copyAround(seen, target, sectionX, base, sectionZ, LightSurfaces.VIEW);
+        if (ticks % RETAIN_PERIOD_TICKS == 0) {
+            target.zone.blocks().retainAround(sectionX, base, sectionZ, KEEP_RADIUS);
+        }
+    }
+
+    /** Une coordonnee de la camera de la vue d'un portail : l'image de la camera du joueur de l'autre cote, sans allocation. */
+    private static double viewCoordinate(BackroomsPortalEntity portal, Vec3d camera, int axis) {
+        return PortalFacing.transformCoordinate(portal.facingSource(), portal.getPos(), portal.facingDestination(), portal.destinationPos(), camera.x,
+                camera.y, camera.z, axis);
+    }
+
+    private static int viewBlock(BackroomsPortalEntity portal, Vec3d camera, int axis) {
+        return (int) Math.floor(viewCoordinate(portal, camera, axis));
+    }
+
+    /** Plus de zone de vue. */
+    private static void clearView() {
+        if (view != null) {
+            view = null;
+            LightVolume.clearView();
+            LightWorker.targetView(null);
+            EntityShadows.clearView();
+        }
+    }
+
+    /** Copie les sections manquantes, anneau par anneau depuis la section d'ancrage ; celles de la zone vont a son cache de surfaces. */
+    private static void copyAround(ClientWorld world, Target target, int sectionX, int base, int sectionZ, LightSurfaces surfaces) {
         long here = ChunkSectionPos.asLong(sectionX, base, sectionZ);
         if (target.copiedAt == here) {
             return;
@@ -175,7 +254,7 @@ public final class LightCopy {
                         blocks.setSection(key, chunk == null ? LightBlocks.UNLOADED : copy(world, target, chunk, y));
                         // La grille des blocs et le cache de surfaces ne tiennent que la zone : une section du loin y prendrait la place d'une autre.
                         if (radius <= COPY_RADIUS) {
-                            LightSurfaces.onSectionCopied(key, base);
+                            surfaces.onSectionCopied(key, base);
                         }
                         target.zone.onChanged(key);
                         if (--budget == 0) {
@@ -283,9 +362,16 @@ public final class LightCopy {
      */
     public static void onBlockChanged(ClientWorld world, BlockPos pos, BlockState state) {
         Target target = TARGETS.get(world);
-        if (target == null) {
-            return;
+        if (target != null) {
+            blockChanged(world, target, pos, state);
         }
+        Target seen = VIEW_TARGETS.get(world);
+        if (seen != null) {
+            blockChanged(world, seen, pos, state);
+        }
+    }
+
+    private static void blockChanged(ClientWorld world, Target target, BlockPos pos, BlockState state) {
         LightBlocks blocks = target.zone.blocks();
         long key = ChunkSectionPos.asLong(ChunkSectionPos.getSectionCoord(pos.getX()), ChunkSectionPos.getSectionCoord(pos.getY()),
                 ChunkSectionPos.getSectionCoord(pos.getZ()));
@@ -304,9 +390,10 @@ public final class LightCopy {
         next[index] = material;
         blocks.setSection(key, next);
         long stamp = target.zone.onChanged(key);
-        if (target == current) {
+        LightSurfaces surfaces = target == current ? LightSurfaces.PLAYER : target == view ? LightSurfaces.VIEW : null;
+        if (surfaces != null) {
             boolean[] emissive = blocks.emissive();
-            LightSurfaces.onBlockChanged(pos, emissive[material & 0xFF] || emissive[before & 0xFF], stamp);
+            surfaces.onBlockChanged(pos, emissive[material & 0xFF] || emissive[before & 0xFF], stamp);
         }
     }
 
@@ -321,9 +408,16 @@ public final class LightCopy {
     /** Une colonne qui part ou qui arrive : ce qu'on en savait est perime, ses sections sont a recopier. */
     private static void unloadChunk(ClientWorld world, WorldChunk chunk) {
         Target target = TARGETS.get(world);
-        if (target == null) {
-            return;
+        if (target != null) {
+            unloadChunk(world, target, chunk);
         }
+        Target seen = VIEW_TARGETS.get(world);
+        if (seen != null) {
+            unloadChunk(world, seen, chunk);
+        }
+    }
+
+    private static void unloadChunk(ClientWorld world, Target target, WorldChunk chunk) {
         ChunkPos pos = chunk.getPos();
         for (int sectionY = world.getBottomSectionCoord(); sectionY < world.getTopSectionCoord(); sectionY++) {
             target.zone.blocks().removeSection(ChunkSectionPos.asLong(pos.x, sectionY, pos.z));
@@ -331,14 +425,27 @@ public final class LightCopy {
         target.copiedAt = NOWHERE;
     }
 
-    /** Monde oublie : sa copie aussi. */
+    /**
+     * Monde oublie : sa copie aussi. La zone liee au joueur ou a la vue ne repart de zero que si c'etait la sienne : oublier un autre
+     * monde videait les textures de zone et faisait recuire toute la vue.
+     */
     private static void forget(World world) {
         Target target = TARGETS.remove(world);
         if (target != null) {
+            target.zone.retire();
+        }
+        if (target != null && target == current) {
             current = null;
-            LightVolume.clear();
+            LightVolume.target(null, null, 0, 0, 0, 0);
             LightWorker.target(null);
             EntityShadows.clear();
+        }
+        Target seen = VIEW_TARGETS.remove(world);
+        if (seen != null) {
+            seen.zone.retire();
+        }
+        if (seen != null && seen == view) {
+            clearView();
         }
     }
 
@@ -350,6 +457,61 @@ public final class LightCopy {
                 forget(world);
             }
         }
+        for (World world : List.copyOf(VIEW_TARGETS.keySet())) {
+            RegistryKey<World> key = world.getRegistryKey();
+            if (!LightBakeSettings.of(LookProfiles.of(key), key.getValue()).equals(VIEW_TARGETS.get(world).zone.settings())) {
+                forget(world);
+            }
+        }
+    }
+
+    /** Les ouvertures des portails que compte la zone d'un monde, celle du joueur ou celle d'une vue ; aucune sans zone. */
+    public static PortalOpenings openings(World world) {
+        Target target = boundTarget(world);
+        return target == null ? PortalOpenings.NONE : target.zone.openings();
+    }
+
+    /**
+     * La zone d'un monde : celle du joueur ou celle d'une vue, et, si ce monde a les deux (le joueur hors des Backrooms, sa zone ancree a
+     * l'arrivee d'un portail, celle de la vue a sa camera), celle que lit la vue en cours de dessin ({@link LightVolume#playerBound}).
+     */
+    private static @Nullable Target boundTarget(World world) {
+        Target player = TARGETS.get(world);
+        Target seen = VIEW_TARGETS.get(world);
+        if (player != null && seen != null) {
+            return LightVolume.playerBound() ? player : seen;
+        }
+        return player != null ? player : seen;
+    }
+
+    /**
+     * La zone qui cuit la lumiere d'un monde en ce point : celle du joueur ou celle de la vue, {@code null} si aucune ne le couvre. C'est
+     * elle que lisent les rayons qui passent un portail vers ce point. Une zone qui ne cuit plus (un monde quitte) ne compte pas.
+     *
+     * @param world monde du point
+     * @param x point
+     * @param y point
+     * @param z point
+     */
+    static @Nullable LightZone zoneCovering(World world, double x, double y, double z) {
+        Target target = TARGETS.get(world);
+        if (target != null && target == current && target.zone.covers(x, y, z)) {
+            return target.zone;
+        }
+        Target seen = VIEW_TARGETS.get(world);
+        return seen != null && seen == view && seen.zone.covers(x, y, z) ? seen.zone : null;
+    }
+
+    /** La lumiere qui sort des passages de la zone d'un monde ({@link #boundTarget}), {@code null} sans zone ni mesure. */
+    static LightZone.@Nullable PassageLight passageLight(World world) {
+        Target target = boundTarget(world);
+        return target == null ? null : target.zone.passageLight();
+    }
+
+    /** Les reglages de la zone d'un monde ({@link #boundTarget}), {@code null} sans zone. */
+    static @Nullable LightBakeSettings zoneSettings(World world) {
+        Target target = boundTarget(world);
+        return target == null ? null : target.zone.settings();
     }
 
     /** Les reglages de la zone d'un monde (tests du client). */
@@ -360,17 +522,32 @@ public final class LightCopy {
 
     /** Fin de partie, ou profils recharges : plus rien n'est copie ni cuit. */
     public static void clear() {
+        for (Target target : TARGETS.values()) {
+            target.zone.retire();
+        }
+        for (Target target : VIEW_TARGETS.values()) {
+            target.zone.retire();
+        }
         TARGETS.clear();
+        VIEW_TARGETS.clear();
         ALBEDOS.clear();
         current = null;
+        view = null;
         LightVolume.clear();
         LightWorker.close();
         EntityShadows.clear();
     }
 
-    /** Rectangle de la texture d'une matiere dans l'atlas des blocs, vide si elle n'en a pas. */
-    static float[] sprite(int material) {
-        Target target = current;
+    /**
+     * Rectangle de la texture d'une matiere dans l'atlas des blocs, vide si elle n'en a pas. La zone du joueur et celle d'une vue
+     * numerotent chacune leurs matieres dans l'ordre ou elles les rencontrent : lue dans la table de l'autre, une tuile de la vue
+     * prenait le relief d'une autre texture.
+     *
+     * @param ofView {@code true} pour une matiere de la zone d'une vue, {@code false} pour celle du joueur
+     * @param material matiere dans cette zone
+     */
+    static float[] sprite(boolean ofView, int material) {
+        Target target = ofView ? view : current;
         float[] sprite = target == null ? null : target.sprites[material];
         return sprite == null ? NO_SPRITE : sprite;
     }
@@ -379,6 +556,12 @@ public final class LightCopy {
     public static byte copiedBlock(World world, BlockPos pos) {
         Target target = TARGETS.get(world);
         return target == null ? LightBlocks.UNKNOWN : target.zone.blocks().block(pos.getX(), pos.getY(), pos.getZ());
+    }
+
+    /** {@code true} si la zone d'une vue existe et que sa cuisson est au repos (tests du client). */
+    public static boolean viewIdle() {
+        Target target = view;
+        return target != null && target.zone.idle();
     }
 
     /** {@code true} si la cuisson de ce monde est au repos (tests du client). */

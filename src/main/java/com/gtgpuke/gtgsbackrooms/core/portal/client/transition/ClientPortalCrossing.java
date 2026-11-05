@@ -350,7 +350,9 @@ public final class ClientPortalCrossing {
         player.prevYaw += yawShift;
         player.setHeadYaw(player.getHeadYaw() + yawShift);
         player.prevHeadYaw += yawShift;
-        player.setBodyYaw(player.getBodyYaw() + yawShift);
+        // Le corps se lit dans son champ : pour le joueur du client, getBodyYaw rend le regard, deja tourne, et le corps
+        // tournait deux fois (un quart de tour de trop, rattrape en une seconde : le joueur tournait sur lui-meme).
+        player.bodyYaw += yawShift;
         player.prevBodyYaw += yawShift;
         player.renderYaw += yawShift;
         player.lastRenderYaw += yawShift;

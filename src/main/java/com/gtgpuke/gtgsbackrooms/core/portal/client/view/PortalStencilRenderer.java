@@ -309,7 +309,7 @@ public final class PortalStencilRenderer {
         RenderSystem.applyModelViewMatrix();
         try {
             if (behind != null) {
-                RemoteWorld view = RemoteWorldRegistry.viewOf(behind.destinationDim());
+                RemoteWorld view = RemoteWorldRegistry.viewOf(behind);
                 ShaderPackPortalRenderer.renderCovering(client, behind, view, behindCameraPos(view, behind, camera.getFocusedEntity()),
                         tickCounter, camera, lightmap, positionMatrix, projectionMatrix);
             } else {
@@ -379,7 +379,7 @@ public final class PortalStencilRenderer {
         Vec3d eye = eyePosition(camera, focused, tickDelta);
         Vec3d wanted = wantedCameraPos(camera, focused, eye);
         BackroomsPortalEntity portal = ThirdPersonPortal.crossedBy(ClientPortalIndex.portals(world), eye, wanted);
-        if (portal == null || !portal.visible() || RemoteWorldRegistry.viewOf(portal.destinationDim()) == null) {
+        if (portal == null || !portal.visible() || RemoteWorldRegistry.viewOf(portal) == null) {
             return null;
         }
         // Un bloc de ce cote, entre l'oeil et le plan, retient la camera : elle ne passe pas le portail. Un bloc que le portail
@@ -438,7 +438,7 @@ public final class PortalStencilRenderer {
             Matrix4f projectionMatrix,
             LightmapTextureManager lightmap,
             float tickDelta) {
-        RemoteWorld view = RemoteWorldRegistry.viewOf(portal.destinationDim());
+        RemoteWorld view = RemoteWorldRegistry.viewOf(portal);
         Vec3d remoteCameraPos = behindCameraPos(view, portal, camera.getFocusedEntity());
         Camera remoteCamera = PortalRenderState.remoteCamera();
         Vec2f remoteLook = aimCamera(remoteCamera, remoteCameraPos, portal, camera, REMOTE_POSITION);
@@ -707,7 +707,7 @@ public final class PortalStencilRenderer {
             Matrix4f projectionMatrix,
             LightmapTextureManager lightmap,
             float tickDelta) {
-        RemoteWorld view = RemoteWorldRegistry.viewOf(portal.destinationDim());
+        RemoteWorld view = RemoteWorldRegistry.viewOf(portal);
         if (!capturedThisFrame && view != null && hasChunkAt(view, portal.destinationPos())) {
             int chunks = view.world().getChunkManager().getLoadedChunkCount();
             Framebuffer screen = client.getFramebuffer();
@@ -891,7 +891,7 @@ public final class PortalStencilRenderer {
             float tickDelta,
             boolean draw,
             boolean reduced) {
-        RemoteWorld view = RemoteWorldRegistry.viewOf(portal.destinationDim());
+        RemoteWorld view = RemoteWorldRegistry.viewOf(portal);
         if (view == null) {
             // Destination pas encore annoncee par le serveur : cadre sombre.
             if (draw) {
@@ -1122,7 +1122,7 @@ public final class PortalStencilRenderer {
             LightmapTextureManager lightmap,
             float tickDelta,
             boolean draw) {
-        RemoteWorld innerView = RemoteWorldRegistry.viewOf(inner.destinationDim());
+        RemoteWorld innerView = RemoteWorldRegistry.viewOf(inner);
         if (innerView == null || !hasChunkAt(innerView, inner.destinationPos())) {
             // Pas de donnees pour ce que ce portail montre : cadre sombre, comme un portail trop profond.
             if (draw) {
@@ -1335,7 +1335,7 @@ public final class PortalStencilRenderer {
             client.world = view.world();
             clientAccessor.backrooms$setWorldRenderer(view.renderer());
             // Le look et les neons de la dimension vue, pour chaque shader que la vue active ; ceux de la vue englobante reprennent apres.
-            LookFrame.pushView(view.world(), viewCameraPos, positionMatrix, tickDelta, screenArea(client, framePosition != null));
+            LookFrame.pushView(view.world(), viewCameraPos, positionMatrix, tickDelta, screenArea(client, framePosition != null), frame);
             looked = true;
             if (ownLightmap) {
                 ViewLightmaps.bind(client, lightmap, view.world(), tickDelta);
@@ -1388,7 +1388,7 @@ public final class PortalStencilRenderer {
                 GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM), fog[0], fog[1], fog[2]);
         for (int i = 0; i < VISIBLE.size(); i++) {
             BackroomsPortalEntity portal = VISIBLE.get(i);
-            RemoteWorld view = RemoteWorldRegistry.viewOf(portal.destinationDim());
+            RemoteWorld view = RemoteWorldRegistry.viewOf(portal);
             ModConstants.LOGGER.info("[Portal] Portail {} vers {}, vue {} : {}.",
                     portal.getBlockPos().toShortString(),
                     portal.destinationDim().getValue(),

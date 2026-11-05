@@ -97,8 +97,9 @@ Le point `terrain_after` joue comme `main_after`, dans les seuls shaders du terr
 `lit_after` dans ceux qui ont la sortie `lightMapColor` (les entités).
 
 Le mod livre deux patchs, qui visent `rendertype_*` et `particle` sauf le texte, l'interface, le contour des entités et
-les nuages. `world_fragment.json` insère `neon_schedule.glsl`, `look_grade.glsl` et `look.glsl`, puis fait passer la
-sortie par `gtgs_applyLook`. `world_vertex.json` ajoute sept sorties aux vertex shaders.
+les nuages. `world_fragment.json` insère `neon_schedule.glsl`, `look_grade.glsl`, `area_light.glsl`, `block_march.glsl`,
+`surface_light.glsl`, `body_box.glsl`, `neon_block.glsl` (le bloc des néons et des corps), `body_shadow.glsl` (les ombres des corps) et
+`look.glsl`, puis fait passer la sortie par `gtgs_applyLook`. `world_vertex.json` ajoute sept sorties aux vertex shaders.
 
 - `gtgs_ViewPos` : la position en espace caméra.
 - `gtgs_WorldRel` : la position relative à la caméra, dans les axes du monde.
@@ -194,6 +195,87 @@ Mesuré dans une copie d'un monde de l'auteur : 480 sections en trois états, 7,
 pour une section de la zone ; le loin se remplit en une dizaine de secondes après une arrivée. La copie du monde va jusqu'à neuf
 sections, huit par tick ; une section qui sort du loin est effacée de la texture puis oubliée (`LightZone.forgetFar`). Seule la zone
 prévient le cache de surfaces et la grille des blocs.
+
+Une vue de portail qui montre un monde à lumière cuite hors de ce que couvre la zone du joueur (une autre dimension, ou le même monde,
+loin) a sa propre zone, cuite autour de la caméra de cette vue : celle du portail visible le plus proche (`LightCopy.followView`).
+Elle a son loin, son cache de surfaces, sa grille des blocs et ses rebonds tracés (`LightSurfaces.VIEW`, `LightBounces`), et ses corps
+qui font de l'ombre (les huit plus proches de la caméra de la vue, `EntityShadows`) : la vue a le palier choisi, comme la zone du joueur,
+et rien ne sépare à l'œil, dans le même Level 0, ce que montre le cadre de ce qu'on verrait de l'autre côté. Chaque vue lit la zone qui
+couvre sa caméra, celle du joueur d'abord (`LightVolume.enterView`, `ZoneTextures`), et rend celle de la vue qui la contient en sortant ;
+aucune ne la couvrant, elle garde la lightmap. Le fil de cuisson fait avancer la zone du joueur, puis celle de la vue. Les deux caches
+partagent leur programme ; celui du joueur passe d'abord (1,5 ms par image pour les tuiles, autant pour les rebonds), celui de la vue
+ne calcule qu'aux images où celui du joueur n'a rien calculé ni rien en attente, et en moins de temps (0,5 ms pour les tuiles, autant
+pour les rebonds) : la vue se remplit moins vite, mais une image ne coûte pas plus d'une demi-milliseconde de plus. Mesuré au banc
+(1080p, RTX 5070 Ti, Ultra, copie d'un monde de l'auteur, cadre de trois sur quatre à trois blocs) : 308 images par seconde à l'arrêt
+contre 354 au dernier commit, sans vue au palier choisi ; en marchant devant lui, 3,4 ms par image en moyenne contre 3,0. Le cache d'une vue pèse
+environ 150 Mio de mémoire graphique (128 pour les tuiles, 16 pour les rebonds, 6 pour l'indirection), créé à la première vue qui en a
+besoin, en High et en Ultra, plus 9 Mio par niveau de vue pour le cache des ombres des corps (`BodyShadows`). Avec sa texture de zone
+(24 Mio) et son loin (30 Mio), la zone d'une vue tient environ 200 Mio. Une minute sans vue qui la montre, elle les rend à la carte
+graphique (`LightVolume.releaseIdleView`, option `gtgsbackrooms.look.viewLightReleaseSeconds`), comme un monde distant que plus aucun
+portail ne montre : un aller-retour devant un cadre ne coûte rien, une vue qui revient plus tard recrée tout et reprend ses tuiles,
+avec la lumière de sa zone le temps de les calculer.
+
+#### Lumière à travers un portail
+
+Entre deux endroits à lumière cuite (deux niveaux des Backrooms, ou deux endroits du même), un portail est une continuité : la
+lumière le passe comme si les deux endroits se touchaient, dans les deux sens. Un portail vers ou depuis un monde sans lumière cuite
+(l'Overworld) n'est rien pour elle, et aucune lumière vanilla n'y entre. Le plan d'un portail visible est à la fois un mur et un
+passage (`PortalOpenings`, relevés à chaque tick par `PortalOpeningLights`) :
+
+- **Mur.** Son cadre arrête, dans son monde, les rayons qui le traversent : la lumière d'un néon qui arrive sur le plan part de l'autre
+  côté, et le monde qui est vraiment derrière le cadre ne compte plus pour ce qui est devant lui. Cela vaut pour la lumière directe des
+  dalles, pour les rayons des rebonds de la cuisson et de l'Ultra, pour les tuiles (High, Ultra) et pour les corps. Un portail qui ne
+  laisse pas passer la lumière, ou fermé, n'est qu'un mur.
+- **Passage.** Un portail ouvert qui laisse passer la lumière (`transmits_light`, vrai par défaut) porte la transformation du portail et
+  la zone qui cuit la lumière de l'autre côté (celle du joueur, ou celle de la vue, `LightCopy.zoneCovering`) :
+  - un rayon de rebond de la cuisson qui entre par sa face repart de l'arrivée, dans les blocs de cette zone (une fenêtre de blocs à
+    part, quatre passages par section au plus), et ramène l'éclairement de la surface qu'il y touche, au même état que chez une voisine :
+    la lumière directe au premier rebond, elle et le premier rebond au second. Ce que les murs éclairés de là-bas renvoient entre donc de
+    ce côté avec sa direction, à tous les paliers ;
+  - les néons de l'autre côté, devant son arrivée, à portée d'une dalle, allumés au calendrier, la face libre et rien d'opaque entre eux
+    et le centre de l'arrivée ou le milieu d'un de ses quarts (vingt-quatre au plus, les plus proches), sont reportés de ce côté, derrière le cadre. Chacun éclaire comme un néon,
+    mais seulement par l'ouverture : quatre rayons vers sa face, qui comptent s'ils passent le cadre, que rien ne les arrête de ce côté,
+    ni de l'autre jusqu'au néon. Le faisceau a la forme de l'ouverture et sa direction, et les blocs des deux côtés lui font de l'ombre.
+    Les tuiles le calculent au pixel ; sans les blocs de l'autre côté, elles ne vérifient que le chemin d'un néon à l'arrivée, de ces
+    cinq points ;
+  - pour les shaders, qui ne marchent que dans les blocs de leur monde, la cuisson mesure ce qui sort du passage (`LightZone.passageLight`) :
+    seize directions qui entrent par sa face, réparties comme les rayons, chacune partie des quatre quarts du cadre dans les blocs de
+    l'autre côté. Un rebond tracé de l'Ultra qui entre dans le passage reprend la direction mesurée la plus proche ; les corps
+    reçoivent leur moyenne, comme d'une fenêtre.
+
+Un portail sans cadre de retour (aller simple, ou sortie fugace hors du regard) a tout de même une arrivée : pour la lumière, elle est
+un passage vers l'entrée, avec la transformation inverse du portail, la zone qui cuit la lumière autour de l'entrée et les néons de là-bas
+reportés derrière elle (`PortalOpeningLights.returnPassages`), dès que la zone de ce côté couvre l'arrivée et qu'aucun portail n'a son
+centre à cet endroit. Sans cela, ce qu'on voit par l'entrée d'un aller simple n'avait rien de la lumière de ce côté : un couloir éclairé
+bouché par un tel cadre montrait, dès le plan, un sol noir (banc : 93 niveaux avant le plan, 4 juste après ; avec un cadre de retour,
+92). Conséquence assumée : du côté de l'arrivée, la lumière de l'entrée continue d'entrer par cette fenêtre invisible tant qu'une zone
+cuit autour de l'entrée (le joueur ou une vue y sont), aller simple ou non.
+
+Les deux faces d'un portail double sont dans le même plan : un rayon passe par celle où il entre, l'autre le prenant de dos (prendre la
+première de la liste arrêtait la lumière au hasard de l'ordre des portails). Près du plan, une surface lit la zone de son côté
+(`gtgs_frameSide`) : pour un plan au bord d'un bloc, dans la première cellule toute de son côté ; pour un plan au milieu d'un bloc, la
+cellule coupée se lit jusqu'au plan, à 5 cm près, parce que la cuisson la calcule du côté où le cadre s'ouvre (`SectionBaker.offPlane`
+: le point d'une face de cellule qui tombe sur le plan passe d'un cheveu de ce côté). Cuite sur le plan même, cette cellule ne voyait
+pas le portail et se sautait à la lecture : la lumière de la zone faisait une marche de 20 niveaux au pied du cadre en Low et en
+Medium, et les rebonds de la zone, en High, dessinaient les murs derrière le plan bloc par bloc. Ce qui est posé au bord du cadre (les murs, le sol et le plafond d'un couloir qu'il bouche)
+compte comme dedans, à 5 cm près : sans cette marge, l'arrondi des positions le mettait d'un côté ou de l'autre d'un pixel à l'autre, et
+le bord du cadre, moucheté, scintillait en marchant (sous l'Ultra, dont les rebonds tracés ne lisent pas la zone). La lecture filtrée des rebonds tracés de l'Ultra reste elle aussi de son côté, à un
+demi-pixel de leur tuile au moins : un liseré plus sombre suivait sinon le pied du cadre. Les sections que ces rayons vont lire de l'autre côté se cuisent d'abord, à la demande,
+comme des voisines. Tant que l'autre côté n'est pas cuit, le cadre ne fait rien : un rayon qui y arrive avant sa section continue de ce
+côté comme sans portail, un portail dont aucune zone ne cuit l'autre côté n'est ni un mur ni un passage, et les rebonds de l'Ultra
+traversent un passage pas encore mesuré, plutôt qu'un mur sombre qui s'éclaircirait ensuite. Quand la mesure d'un passage arrive ou
+change (l'autre côté cuit, un bloc qui y change), les rebonds tracés repartent en balayage (`LightSurfaces.followPassages`) : sans
+cela, ceux calculés avant la mesure gardaient un passage noir, et la vue d'un portail aller-retour perdait en Ultra jusqu'à un quart
+de la lumière de son mur du fond au banc, 13 % au test, le cadre de retour comptant pour rien (`two_way_view_matches_its_rebake`). Une mesure égale à la
+précédente, à un millième près, ne relance rien : la cuisson en refait une à chaque section cuite. Un bloc qui change de l'autre
+côté fait recuire ce qui est à portée d'une dalle du cadre, un quart de seconde après le dernier changement, puis, de l'autre côté, ce
+qui est près du cadre de retour : une fois, sans aller-retour sans fin. Une forme qui change (cadre posé ou retiré, néon vu qui arrive ou
+part, autre zone de l'autre côté) fait recuire les sections à portée et recalculer les tuiles autour des cadres. Les shaders reçoivent
+quatre cadres et seize néons vus au plus par vue (`PortalLightUniforms`). La continuité se vérifie par un portail qui mène à sa propre place : la lumière cuite autour de lui est celle sans portail, à 2 % près devant le cadre (`PortalOpeningsTest`). À l'image, le juge est la couture : un portail vers un couloir construit comme la suite exacte de celui
+qu'il bouche donne la même image que ce couloir sans portail, joueur visible (lumière, ombre du joueur, halo). Au banc du 4 novembre
+2026, aller-retour comme aller simple, l'écart moyen est de 0,2 niveau en Low et en Medium, 0,4 à 0,5 en High et 1,2 en Ultra. Le test
+(`portal_matches_a_continuous_corridor`) tolère sur une bande de lignes 1,5 niveau de Low à High et 4 en Ultra, où le mur sombre du
+fond reçoit trop de ce qui sort du passage (limite plus bas). Un petit cadre reste une porte : d'une salle éclairée à un couloir sombre, le sol devant un cadre d'un bloc sur deux reçoit ce qu'une porte de cette taille laisse passer.
 
 Dans le noir, chaque pixel de texture tire un petit écart de lumière, fixe (`dark_pixels`) : c'est l'effet sombre pixelisé. Il
 s'efface en pleine lumière et entre 8 et 20 blocs, où il ne ferait que du bruit. La face d'un néon brille d'elle-même, et les
@@ -296,7 +378,15 @@ Trois effets dépendent de la vue et se calculent au fragment, pour les dix néo
 
 - Le halo (`gtgs_airGlow`) : la lumière que l'air renvoie vers la caméra, l'intégrale exacte d'une source ponctuelle sur le
   rayon, sans marche, pesée par `haze`. Il ne vaut que pour les rayons qui passent à moins de trois blocs d'une dalle : un
-  voile sur toute l'image ferait un brouillard.
+  voile sur toute l'image ferait un brouillard. Dans la vue d'un portail, la caméra est derrière le plan d'arrivée, à la
+  distance de l'œil du joueur à son cadre : jusqu'à ce plan (`gtgs_ViewPlane`, posé par vue dans le bloc des néons), le
+  rayon traverse l'air du monde du joueur, devant le cadre. L'intégrale des néons de la vue ne part que du plan, et celle
+  d'avant le plan reprend exactement le halo du joueur : ses dix néons, avec leur état et leur part dans la liste des plus
+  proches, passés par le portail (`gtgs_Halo`, `NeonLights.haloBefore`). Sans cela, le cadre coupait net le halo d'un tube
+  proche de lui (le plafond devant le cadre avait son halo, la vue non), et les tubes de là-bas derrière l'arrivée prêtaient un
+  halo à l'air de ce côté. Une première version prenait les néons vus par le cadre d'arrivée (`gtgs_Seen`) : de loin, les tubes
+  près du cadre n'étaient pas parmi les dix du joueur, et la vue avait un halo que l'image du joueur n'avait pas (une tache
+  claire en haut du mur du fond, +27 niveaux en Ultra à 20 blocs du cadre).
 - Le reflet (`gtgs_gloss`), en High et en Ultra, sur toute face dont la [matière](#matière-des-blocs) le demande, pesé par `sheen`.
 - La lumière des entités et de la main (`gtgs_entityLight`). Sous la lumière cuite, leur vertex ne porte plus la lightmap
   (point `lit_after`) : elles reçoivent le fond du profil, la direction réelle des néons proches, et ce que la pièce leur
@@ -338,14 +428,19 @@ partir de High, comme le veut `QUALITE_ET_PRESETS` §5.6.
 - Le relief du cache de surfaces lit la pente de la table, multipliée par `relief`.
 - L'épaisseur (`gtgs_enterPile`) : sur une matière qui a une hauteur, le regard entre par le haut, dix pas sur 0,08 bloc, et s'arrête au
   premier pixel qui dépasse. Le fragment prend la couleur et la lumière de ce pixel : les brins se cachent les uns les autres et bougent
-  avec la caméra. Les creux perdent un peu de lumière et les pointes en gagnent, plus en Ultra, où la texture calmée ne porte plus ce
+  avec la caméra. Sa lumière ne se lit jamais de l'autre côté du plan d'un portail : le sol derrière le cadre a celle de l'autre face, et
+  une bande sombre suivait le pied du cadre ; devant le plan, la lecture s'arrête juste avant lui (`gtgs_keepBefore`, `GTGS_BEFORE_WALL`) au lieu de revenir
+  d'un coup sur place, ce qui dépendait du regard et faisait scintiller la moquette au pied du cadre en marchant. Les creux perdent un peu de lumière et les pointes en gagnent, plus en Ultra, où la texture calmée ne porte plus ce
   contraste ; un pixel plat n'est ni l'un ni l'autre. Elle s'efface de 10 à 16 blocs, et l'option de relief la coupe.
 - Le calme des textures (`gtgs_calmed`, à tous les paliers) laisse leur couleur aux pixels tout en haut d'une matière presque plate :
   le rail d'une dalle est une pièce à part, pas du grain, comme le sont les brins d'une moquette. Sans cela, un rail mat disparaît en Ultra.
 - Le reflet (`gtgs_gloss`) lit le lissage, et penche sa normale selon la pente du pixel. Sur un pixel mat, il s'arrête là : ni boucle
   ni rayon. Sinon, chaque dalle proche se voit au point de son rectangle le plus proche du miroir, avec le lobe de ce lissage, plus
   fort en rasant. Un rayon dans la grille vérifie qu'elle est visible, quatre sur sa surface en Ultra : un mur ou un corps coupe le
-  reflet. Il s'éteint de 16 à 32 blocs de la caméra.
+  reflet. Il s'éteint de 16 à 32 blocs de la caméra. Les dalles de l'autre côté d'un portail, vues par son cadre, se reflètent de même,
+  par l'ouverture seulement (chaque rayon compte s'il passe le cadre, rien ne l'arrêtant de ce côté jusqu'au cadre ni un corps de
+  l'autre), avec l'axe de leur face reportée : sans cela, une surface brillante perdait leur reflet au plan alors que leur lumière
+  continuait.
 
 ### Lightmap et brouillard
 
@@ -368,8 +463,9 @@ End) et ceux d'un monde à look sont reproduits ; d'autres, ceux d'un autre mod,
 Chaque monde client tient l'index de ses néons (`NeonIndex`, `NeonMap`). Il se remplit des chunks reçus, en ne
 parcourant que les sections dont la palette contient le bloc de néon. Le relevé se fait en fin de tick, dans l'ordre
 d'arrivée, 1,5 ms par tick au plus : une fenêtre de portail reçue d'un coup ne coûte pas une image longue (9 ms pour
-153 chunks du Level 0 en un seul relevé). Il suit ensuite chaque `setBlockState` du monde client et oublie les colonnes
-déchargées.
+153 chunks du Level 0 en un seul relevé). Une recherche autour d'un point (la caméra, l'arrivée d'un portail) relève
+d'abord les chunks encore en file à sa portée, quelques-uns, une fois chacun : ce qu'on demande n'attend pas la fin d'une
+rafale. Il suit ensuite chaque `setBlockState` du monde client et oublie les colonnes déchargées.
 
 Pour chaque vue, `NeonLights` retient les néons les plus proches de sa caméra, huit ou trente-deux selon la qualité. Il
 les envoie dans un bloc d'uniformes `std140`, `gtgs_NeonBlock`, avec leur position, leur portée, leur couleur et leur
@@ -406,19 +502,55 @@ partie, y compris à la première personne.
   cacheraient d'un ciel uniforme : un sol s'assombrit
   sous les pieds, un mur près d'une épaule, jamais de plus de 70 %. En Low et en Medium, c'est la seule ombre des corps, sur toute la
   lumière cuite.
-- **Ombres portées**, en High et en Ultra : le terrain les lit au pixel de texture (`gtgs_casterShade`), par des rayons vers toute la
-  surface de chaque dalle à portée. L'ombre est donc nette au contact et se dilue en s'éloignant. Un rayon arrêté par un corps ne compte
-  que si la grille des blocs le laissait passer : un corps ne fait pas d'ombre à une dalle qu'on ne voit pas d'ici. La grille se parcourt
-  une fois par dalle, vers son centre, au premier rayon arrêté ; si les blocs cachent ce centre, chaque rayon arrêté refait la sienne. Le
-  retrait se fait après la courbe du cache, en part de ce que la surface reçoit vraiment. Un tri garde le coût : seuls les corps à moins
-  de 10 blocs comptent, puis, par dalle, seules les boîtes que le rayon vers son centre frôle, boîte grossie de la demi-taille de la
-  dalle (`gtgs_hitsBox`, `shaders/include/body_box.glsl`) : tout autre rayon vers elle passe à moins de cette distance de lui. Les reflets
-  s'arrêtent aux mêmes boîtes. Au banc, 1080p, RTX 5070 Ti, vue plongeante sur un corps à trois blocs : un villageois, une vache ou un
-  golem coûtent 1,3 à 1,8 ms de GPU en Ultra, 0,8 à 1,1 ms en High, autant ou moins que les cylindres qui les remplaçaient.
+- **Ombres portées**, en High et en Ultra : par des rayons vers toute la surface de chaque dalle à portée (`gtgs_casterRemoved`,
+  `shaders/include/body_shadow.glsl`). L'ombre est donc nette au contact et se dilue en s'éloignant. Un rayon arrêté par un corps ne
+  compte que si la grille des blocs le laissait passer : un corps ne fait pas d'ombre à une dalle qu'on ne voit pas d'ici. La grille se
+  parcourt une fois par dalle, vers son centre ; si les blocs le cachent tout entier, par le milieu d'une face, la dalle est cachée toute
+  entière ; s'ils ne le cachent que de justesse, chaque rayon arrêté refait la sienne. Le retrait se fait après la courbe du cache, en
+  part de ce que la surface reçoit vraiment : chaque dalle y compte à son point le plus proche, comme la tuile qui reçoit sa lumière,
+  celles vues par un cadre comprises. Visée à leur centre, la part retirée d'un néon de l'autre côté d'un portail était trop faible, et
+  la pénombre du joueur collé au cadre s'éclaircissait derrière le plan (jusqu'à 9 niveaux sur une bande, en High, au banc). Un tri garde le coût : seuls les corps à moins de 10 blocs comptent, puis, par dalle, seules
+  les boîtes que le rayon vers son centre frôle, boîte grossie de la demi-taille de la dalle (`gtgs_hitsBox`,
+  `shaders/include/body_box.glsl`) : tout autre rayon vers elle passe à moins de cette distance de lui. Les reflets s'arrêtent aux mêmes
+  boîtes.
 
-Ces ombres remplacent le disque d'ombre de vanilla (`MixinEntityRenderDispatcher`) : sous un corps retenu, dans la vue du joueur dont
-le terrain lit la lumière cuite. Ailleurs (Overworld, vue de portail, terrain dessiné par un autre mod, corps au-delà des huit), vanilla
-garde son disque.
+  Ce calcul se fait **une fois par texel, pas par pixel** : à chaque image, pour chaque vue, la passe des ombres des corps (`BodyShadows`,
+  `shaders/bake/body_shadow.fsh`) le fait pour chaque texel des tuiles du cache de surfaces qui sont à portée d'un corps (10 blocs plus la
+  demi-diagonale d'un bloc), publiées, et dont la cellule grossie d'un bloc entre dans le frustum de la camera (`BodyShadowTiles`), au
+  centre du texel, le point même que le terrain lit sur la grille des texels ; elle écrit ce que les corps retirent, en parts de dalles,
+  dans un cache à part : un atlas d'emplacements de 34 pixels de côté (la tuile et un texel de bordure, 2048 emplacements, 9 Mio en
+  flottants) et une table qui donne l'emplacement de chaque tuile du cache de surfaces (0 : rien à retirer). Le terrain ne fait plus que
+  deux lectures (`gtgs_bodyRemoved`) : sur la grille des texels, le texel ; en lumière lisse (Ultra, ou pixels d'ombre à 0), les quatre
+  texels autour du point, mêlés, la bordure donnant le texel d'à côté au bord de la tuile. Chaque niveau de vue (monde du joueur, vue,
+  vue imbriquée) a son cache, comme son bloc des néons : une vue ne défait pas celui du monde du joueur, dont le terrain translucide se
+  dessine après elle. Avant, le terrain refaisait ce calcul à chaque fragment, et une tuile à trois blocs couvre une centaine de pixels en
+  1080p : dans une grande salle ouverte (beaucoup de sol à l'écran, une grille de dalles visibles), les rayons seuls coûtaient 4 ms par
+  image en Ultra. Au banc de performance (grande salle d'un monde de l'auteur, 1080p, RTX 5070 Ti, distance de vue 12, à l'arrêt) : Ultra
+  127 puis 478 images par seconde, High 217 puis 590, contre 537 et 588 sans aucune ombre de corps.
+
+Ces ombres remplacent le disque d'ombre de vanilla (`MixinEntityRenderDispatcher`) : sous un corps retenu, dans une vue dont le terrain
+lit la lumière cuite, celle du joueur comme celle d'un portail qui a sa zone (les corps retenus pour elle, autour de sa caméra). Ailleurs
+(Overworld, vue qui garde la lightmap, terrain dessiné par un autre mod, corps au-delà des huit), vanilla garde son disque. Les néons vus
+par un portail qui laisse passer la lumière font aussi des ombres portées : leurs rayons ne comptent que s'ils passent par l'ouverture.
+Un néon de ce monde qui est derrière un cadre n'éclaire pas ce côté, à la cuisson comme dans les shaders : il n'y fait ni l'ombre d'un
+corps, ni de reflet, ni de halo dans l'air, et n'éclaire pas les corps (`gtgs_walled` dans `gtgs_casterRemoved`, `gtgs_gloss`,
+`gtgs_airGlow`, `gtgs_entityLight`). Au banc, un couloir bouché par un cadre, un néon juste derrière : le villageois devant le cadre
+jetait vers le joueur une ombre que le même couloir bouché par un mur n'a pas (sol 15 niveaux plus sombre), il n'en jette plus
+(`frame_blocking_a_corridor`). Les corps de l'autre côté se testent dans une boucle à eux, après ceux de ce côté : une seule boucle
+qui choisissait le segment corps par corps alourdissait tout le shader du terrain, même sans portail (0,35 ms de GPU au banc). Un cadre qui ne renvoie rien (la lumière ne passe pas, ou l'autre côté est sombre) est plus
+sombre qu'un mur, qui renvoie la lumière : ses abords le sont un peu aussi.
+Les ombres passent le cadre comme la lumière : les corps de l'autre côté, à moins de 8 blocs de l'arrivée et devant elle, sont
+reportés derrière le cadre par la transformation du portail, comme ses néons vus (`EntityShadows.writeBeyond`, `ShadowCasters.beyond`),
+après ceux de ce côté et dans les mêmes huit places. Ils n'arrêtent que la lumière de leur cadre, sur la part du rayon qui va du cadre
+au néon ; un corps de ce côté, celle qui va de la surface au cadre. Au banc, un villageois contre l'arrivée, sous le néon qui éclaire
+par elle, assombrit de 17 % le sol devant l'entrée, dont 2,5 % pour sa seule ombre de contact (`body_beyond_shades_through_the_frame`). Un portail aller simple n'a pas de cadre de
+retour : les corps devant son entrée sont reportés derrière son arrivée, qui en tient lieu pour la lumière
+(`EntityShadows.collectReturns`) ; sans cela, la vue d'un aller simple ne recevait aucun corps, et l'ombre du joueur s'arrêtait
+net au plan. Ces corps reportés partent aux shaders à tous les paliers, et l'ombre de contact les compte, par l'ouverture seulement
+(`gtgs_bodyOcclusion`, le rayon de la surface au cube passe le cadre) : le joueur collé à un cadre a son ombre de part et d'autre
+du plan, en Low comme en Ultra. Les deux faces d'un portail sont dans le même plan, et un corps à moins de sa largeur du plan était
+repris par chacune, au même endroit : un corps ne compte qu'une fois, par la face devant laquelle il est le plus, sinon son ombre
+de contact, qui s'additionne, doublait (13 niveaux trop sombre en Low au banc).
 
 Les entités et la main reçoivent le même calcul de dalle que le terrain, à sa même échelle. En High et en Ultra, un rayon par dalle
 dans la grille les laisse dans l'ombre des murs : l'ombre d'un bloc les traverse, en marches sur une grille de seize par bloc.
@@ -464,9 +596,9 @@ qui ne vaut que pour les autres paliers. La part vue d'une dalle n'est plus mise
 
 La grille des blocs porte l'indice de la matière, et `gtgs_Materials` sa couleur moyenne et si elle émet. Cette grille ne couvre que la
 zone et se répète au-delà : hors d'elle, à plus de 48 blocs ou à une autre hauteur, le contraste d'une texture se calme d'après le plus
-petit niveau de la texture elle-même, sans quoi il changerait par carrés de sections. Tout tient dans des shaders en GLSL 150, sans calcul GPU ni G-buffer : l'Ultra n'est jamais grisé. Il ne s'applique
-qu'à la vue du joueur : une vue de portail garde les rebonds de la zone et le reflet du palier High. Un shader refusé par le pilote
-coupe les rebonds pour la session, et le terrain garde ceux de la zone.
+petit niveau de la texture elle-même, sans quoi il changerait par carrés de sections. Tout tient dans des shaders en GLSL 150, sans calcul GPU ni G-buffer : l'Ultra n'est jamais grisé. Il s'applique
+aussi à une vue de portail qui a sa zone, avec les rebonds de son cache. Un shader refusé par le pilote coupe les rebonds pour la
+session, et le terrain garde ceux de la zone.
 
 Mesure du 1er novembre 2026, marche réelle sur 437 blocs d'une grande salle ouverte, sur une copie d'un monde de l'auteur, distance de vue 12,
 1080p, RTX 5070 Ti, calcul des tuiles et des rebonds compris : 325 images par seconde en Ultra, 6 ms au 99e centile. À l'arrêt : High 0,8 ms, Ultra 1,5 ms de GPU. Le chronomètre de `GpuTimer` démarre après ce calcul : ce pic a été mesuré en le déplaçant,
@@ -555,7 +687,10 @@ assombrissement : le jeu tourne derrière, et chaque choix se voit aussitôt.
   le cadre (jamais sans secousse). Ni gris ni noirs relevés : la couleur reste celle du look, un peu plus dense, et les coins
   s'assombrissent. Sans grain, le bruit de la cassette tombe à 30 %. Le cinématique pose des bandes noires, un grain de film et un
   contraste plus dense. En quittant les Backrooms (portail, commande, réapparition), le style revient à Fidèle et s'enregistre ; le
-  palier et le confort restent (`LookResources.onClientTick`). Une partie rejointe hors des Backrooms n'est pas une sortie.
+  palier et le confort restent (`LookResources.onClientTick`). Une partie rejointe hors des Backrooms n'est pas une sortie. Le style
+  est celui de la caméra : un monde sans look vu par un portail (l'Overworld depuis le Level 0) reçoit lui aussi le cadre, l'objectif,
+  le signal de la cassette, les bandes noires et la vignette, en gardant ses couleurs (une passe du post sous le stencil du look
+  vanilla, sans étalonnage, `LookPost`) ; sans elle, le cadre du portail faisait un trou dans l'effet.
 - **Ombres pixelisées** : oui (32 pixels par bloc, ceux des textures) ou non. Sans, la lumière s'interpole entre les pixels de la tuile.
 - **Confort** : sans flash, sans secousse, sans grain.
 - **Avancé** : chaque effet un par un, et le temps GPU du monde, du bloom et du post sur la dernière seconde, mesuré tant que cet
@@ -748,10 +883,26 @@ sortie est décrite dans [AUDIO.md](AUDIO.md#diagnostic).
 
 - Sous un pack, chaque bascule reconstruit le terrain, et les sections réapparaissent en quelques images.
 - La lumière cuite n'atteint que le terrain des shaders patchés, et un mod de terrain garde la lightmap. En Low et en Medium, la lumière
-  des entités ignore les murs : un néon derrière une cloison les éclaire. Il n'y a qu'une zone à la fois : une vue vers un autre endroit du même
-  monde, loin de la caméra, garde la lightmap, et son image change à la traversée.
-- Seuls les corps vivants font de l'ombre (ni objets, ni véhicules, ni invisibles), huit au plus, sur le terrain seulement : un
-  corps n'en fait pas sur un autre, ni dans une vue de portail, plafonnée sous ce palier. En Low et en Medium, seule l'ombre de contact.
+  des entités ignore les murs : un néon derrière une cloison les éclaire. Il y a deux zones au plus : celle du joueur et celle du portail
+  visible le plus proche qu'elle ne couvre pas ; une vue plus loin encore garde la lightmap. Le cache d'une vue ne calcule qu'aux
+  images que celui du joueur laisse libres : en marchant, une vue tout juste ouverte garde la lumière de sa zone le temps de prendre
+  ses tuiles. Une vue qui change de portail repart de zéro (zone, tuiles et rebonds).
+- À travers un portail, la lumière passe pour un endroit que couvre la zone du joueur ou celle de la vue : vers un endroit qu'aucune ne
+  couvre (un second portail lointain), le cadre n'est qu'un mur pour les rebonds, et seuls ses néons vus passent. Les rebonds du loin
+  (au-delà de 48 blocs) ne passent pas les cadres. Un néon vu par un portail ne vacille pas avec le calendrier (comme toute la lumière
+  cuite), et les tuiles ne vérifient son chemin de l'autre côté que depuis l'arrivée. Les corps ne font d'ombre qu'aux néons vus par le
+  portail, en High et en Ultra, pas à ce que renvoient les murs de là-bas ; l'ombre d'un corps de l'autre côté ne tient pas compte
+  des blocs de là-bas entre lui et le néon. En
+  Ultra, ce qui sort d'un passage est mesuré en seize directions, la même sur tout le cadre (au banc de la couture, le mur sombre au
+  fond d'un couloir vu par le cadre en reçoit trop : 16,6 de luminance contre 12,4 dans le couloir continu, 7,1 sans cette lumière), et un liseré un peu plus sombre, de deux
+  ou trois pixels, reste au pied d'un cadre vu de près (cause non trouvée ; le High ne l'a pas). La continuité suppose la même géométrie
+  des deux côtés : un cadre debout au milieu d'une salle reçoit aussi, par ses côtés, la lumière des néons qui sont derrière lui, que
+  l'autre côté ne voit pas si son cadre bouche un couloir ; d'où un écart d'environ 10 % au plan, mesuré dans une copie d'un monde de
+  l'auteur, d'une salle éclairée à une alcôve sombre par un cadre de trois sur quatre. Quatre cadres et seize néons vus au plus
+  par vue pour les shaders : au-delà, les plus éloignés sont ignorés par les tuiles et les corps, pas par la cuisson. Un portail invisible
+  n'est ni un mur ni un passage.
+- Seuls les corps vivants font de l'ombre (ni objets, ni véhicules, ni invisibles), huit au plus par zone, sur le terrain seulement :
+  un corps n'en fait pas sur un autre. Dans une vue de portail sans zone à elle, aucun. En Low et en Medium, seule l'ombre de contact.
   La forme suit le dessin du modèle, pas ce que ses couches ajoutent (armure, objet tenu, selle, laine d'un mouton) ; seize cubes au
   plus par corps, les plus grands gardés. Poser un corps passe par les appels de son dessin, qui allouent un peu : 32 octets par corps et
   par image (le quaternion de sa rotation), et quelques chaînes pour un corps qui porte un nom ; le joueur, debout ou en marche, se
@@ -811,7 +962,11 @@ La logique pure a ses tests unitaires, de `ShaderPatcherTest` à `NeonMapTest`. 
 couleur des biomes à celle de vanilla, au bit près, sur des milliers de points et pour chaque effet de dimension. `MixinTargetsTest` vérifie
 que les mixins du moteur s'appliquent. Dans un vrai client, `LevelZeroClientTests` vérifie le look du Level 0, les néons
 envoyés, la couleur du brouillard et le jumeau GLSL, et que la couleur des biomes du mod est celle de vanilla dans
-l'Overworld comme dans le Level 0 (`biome_colors_match_vanilla`). `SettingsMenuClientTests` vérifie le menu : icône absente hors des Backrooms, à l'écran et juste à gauche de la première rangée dans
+l'Overworld comme dans le Level 0 (`biome_colors_match_vanilla`). `LightContinuityClientTests` vérifie aussi la zone d'une vue de
+portail (`view_reads_its_zone` à 60 blocs, montrée par le monde du joueur ; `far_view_reads_its_zone` à 300 blocs, montrée par
+l'ailleurs du Level 0) et la lumière à travers un portail (`portal_light_reaches_the_zone` : l'ouverture comptée par la zone, le sol devant
+le cadre plus clair dans la texture de zone, l'ouverture envoyée aux shaders, puis tout revient quand le portail part) ; `PortalOpeningsTest`
+vérifie les ouvertures dans la cuisson. `SettingsMenuClientTests` vérifie le menu : icône absente hors des Backrooms, à l'écran et juste à gauche de la première rangée dans
 le Level 0, et chaque choix appliqué en direct ; le style VHS pose sa bande noire dans le Level 0, revient à Fidèle en sortant,
 le palier restant, et ne laisse rien dans l'Overworld (`tape_only_in_backrooms`). `EngineRulesClientTests` vérifie le seuil du bloom, le stencil d'un
 framebuffer recréé et le sampler du dessin plein écran. `LookGradeClientTests` compare l'étalonnage et la lumière au

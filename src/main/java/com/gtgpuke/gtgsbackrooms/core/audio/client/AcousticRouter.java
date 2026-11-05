@@ -405,9 +405,22 @@ public final class AcousticRouter {
         return client.gameRenderer.getCamera().getSubmersionType() == CameraSubmersionType.WATER;
     }
 
+    /**
+     * Le monde client qui tient la vraie source d'un son : celui du joueur pour un son sans ancre, celui de sa dimension, ou, loin
+     * dans le monde du joueur, son ailleurs ({@link RemoteWorldRegistry#holding}) : le monde du joueur n'a pas ces chunks, et
+     * l'acoustique s'y calculait sur du vide.
+     */
+    private static @Nullable ClientWorld worldOfSource(ClientWorld world, @Nullable SoundAnchors.Anchor anchor) {
+        if (anchor == null) {
+            return world;
+        }
+        ClientWorld dimension = RemoteWorldRegistry.worldOf(anchor.world());
+        return dimension == world ? RemoteWorldRegistry.holding(world, anchor.source().x, anchor.source().z) : dimension;
+    }
+
     /** {@code true} si la vraie source d'un son est dans l'eau, dans son monde. */
     private static boolean sourceInWater(SoundInstance sound, @Nullable SoundAnchors.Anchor anchor, ClientWorld world) {
-        ClientWorld sourceWorld = anchor == null ? world : RemoteWorldRegistry.worldOf(anchor.world());
+        ClientWorld sourceWorld = worldOfSource(world, anchor);
         if (sourceWorld == null) {
             return false;
         }
@@ -426,7 +439,7 @@ public final class AcousticRouter {
      * ce qu'il a.
      */
     private static void request(MinecraftClient client, ClientWorld world, SoundInstance sound, @Nullable SoundAnchors.Anchor anchor, AudioProfile profile) {
-        ClientWorld sourceWorld = anchor == null ? world : RemoteWorldRegistry.worldOf(anchor.world());
+        ClientWorld sourceWorld = worldOfSource(world, anchor);
         if (sourceWorld == null) {
             return;
         }
@@ -446,7 +459,7 @@ public final class AcousticRouter {
             if (!portal.visible() || !portal.teleportable() || portal.squaredDistanceToFrame(sx, sy, sz) > AcousticEvaluator.MAX_RAY * AcousticEvaluator.MAX_RAY) {
                 continue;
             }
-            ClientWorld arrivalWorld = RemoteWorldRegistry.worldOf(portal.destinationDim());
+            ClientWorld arrivalWorld = RemoteWorldRegistry.worldOf(portal);
             SolidityGrid arrivalGrid = arrivalWorld == null ? null : SolidityIndex.grid(arrivalWorld);
             if (arrivalGrid != null) {
                 PLANES.add(portal.facingSource(), portal.getPos(), portal.width(), portal.height(), portal.facingDestination(), portal.destinationPos(), arrivalGrid);
@@ -466,7 +479,7 @@ public final class AcousticRouter {
 
     /** La reverb connue de la cellule de la source d'un son qui part, ou celle de base. */
     private static int knownPreset(SoundInstance sound, @Nullable SoundAnchors.Anchor anchor, ClientWorld world) {
-        ClientWorld sourceWorld = anchor == null ? world : RemoteWorldRegistry.worldOf(anchor.world());
+        ClientWorld sourceWorld = worldOfSource(world, anchor);
         if (sourceWorld == null) {
             return ReverbPresets.BASE;
         }
@@ -491,7 +504,7 @@ public final class AcousticRouter {
         float total = listenerSegment(client, world, sound, anchor, rule);
         Vec3d arrival = anchor == null ? null : anchor.arrival();
         if (arrival != null) {
-            ClientWorld sourceWorld = RemoteWorldRegistry.worldOf(anchor.world());
+            ClientWorld sourceWorld = worldOfSource(world, anchor);
             if (sourceWorld != null) {
                 Vec3d source = anchor.source();
                 total = OcclusionTrace.combine(total, trace(sourceWorld, source.x, source.y, source.z, arrival.x, arrival.y, arrival.z, rule), rule);

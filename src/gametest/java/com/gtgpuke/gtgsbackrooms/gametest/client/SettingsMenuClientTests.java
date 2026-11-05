@@ -9,6 +9,7 @@ import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.system.MemoryUtil;
 
+import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gui.Element;
@@ -18,12 +19,21 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TexturedButtonWidget;
 import net.minecraft.client.render.GameRenderer;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.world.World;
 
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
+import com.gtgpuke.gtgsbackrooms.core.portal.block.BackroomsPortalBlock;
+import com.gtgpuke.gtgsbackrooms.core.portal.block.BackroomsPortalBlockEntity;
+import com.gtgpuke.gtgsbackrooms.core.portal.block.PortalSettings;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorld;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
+import com.gtgpuke.gtgsbackrooms.core.registry.ModBlocks;
 import com.gtgpuke.gtgsbackrooms.core.render.client.GpuTimer;
 import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
 import com.gtgpuke.gtgsbackrooms.core.render.client.menu.BackroomsSettingsScreen;
@@ -54,7 +64,7 @@ final class SettingsMenuClientTests {
     }
 
     static List<ClientScenario> scenarios() {
-        return List.of(settingsMenu(), tapeOnlyInBackrooms());
+        return List.of(settingsMenu(), tapeOnlyInBackrooms(), tapeCoversAVanillaView());
     }
 
     private static TexturedButtonWidget icon(Screen screen) {
@@ -194,6 +204,70 @@ final class SettingsMenuClientTests {
                     float black = blackSide(context.client());
                     ClientTestContext.require(black < 0.05f, "Part noire de la bande gauche dans l'Overworld : " + black + ".");
                 })
+                .cleanup(context -> {
+                    LookResources.applySettings(LookSettings.defaults(), context.client());
+                    LevelZeroClientTests.backToOverworld(context);
+                });
+    }
+
+    /** Distance du joueur au plan du portail, en blocs : assez pres pour que le cadre couvre toute l'image. */
+    private static final double CLOSE_TO_THE_FRAME = 0.25;
+    /** Chunks de l'Overworld recus avant de tenir sa vue pour prete. */
+    private static final int MIN_VIEW_CHUNKS = 9;
+    private static BlockPos vanillaPortal;
+
+    /**
+     * Le style est celui de la camera du joueur : un monde sans look vu par un portail, l'Overworld depuis le Level 0, prend lui aussi
+     * les bandes noires de la cassette, la ou son cadre couvre le bord de l'image. Sans cela, le cadre y faisait un trou.
+     */
+    private static ClientScenario tapeCoversAVanillaView() {
+        Direction[] ahead = new Direction[1];
+        return ClientScenario.named("tape_covers_a_vanilla_view")
+                .run("dans l'Overworld", LevelZeroClientTests::backToOverworld)
+                .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD, 1200)
+                .run("entree dans le Level 0", LevelZeroClientTests::enterLevelZero)
+                .await("monde du Level 0 cote client", LevelZeroClientTests::inLevelZero, 1200)
+                .await("terrain du Level 0", context -> context.client().worldRenderer.getCompletedChunkCount() > 40, 1200)
+                .run("un portail vers l'Overworld, le joueur tout contre", context -> {
+                    BlockPos feet = context.player().getBlockPos();
+                    for (Direction direction : Direction.Type.HORIZONTAL) {
+                        BlockPos front = feet.offset(direction);
+                        if (ahead[0] == null && context.world().getBlockState(front).isAir() && context.world().getBlockState(front.up()).isAir()) {
+                            ahead[0] = direction;
+                        }
+                    }
+                    ClientTestContext.require(ahead[0] != null, "Aucune place libre devant le joueur.");
+                    vanillaPortal = feet.offset(ahead[0]);
+                    double x = feet.getX() + 0.5 + ahead[0].getOffsetX() * (1.0 - CLOSE_TO_THE_FRAME);
+                    double z = feet.getZ() + 0.5 + ahead[0].getOffsetZ() * (1.0 - CLOSE_TO_THE_FRAME);
+                    context.onServer(server -> {
+                        ServerWorld level = ClientTestContext.serverWorld(server, BackroomsConstants.LEVEL_ZERO_WORLD);
+                        level.setBlockState(vanillaPortal, ModBlocks.BACKROOMS_PORTAL.getDefaultState().with(BackroomsPortalBlock.FACING, ahead[0].getOpposite()));
+                        if (level.getBlockEntity(vanillaPortal) instanceof BackroomsPortalBlockEntity block) {
+                            block.readComponents(ClientTestPortals.wand(PortalSettings.DEFAULT));
+                        }
+                        ClientTestContext.serverPlayer(server).teleport(level, x, feet.getY(), z, ahead[0].asRotation(), 0.0f);
+                    });
+                })
+                .await("vue de l'Overworld prete", context -> {
+                    RemoteWorld view = RemoteWorldRegistry.get(World.OVERWORLD);
+                    return view != null && view.world().getChunkManager().getLoadedChunkCount() >= MIN_VIEW_CHUNKS;
+                }, 1200)
+                .run("style VHS", context -> {
+                    context.player().setYaw(ahead[0].asRotation());
+                    context.player().setPitch(0.0f);
+                    LookResources.applySettings(LookSettings.current().withPreset(VisualPreset.FOUND_FOOTAGE), context.client());
+                })
+                .frames(30)
+                .check("la bande noire couvre aussi l'Overworld vu par le cadre", context -> {
+                    float black = blackSide(context.client());
+                    ClientTestContext.require(black > 0.99f, "Part noire de la bande gauche, l'Overworld dans le cadre : " + black + ".");
+                })
+                .cleanup(context -> context.onServer(server -> {
+                    if (vanillaPortal != null) {
+                        ClientTestContext.serverWorld(server, BackroomsConstants.LEVEL_ZERO_WORLD).setBlockState(vanillaPortal, Blocks.AIR.getDefaultState());
+                    }
+                }))
                 .cleanup(context -> {
                     LookResources.applySettings(LookSettings.defaults(), context.client());
                     LevelZeroClientTests.backToOverworld(context);

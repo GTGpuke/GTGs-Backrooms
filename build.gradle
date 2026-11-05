@@ -87,6 +87,8 @@ loom {
             vmArg "-Dgtgsbackrooms.clientTest.boxVectors=${project.file('src/test/resources/body_box_vectors.json').absolutePath}"
             // Un monde distant sans portail est libere en cinq secondes (le plancher du delai), pas en une minute.
             vmArg '-Dgtgsbackrooms.portal.remoteWorldReleaseSeconds=5'
+            // De meme, la memoire graphique de la zone d'une vue sans vue est rendue en cinq secondes.
+            vmArg '-Dgtgsbackrooms.look.viewLightReleaseSeconds=5'
             activeSystemProperties.each { key, value -> vmArg "-D${key}=${value}" }
             programArgs '--width', '854', '--height', '480'
             environmentVariable 'ALSOFT_DRIVERS', 'null'

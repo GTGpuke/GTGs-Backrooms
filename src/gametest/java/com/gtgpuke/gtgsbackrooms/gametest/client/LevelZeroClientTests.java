@@ -9,10 +9,14 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.CubicSampler;
+import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.source.BiomeAccess;
+import net.minecraft.world.chunk.WorldChunk;
+
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 
 import com.gtgpuke.gtgsbackrooms.backrooms.BackroomsConstants;
 import com.gtgpuke.gtgsbackrooms.backrooms.level0.LevelZeroArrival;
@@ -28,6 +32,7 @@ import com.gtgpuke.gtgsbackrooms.core.render.client.LookResources;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonFaces;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonIndex;
 import com.gtgpuke.gtgsbackrooms.core.render.client.NeonShaderCheck;
+import com.gtgpuke.gtgsbackrooms.core.render.light.NeonSelection;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookQuality;
 import com.gtgpuke.gtgsbackrooms.core.render.quality.LookSettings;
 import com.gtgpuke.gtgsbackrooms.core.render.state.LookState;
@@ -42,6 +47,9 @@ final class LevelZeroClientTests {
     static final String HUM = "gtgs_backrooms:block.neon.hum";
     /** Ticks laisses a la generation et a l'envoi du Level 0 apres le changement de monde. */
     private static final int ARRIVAL_TICKS = 1200;
+    /** Rayon de recherche des neons autour du joueur, en blocs, et chunks redonnes a l'index autour de lui, de chaque cote. */
+    private static final double NEON_REACH = 24.0;
+    private static final int REQUEUED_CHUNKS = 2;
     /** Points ou la couleur des biomes du mod est comparee a celle de vanilla, par monde. */
     private static final int BIOME_COLOR_POINTS = 64;
 
@@ -152,6 +160,8 @@ final class LevelZeroClientTests {
                     ClientTestContext.require(Images.luminance(mean) > 20.0, "Image du Level 0 trop sombre : " + Images.describe(mean) + ".");
                     ClientTestContext.require(Images.yellowish(mean), "Image du Level 0 sans la teinte jaune du profil : " + Images.describe(mean) + ".");
                 })
+                // Apres les mesures de l'image : redonner des chunks a l'index refait aussi leur copie pour la lumiere.
+                .check("neons autour d'un point trouves sans attendre la file de releve", LevelZeroClientTests::neonsFoundAtOnce)
                 .run("retour dans l'Overworld par un changement de monde vanilla", LevelZeroClientTests::backToOverworld)
                 .await("Overworld cote client", context -> context.client().world != null && context.client().world.getRegistryKey() == World.OVERWORLD
                         && context.client().currentScreen == null, ARRIVAL_TICKS)
@@ -162,6 +172,32 @@ final class LevelZeroClientTests {
                             + " monde(s).");
                 })
                 .cleanup(LevelZeroClientTests::backToOverworld);
+    }
+
+    /**
+     * Les chunks recus attendent leur releve dans une file, quelques-uns par tick ; ceux qu'on interroge passent devant. L'index du monde
+     * oublie, ses chunks autour du joueur redonnes comme a leur reception, une recherche autour de lui trouve aussitot ses tubes : juste
+     * apres une traversee lointaine, le tube qu'on vient de quitter, dans un chunk de l'ailleurs encore en file, se taisait sinon.
+     */
+    private static void neonsFoundAtOnce(ClientTestContext context) {
+        ClientWorld world = context.world();
+        Vec3d at = context.player().getPos();
+        NeonSelection found = new NeonSelection(4);
+        NeonIndex.collect(world, at.x, at.y, at.z, NEON_REACH, found);
+        ClientTestContext.require(found.count() > 0, "Aucun neon a moins de " + NEON_REACH + " blocs du joueur dans le Level 0.");
+        NeonIndex.forget(world);
+        int chunkX = ChunkSectionPos.getSectionCoord(at.x);
+        int chunkZ = ChunkSectionPos.getSectionCoord(at.z);
+        for (int dz = -REQUEUED_CHUNKS; dz <= REQUEUED_CHUNKS; dz++) {
+            for (int dx = -REQUEUED_CHUNKS; dx <= REQUEUED_CHUNKS; dx++) {
+                WorldChunk chunk = world.getChunkManager().getWorldChunk(chunkX + dx, chunkZ + dz);
+                if (chunk != null) {
+                    ClientChunkEvents.CHUNK_LOAD.invoker().onChunkLoad(world, chunk);
+                }
+            }
+        }
+        NeonIndex.collect(world, at.x, at.y, at.z, NEON_REACH, found);
+        ClientTestContext.require(found.count() > 0, "Les tubes des chunks encore en file ne se trouvent pas autour du point demande.");
     }
 
     /** Le diagnostic du moteur audio : chaque son traite, son identifiant et sa dimension d'emission. */

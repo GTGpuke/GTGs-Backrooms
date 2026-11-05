@@ -6,7 +6,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.RegistryKey;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.math.Vec3d;
@@ -102,12 +101,11 @@ public final class FrameSoundPlayer {
     }
 
     /**
-     * Les portails d'un monde que le client tient : le sien, ou un monde distant d'une vue ; aucun sinon. Le monde
-     * intermediaire d'un son qui passe deux cadres.
+     * Les portails du monde que montre un portail, tel que le client le tient : le sien, un monde distant, ou l'ailleurs qui
+     * tient son arrivee ; aucun sinon. Le monde intermediaire d'un son qui passe deux cadres.
      */
-    public static List<BackroomsPortalEntity> portalsOf(RegistryKey<World> key) {
-        ClientWorld main = MinecraftClient.getInstance().world;
-        World world = main != null && main.getRegistryKey().equals(key) ? main : RemoteWorldRegistry.worldOf(key);
+    public static List<BackroomsPortalEntity> portalsOf(BackroomsPortalEntity portal) {
+        ClientWorld world = RemoteWorldRegistry.worldOf(portal);
         return world == null ? List.of() : ClientPortalIndex.portals(world);
     }
 }

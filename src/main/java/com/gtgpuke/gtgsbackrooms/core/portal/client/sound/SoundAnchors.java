@@ -19,6 +19,7 @@ import net.minecraft.world.World;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.ClientPortalIndex;
+import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.mixin.client.SoundManagerAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.SoundSystemAccessor;
@@ -90,8 +91,10 @@ public final class SoundAnchors {
 
     /**
      * Apres une traversee, ou un portail de plus dans le monde du joueur : chaque son positionne encore joue est replace
-     * depuis sa vraie source, pour le joueur la ou il est maintenant. Evenement rare : le parcours des sons et la tache
-     * confiee a chaque source sont admis.
+     * depuis sa vraie source, pour le joueur la ou il est maintenant, par le plus court chemin : a sa place s'il est dans le
+     * monde du joueur et que c'est le plus court, sinon par le cadre qui le rapproche le plus (un portail vers un autre
+     * endroit du meme niveau compris : le son qu'on vient de quitter, a soixante blocs a vol d'oiseau, est derriere le
+     * cadre de retour). Evenement rare : le parcours des sons et la tache confiee a chaque source sont admis.
      *
      * @param client client du joueur, deja de l'autre cote
      */
@@ -103,7 +106,8 @@ public final class SoundAnchors {
         }
         SoundSystemAccessor system = (SoundSystemAccessor) ((SoundManagerAccessor) client.getSoundManager()).backrooms$getSoundSystem();
         Vec3d listener = player.getEyePos();
-        List<BackroomsPortalEntity> portals = ClientPortalIndex.portals(world);
+        // Juste apres une traversee vers un endroit lointain du meme monde, le cadre de retour n'est encore que dans l'ailleurs.
+        List<BackroomsPortalEntity> portals = ClientPortalIndex.portals(RemoteWorldRegistry.holding(world, listener.x, listener.z));
         for (Map.Entry<SoundInstance, Channel.SourceManager> playing : system.backrooms$getSources().entrySet()) {
             Anchor anchor = ANCHORS.get(playing.getKey());
             if (anchor == null) {
@@ -112,16 +116,16 @@ public final class SoundAnchors {
             Vec3d position = anchor.source();
             Vec3d arrival = null;
             float volume = 0.0f;
-            if (anchor.world().equals(world.getRegistryKey())) {
+            boolean here = anchor.world().equals(world.getRegistryKey());
+            double direct = here ? listener.distanceTo(position) : Double.MAX_VALUE;
+            PortalSound.Exit exit = PortalSound.bestExit(portals, FrameSoundPlayer::portalsOf, anchor.world(), anchor.source(), listener,
+                    PortalSound.radius(anchor.volume()));
+            if (exit != null && exit.distance() + listener.distanceTo(exit.point()) < direct) {
+                position = exit.point();
+                volume = PortalSound.volumeThroughPortal(anchor.volume(), exit.distance());
+                arrival = exit.arrival();
+            } else if (here) {
                 volume = anchor.volume();
-            } else {
-                PortalSound.Exit exit = PortalSound.bestExit(portals, FrameSoundPlayer::portalsOf, anchor.world(), anchor.source(), listener,
-                        PortalSound.radius(anchor.volume()));
-                if (exit != null) {
-                    position = exit.point();
-                    volume = PortalSound.volumeThroughPortal(anchor.volume(), exit.distance());
-                    arrival = exit.arrival();
-                }
             }
             if (!Objects.equals(arrival, anchor.arrival()) || !position.equals(anchor.played())) {
                 // Le son entre par un autre cadre, ou plus par aucun, et joue ailleurs : son ancre le dit au moteur audio.

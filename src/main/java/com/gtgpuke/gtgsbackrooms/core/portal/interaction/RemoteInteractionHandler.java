@@ -109,11 +109,14 @@ public final class RemoteInteractionHandler {
      * @param except joueur que vanilla exclut de l'envoi, ou {@code null}
      * @param worldKey dimension de l'envoi
      * @param packet son, evenement de monde ou particules
+     * @return {@code true} si l'envoi est parti a lui
      */
-    public static void sendWithheld(@Nullable PlayerEntity except, RegistryKey<World> worldKey, Packet<?> packet) {
+    public static boolean sendWithheld(@Nullable PlayerEntity except, RegistryKey<World> worldKey, Packet<?> packet) {
         if (except != null && except == actor && except.getWorld().getRegistryKey() == worldKey) {
             actor.networkHandler.sendPacket(packet);
+            return true;
         }
+        return false;
     }
 
     /** Execute une action du joueur a travers un cadre : ce que vanilla lui retient lui parvient ({@link #sendWithheld}). */

@@ -32,12 +32,16 @@ import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntitiesDestroyS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameStateChangeS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandOutput;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ChunkLevelType;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.test.AfterBatch;
 import net.minecraft.test.GameTest;
 import net.minecraft.test.GameTestException;
@@ -70,7 +74,9 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkUnloadPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionReleasePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteKeys;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.DestinationLoader;
+import com.gtgpuke.gtgsbackrooms.core.portal.transition.PortalRelevance;
 import com.gtgpuke.gtgsbackrooms.core.portal.transition.TeleportExecutor;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
 import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestServerWorlds;
@@ -114,6 +120,10 @@ public final class PortalSyncGameTests implements FabricGameTest {
     private static final double DEPARTURE_OFFSET = 512.0;
     /** Ticks laisses apres un depart : vanilla a retire depuis longtemps les tickets du joueur. */
     private static final int DEPARTURE_SETTLE_TICKS = 40;
+    /** Le portail du test de l'ailleurs, a tant de blocs au sud du portail habituel : a plus de huit blocs du joueur. */
+    private static final int ELSEWHERE_STEP = 8;
+    /** X relatif de l'arrivee d'un portail lointain du monde du joueur : bien au-dela de la portee ou un portail compte pour lui. */
+    private static final double FAR_ARRIVAL = 90.5;
     /** Pluie et orage du Nether au debut du test de meteo, remis apres son lot. */
     private static final float[] NETHER_WEATHER = new float[2];
 
@@ -142,6 +152,11 @@ public final class PortalSyncGameTests implements FabricGameTest {
     /** {@code true} si ce payload fait apparaitre chez le joueur l'entity de cet identifiant durable. */
     private static boolean spawnOf(RemoteEntityPacketPayload payload, UUID uuid) {
         return payload.packet() instanceof EntitySpawnS2CPacket spawn && spawn.getUuid().equals(uuid);
+    }
+
+    /** Un son relaye, enveloppe avec ce monde distant. */
+    private static boolean relayedSound(RemoteEntityPacketPayload payload, int index, SoundEvent sound) {
+        return payload.dimension() == index && payload.packet() instanceof PlaySoundS2CPacket played && played.getSound().value() == sound;
     }
 
     private static BackroomsPortalEntity netherPortal(TestContext context) {
@@ -181,15 +196,12 @@ public final class PortalSyncGameTests implements FabricGameTest {
         BackroomsPortalEntity sibling = netherPortal(context, PORTAL.east(2), NETHER_EXIT.add(16.0, 0.0, 0.0));
         // Un quatrieme portail vers la meme arrivee que le premier : ils partagent la fenetre chargee et son ticket.
         BackroomsPortalEntity twin = netherPortal(context, PORTAL.west(), NETHER_EXIT);
-        // Un portail du meme monde, ferme, a cote : il ne mene a aucune dimension distante et n'entre pas dans la fenetre.
-        BackroomsPortalEntity local = localPortal(context, Vec3d.ofCenter(context.getAbsolutePos(PORTAL.east(4))),
-                context.getAbsolute(new Vec3d(20.5, 2.0, 20.5)), false);
         // Un portail invisible (et ferme) vers le Nether, a cote aussi : invisible, sa fenetre n'est jamais envoyee.
         BackroomsPortalEntity hidden = BackroomsPortalEntity.builder(world).position(Vec3d.ofCenter(context.getAbsolutePos(PORTAL.east(6))))
                 .facingSource(PortalFacing.NORTH).facingDestination(PortalFacing.SOUTH).destinationDim(World.NETHER)
                 .destinationPos(HIDDEN_EXIT).size(1.0f, 2.0f).teleportable(false).visible(false).build();
         world.spawnEntity(hidden);
-        LEFTOVERS.addAll(List.of(farPortal, portal, sibling, twin, local, hidden));
+        LEFTOVERS.addAll(List.of(farPortal, portal, sibling, twin, hidden));
         ServerPlayerEntity player = viewer(context, GameMode.CREATIVE);
         BlockPos remoteBlock = BlockPos.ofFloored(NETHER_EXIT).down(3);
         BlockPos farRemoteBlock = BlockPos.ofFloored(NETHER_EXIT).add(600, 0, 0);
@@ -223,8 +235,7 @@ public final class PortalSyncGameTests implements FabricGameTest {
                                     "Moniteur actif, les chunks envoyes sont comptes : " + ModPerformanceMonitor.networkSummary() + ".");
                             for (RemoteChunkPayload chunk : GameTestPlayers.sent(player, RemoteChunkPayload.class)) {
                                 context.assertTrue(chunk.dimension().equals(World.NETHER.getValue()) && Math.abs(chunk.chunkX() - hiddenChunkX) > 16,
-                                        "Seules les fenetres des portails visibles vers le Nether sont envoyees : ni celle du portail du "
-                                                + "meme monde, ni celle du portail invisible.");
+                                        "Seules les fenetres des portails visibles vers le Nether sont envoyees, jamais celle du portail invisible.");
                             }
                             // Le ticket du chargeur d'arrivee tient maintenant l'arrivee : un objet qui y apparait y reste.
                             remoteItem[0] = new ItemEntity(nether, NETHER_EXIT.x, NETHER_EXIT.y, NETHER_EXIT.z + 1.0, new ItemStack(Items.NETHER_STAR));
@@ -349,7 +360,6 @@ public final class PortalSyncGameTests implements FabricGameTest {
                                 farPortal.discard();
                                 sibling.discard();
                                 twin.discard();
-                                local.discard();
                                 hidden.discard();
                             }
                             context.complete();
@@ -396,7 +406,7 @@ public final class PortalSyncGameTests implements FabricGameTest {
                     for (RemoteChunkPayload chunk : GameTestPlayers.sent(player, RemoteChunkPayload.class)) {
                         held.add(ChunkPos.toLong(chunk.chunkX(), chunk.chunkZ()));
                     }
-                    if (held.isEmpty() || !witnessed.containsAll(held)) {
+                    if (held.isEmpty() || !witnessedAll(witness, held, witnessed)) {
                         noteNotified(witness, null);
                         if (now > SYNC_PATIENCE_TICKS) {
                             throw new GameTestException("Le temoin n'a pas recu tous les chunks du Nether envoyes au joueur avant la traversee.");
@@ -461,6 +471,23 @@ public final class PortalSyncGameTests implements FabricGameTest {
                 }
             });
         }
+    }
+
+    /**
+     * {@code true} si le temoin a recu tous les chunks tenus que vanilla lui envoie : ceux de sa vue, celle du joueur une fois passe,
+     * seuls que vanilla pourra reproposer au joueur. Le serveur de test plafonne la vue vanilla a deux chunks : une vue plus large
+     * ({@link #seesWholeWindow}) ne lui en donne pas davantage, et attendre toute la fenetre n'aboutissait que si ses chunks
+     * arrivaient lentement (l'ordre des lots, qui change avec leur nombre, decidait).
+     */
+    private static boolean witnessedAll(ServerPlayerEntity witness, LongSet held, LongSet witnessed) {
+        LongIterator iterator = held.iterator();
+        while (iterator.hasNext()) {
+            long key = iterator.nextLong();
+            if (!witnessed.contains(key) && witness.getChunkFilter().isWithinDistance(ChunkPos.getPackedX(key), ChunkPos.getPackedZ(key))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -867,7 +894,7 @@ public final class PortalSyncGameTests implements FabricGameTest {
     @GameTest(templateName = EMPTY_STRUCTURE)
     public void remoteDimensionPayloadDescribesTheNether(TestContext context) {
         ServerWorld nether = GameTestServerWorlds.nether(context);
-        RemoteDimensionPayload payload = RemoteDimensionPayload.of(nether, 1);
+        RemoteDimensionPayload payload = RemoteDimensionPayload.of(nether.getRegistryKey(), nether, 1);
         context.assertTrue(payload.dimension().equals(World.NETHER.getValue()), "Dimension du Nether.");
         context.assertTrue(payload.dimensionType().equals(Identifier.ofVanilla("the_nether")), "Type de dimension du Nether.");
         context.assertTrue(payload.index() == 1, "Index de la dimension chez le joueur.");
@@ -1264,6 +1291,112 @@ public final class PortalSyncGameTests implements FabricGameTest {
                 }
             });
         }
+    }
+
+    /**
+     * Un portail qui mene ailleurs dans le monde du joueur, plus loin que ce que vanilla lui envoie autour de lui (deux chunks
+     * pour un joueur simule, moins que la fenetre d'un portail), a sa propre fenetre : l'ailleurs de la dimension, annonce avec
+     * le type de la dimension, avec ses chunks, ses blocs changes, ses arrivees, ses sons et ses departs, comme une autre
+     * dimension. Le joueur, dans la fenetre, n'y est pas montre a lui-meme. Loin de tout portail, la fenetre est dechargee. Le
+     * joueur reste a plus de huit blocs du cadre : une fenetre de loin, moins de chunks a charger pour les tests suivants.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS + 400, batchId = "portal_sync_elsewhere")
+    public void aPortalBeyondVanillaInThePlayersWorldHasItsOwnWindow(TestContext context) {
+        GameTestPlayers.disconnectAll();
+        ServerWorld world = context.getWorld();
+        Vec3d arrival = context.getAbsolute(new Vec3d(16.5, 2.0, 16.5));
+        BackroomsPortalEntity portal = localPortal(context, Vec3d.ofCenter(context.getAbsolutePos(PORTAL.south(ELSEWHERE_STEP))), arrival, true);
+        LEFTOVERS.add(portal);
+        ServerPlayerEntity player = viewer(context, GameMode.CREATIVE);
+        Identifier elsewhere = RemoteKeys.elsewhere(World.OVERWORLD).getValue();
+        BlockPos changed = BlockPos.ofFloored(arrival).up(3);
+        List<RemoteEntityPacketPayload> relayed = new ArrayList<>();
+        int[] index = {-1};
+        boolean[] chunks = {false};
+        ItemEntity[] item = new ItemEntity[1];
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> {
+                    for (RemoteDimensionPayload announced : GameTestPlayers.sent(player, RemoteDimensionPayload.class)) {
+                        if (announced.dimension().equals(elsewhere)) {
+                            context.assertTrue(announced.dimensionType().equals(world.getDimensionEntry().getKey().orElseThrow().getValue()),
+                                    "L'ailleurs est annonce avec le type de sa dimension : " + announced + ".");
+                            index[0] = announced.index();
+                        }
+                    }
+                    chunks[0] |= GameTestPlayers.sent(player, RemoteChunkPayload.class).stream().anyMatch(chunk -> chunk.dimension().equals(elsewhere));
+                    relayed.addAll(GameTestPlayers.sent(player, RemoteEntityPacketPayload.class));
+                    if (index[0] < 0 || !chunks[0]) {
+                        throw new GameTestException("La fenetre de l'ailleurs n'est pas encore chez le joueur.");
+                    }
+                })
+                .createAndAdd(() -> {
+                    relayed.addAll(GameTestPlayers.sent(player, RemoteEntityPacketPayload.class));
+                    if (relayed.stream().noneMatch(payload -> payload.dimension() == index[0] && spawnOf(payload, portal.getUuid()))) {
+                        throw new GameTestException("Les entites de l'ailleurs ne sont pas encore suivies.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    context.assertTrue(relayed.stream().noneMatch(payload -> spawnOf(payload, player.getUuid())),
+                            "Le joueur, dans la fenetre de l'ailleurs, ne s'y voit pas.");
+                    world.setBlockState(changed, Blocks.GLOWSTONE.getDefaultState());
+                    item[0] = new ItemEntity(world, arrival.x, arrival.y, arrival.z + 1.0, new ItemStack(Items.GOLD_NUGGET));
+                    item[0].setNoGravity(true);
+                    world.spawnEntity(item[0]);
+                    LEFTOVERS.add(item[0]);
+                    PortalViewTracker.onEntityArrived(world, item[0]);
+                    world.playSound(null, arrival.x, arrival.y, arrival.z, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.BLOCKS, 1.0f, 1.0f);
+                    // Un son fort, que vanilla lui envoie deja (a une vingtaine de blocs, sous les 64 d'un volume de 4), et un son dont
+                    // vanilla l'exclut, comme celui de ses propres pas.
+                    world.playSound(null, arrival.x, arrival.y, arrival.z, SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), SoundCategory.BLOCKS, 4.0f, 1.0f);
+                    world.playSound(player, arrival.x, arrival.y, arrival.z, SoundEvents.BLOCK_NOTE_BLOCK_XYLOPHONE.value(), SoundCategory.BLOCKS, 4.0f, 1.0f);
+                    List<RemoteEntityPacketPayload> now = GameTestPlayers.sent(player, RemoteEntityPacketPayload.class);
+                    context.assertTrue(now.stream().anyMatch(payload -> payload.dimension() == index[0] && spawnOf(payload, item[0].getUuid())),
+                            "Une arrivee dans la fenetre de l'ailleurs part au joueur au meme tick.");
+                    context.assertTrue(now.stream().anyMatch(payload -> relayedSound(payload, index[0], SoundEvents.BLOCK_NOTE_BLOCK_BELL.value())),
+                            "Un son de l'ailleurs hors de portee de vanilla lui est relaye, enveloppe avec l'ailleurs.");
+                    context.assertTrue(now.stream().noneMatch(payload -> relayedSound(payload, index[0], SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value())),
+                            "Un son que vanilla lui a deja envoye ne lui est pas relaye une seconde fois.");
+                    context.assertTrue(now.stream().anyMatch(payload -> relayedSound(payload, index[0], SoundEvents.BLOCK_NOTE_BLOCK_XYLOPHONE.value())),
+                            "Un son dont vanilla l'exclut lui est relaye.");
+                })
+                .createAndAdd(() -> {
+                    if (GameTestPlayers.sent(player, RemoteBlockUpdatePayload.class).stream()
+                            .noneMatch(update -> update.dimension() == index[0] && update.pos().equals(changed))) {
+                        throw new GameTestException("Le bloc change dans l'ailleurs n'est pas encore relaye.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    world.setBlockState(changed, Blocks.AIR.getDefaultState());
+                    item[0].discard();
+                    context.assertTrue(GameTestPlayers.sent(player, RemoteEntityPacketPayload.class).stream()
+                                    .anyMatch(payload -> payload.dimension() == index[0] && payload.packet() instanceof EntitiesDestroyS2CPacket destroy
+                                            && destroy.getEntityIds().contains(item[0].getId())),
+                            "Un depart de l'ailleurs lui retire sa copie aussitot.");
+                    // Puis le joueur part a cent blocs : plus aucun portail a portee.
+                    moveTo(player, context.getAbsolute(VIEWER).add(100.0, 0.0, 0.0), 0.0f);
+                })
+                .createAndAdd(() -> {
+                    if (GameTestPlayers.sent(player, RemoteChunkUnloadPayload.class).stream().noneMatch(unload -> unload.dimension() == index[0])) {
+                        throw new GameTestException("La fenetre de l'ailleurs n'est pas encore dechargee.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    // Une traversee vers un autre monde oublie la vue du joueur : plus rien ne nourrirait son ailleurs, il lui est libere.
+                    GameTestPlayers.sent(player, RemoteDimensionReleasePayload.class);
+                    PortalViewTracker.onPlayerChangedWorld(player);
+                    boolean released = GameTestPlayers.sent(player, RemoteDimensionReleasePayload.class).stream()
+                            .anyMatch(release -> release.dimension() == index[0]);
+                    GameTestPlayers.disconnect(player);
+                    portal.discard();
+                    context.assertTrue(released, "Une traversee vers un autre monde libere l'ailleurs chez le joueur.");
+                })
+                .completeIfSuccessful();
+    }
+
+    /** Apres le lot de l'ailleurs, reussi ou non : joueur deconnecte, portail et objet retires. */
+    @AfterBatch(batchId = "portal_sync_elsewhere")
+    public void afterElsewhere(ServerWorld world) {
+        releaseLeftovers();
     }
 
     /** Apres le lot de la liberation, reussi ou non : joueur deconnecte, portail retire. */
@@ -2264,6 +2397,66 @@ public final class PortalSyncGameTests implements FabricGameTest {
                 .completeIfSuccessful();
     }
 
+    /**
+     * Un portail lointain du monde du joueur, a quatre-vingt-dix blocs, a sa fenetre dans l'ailleurs de ce monde ; un portail vers le
+     * Nether pose a son arrivee, hors de portee du joueur, s'y voit : le Nether est annonce et son arrivee envoyee, comme pour un
+     * portail vu a travers un portail vers une autre dimension. Sans cela, son cadre restait sombre.
+     */
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS + 400, batchId = "portal_sync_nested_elsewhere")
+    public void aPortalSeenInTheElsewhereOpensItsOwnWorld(TestContext context) {
+        GameTestPlayers.disconnectAll();
+        ServerWorld world = context.getWorld();
+        prepareNether(context);
+        Vec3d arrival = context.getAbsolute(new Vec3d(FAR_ARRIVAL, 2.0, 16.5));
+        // Les chunks de cette arrivee, loin de l'arene, generes d'avance : le serveur de test tique trop vite pour les attendre.
+        GameTestServerWorlds.pregenerateArrival(world, arrival);
+        BackroomsPortalEntity portal = localPortal(context, Vec3d.ofCenter(context.getAbsolutePos(PORTAL.south(ELSEWHERE_STEP))), arrival, true);
+        LEFTOVERS.add(portal);
+        ServerPlayerEntity player = viewer(context, GameMode.CREATIVE);
+        Identifier elsewhere = RemoteKeys.elsewhere(World.OVERWORLD).getValue();
+        ChunkPos netherChunk = new ChunkPos(BlockPos.ofFloored(NETHER_EXIT));
+        BackroomsPortalEntity[] seen = new BackroomsPortalEntity[1];
+        List<RemoteChunkPayload> chunks = new ArrayList<>();
+        List<RemoteDimensionPayload> announced = new ArrayList<>();
+        context.createTimedTaskRunner()
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    if (chunks.stream().noneMatch(chunk -> chunk.dimension().equals(elsewhere))) {
+                        throw new GameTestException("La fenetre de l'ailleurs n'est pas encore chez le joueur.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    seen[0] = GameTestServerWorlds.spawnNorthPortal(world, arrival.add(2.0, 0.0, -3.0), World.NETHER, NETHER_EXIT);
+                    LEFTOVERS.add(seen[0]);
+                    context.assertTrue(player.squaredDistanceTo(seen[0]) > PortalRelevance.MAX_DISTANCE * PortalRelevance.MAX_DISTANCE,
+                            "Le portail vers le Nether est hors de portee du joueur : seule l'imbrication peut l'ouvrir.");
+                })
+                .createAndAdd(() -> {
+                    chunks.addAll(GameTestPlayers.sent(player, RemoteChunkPayload.class));
+                    announced.addAll(GameTestPlayers.sent(player, RemoteDimensionPayload.class));
+                    if (!chunkSent(chunks, World.NETHER.getValue(), netherChunk)) {
+                        throw new GameTestException("L'arrivee du portail vu dans l'ailleurs n'est pas encore envoyee.");
+                    }
+                })
+                .createAndAddReported(() -> {
+                    try {
+                        context.assertTrue(indexOf(announced, World.NETHER.getValue()) >= 0,
+                                "Le Nether, que montre un portail vu dans l'ailleurs, est annonce au joueur : " + announced + ".");
+                    } finally {
+                        seen[0].discard();
+                        portal.discard();
+                        GameTestPlayers.disconnect(player);
+                    }
+                })
+                .completeIfSuccessful();
+    }
+
+    /** Apres le lot du portail vu dans l'ailleurs, reussi ou non : joueur deconnecte, portails retires. */
+    @AfterBatch(batchId = "portal_sync_nested_elsewhere")
+    public void afterNestedElsewhere(ServerWorld world) {
+        releaseLeftovers();
+    }
+
     /** Apres le lot du portail vu a travers un autre, reussi ou non : joueur deconnecte, portails retires. */
     @AfterBatch(batchId = "portal_sync_nested")
     public void afterNested(ServerWorld world) {
@@ -2535,7 +2728,10 @@ public final class PortalSyncGameTests implements FabricGameTest {
      */
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = SYNC_PATIENCE_TICKS + 100, batchId = "portal_sync_near")
     public void nearAFrameTheWindowIsSentEveryTick(TestContext context) {
-        prepareNether(context);
+        ServerWorld nether = prepareNether(context);
+        // La fenetre, generee d'avance, reste chargee le temps du test : seule compte alors la cadence des envois, pas le temps de
+        // relire ses chunks du disque, qui depend du lot d'avant.
+        holdLoaded(nether, NETHER_EXIT, DestinationLoader.syncRadius(true));
         BackroomsPortalEntity portal = netherPortal(context);
         LEFTOVERS.add(portal);
         ServerPlayerEntity player = viewer(context, GameMode.CREATIVE);
@@ -2571,10 +2767,22 @@ public final class PortalSyncGameTests implements FabricGameTest {
         }
     }
 
-    /** Apres le lot de la fenetre pres du cadre, reussi ou non : joueur deconnecte, portail retire. */
+    /** Apres le lot de la fenetre pres du cadre, reussi ou non : joueur deconnecte, portail retire, chunks du Nether rendus. */
     @AfterBatch(batchId = "portal_sync_near")
     public void afterNear(ServerWorld world) {
         releaseLeftovers();
+        GameTestServerWorlds.releaseForcedChunks(world.getServer().getWorld(World.NETHER));
+    }
+
+    /** Force les chunks deja charges autour d'un point : ils le restent, sans attendre ni relire le disque. */
+    private static void holdLoaded(ServerWorld world, Vec3d center, int radius) {
+        int centerX = ChunkSectionPos.getSectionCoord(center.x);
+        int centerZ = ChunkSectionPos.getSectionCoord(center.z);
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                world.setChunkForced(centerX + dx, centerZ + dz, true);
+            }
+        }
     }
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 2200, batchId = "portal_sync_ticket")

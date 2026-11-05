@@ -122,6 +122,14 @@ public final class LookUniformUploader {
         if (zone >= 0) {
             GL20.glUniform1i(zone, LightVolume.UNIT);
         }
+        int shadows = GlUniform.getUniformLocation(program, BodyShadows.SAMPLER_SHADOWS);
+        if (shadows >= 0) {
+            GL20.glUniform1i(shadows, BodyShadows.UNIT_SHADOWS);
+        }
+        int slots = GlUniform.getUniformLocation(program, BodyShadows.SAMPLER_SLOTS);
+        if (slots >= 0) {
+            GL20.glUniform1i(slots, BodyShadows.UNIT_SLOTS);
+        }
         int far = GlUniform.getUniformLocation(program, FarVolume.SAMPLER);
         if (far >= 0) {
             GL20.glUniform1i(far, FarVolume.UNIT);
@@ -206,19 +214,21 @@ public final class LookUniformUploader {
             float strongest = Math.max(Math.max(neons.red(), Math.max(neons.green(), neons.blue())), 1.0e-3f);
             GL20.glUniform3f(locations[AT_NEON_TINT], neons.red() / strongest, neons.green() / strongest, neons.blue() / strongest);
         }
+        // Le cache de surfaces et la grille des blocs sont ceux de la zone liee a la vue : celle du joueur, ou celle d'une vue de portail.
+        boolean surfaces = baked && LightVolume.surfacesBound();
         if (locations[AT_SURFACE_LIGHT] >= 0) {
-            GL20.glUniform1f(locations[AT_SURFACE_LIGHT], baked && LightSurfaces.active() ? 1.0f : 0.0f);
+            GL20.glUniform1f(locations[AT_SURFACE_LIGHT], surfaces ? 1.0f : 0.0f);
         }
-        // L'Ultra ne s'applique qu'a la vue du joueur.
-        boolean traced = baked && LightSurfaces.active() && LightBounces.active() && LookState.depth() == 0;
+        // L'Ultra vaut pour toute vue dont la zone a ses tuiles : celle du joueur comme celle d'un portail.
+        boolean traced = surfaces && LightBounces.active();
         if (locations[AT_TRACED] >= 0) {
             GL20.glUniform1f(locations[AT_TRACED], traced ? 1.0f : 0.0f);
         }
         if (locations[AT_PILE] >= 0) {
-            GL20.glUniform1f(locations[AT_PILE], baked && LightSurfaces.active() && look.bakedLight().relief() > 0.0f ? 1.0f : 0.0f);
+            GL20.glUniform1f(locations[AT_PILE], surfaces && look.bakedLight().relief() > 0.0f ? 1.0f : 0.0f);
         }
         if (locations[AT_FAR_ROOM] >= 0) {
-            float[] room = FarVolume.room();
+            float[] room = LightVolume.room();
             GL20.glUniform3fv(locations[AT_FAR_ROOM], room == null ? NO_ROOM : room);
         }
         if (locations[AT_LIGHT_LOOK] >= 0) {

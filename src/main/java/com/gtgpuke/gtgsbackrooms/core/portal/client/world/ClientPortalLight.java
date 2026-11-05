@@ -15,7 +15,7 @@ public final class ClientPortalLight {
 
     /** Section propre au client : en solo, la passe du serveur se compte a part. */
     private static final String PERF_LIGHT = "client.portal.light";
-    private static final PortalLightTransmission TRANSMISSION = new PortalLightTransmission(PERF_LIGHT, (source, key) -> RemoteWorldRegistry.worldOf(key));
+    private static final PortalLightTransmission TRANSMISSION = new PortalLightTransmission(PERF_LIGHT, (source, portal) -> RemoteWorldRegistry.worldOf(portal));
     private static int ticks;
 
     private ClientPortalLight() {

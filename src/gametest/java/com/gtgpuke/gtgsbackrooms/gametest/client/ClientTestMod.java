@@ -36,6 +36,8 @@ public final class ClientTestMod implements ClientModInitializer {
         scenarios.addAll(PortalFeaturesClientTests.scenarios());
         scenarios.addAll(PortalFrameAreaClientTests.scenarios());
         scenarios.addAll(EntityContinuityClientTests.scenarios());
+        scenarios.addAll(CrossingTurnClientTests.scenarios());
+        scenarios.addAll(CrossingSoundClientTests.scenarios());
         scenarios.addAll(ServerStopClientTests.scenarios());
         // Mise au point : -PclientTestOnly=nom1,nom2 ne joue que ces tests.
         String only = System.getProperty("gtgsbackrooms.clientTest.only");

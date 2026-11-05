@@ -31,7 +31,7 @@ public final class PortalSound {
     public static final double BEHIND_TOLERANCE = 0.5;
 
     /** Aucun monde intermediaire : un son ne passe qu'un cadre. */
-    public static final Function<RegistryKey<World>, List<BackroomsPortalEntity>> NO_SECOND_FRAME = world -> List.of();
+    public static final Function<BackroomsPortalEntity, List<BackroomsPortalEntity>> NO_SECOND_FRAME = portal -> List.of();
 
     /**
      * Point du cadre par ou un son ressort, distance de sa source (vue par ce cadre) a ce point, le portail traverse, et le
@@ -90,14 +90,14 @@ public final class PortalSound {
      * court l'emporte.
      *
      * @param portals portails du monde de l'auditeur
-     * @param portalsOf portails d'un monde intermediaire, tel que le client le tient (vide s'il ne le tient pas)
+     * @param portalsOf portails du monde que montre un portail, tel que le client le tient (vide s'il ne le tient pas)
      * @param soundWorld monde de la source
      * @param source position de la source dans son monde
      * @param listener position de l'auditeur
      * @param radius portee du son
      * @return point de sortie et trajet, ou {@code null} si aucun chemin ne rapproche le son
      */
-    public static @Nullable Exit bestExit(List<BackroomsPortalEntity> portals, Function<RegistryKey<World>, List<BackroomsPortalEntity>> portalsOf,
+    public static @Nullable Exit bestExit(List<BackroomsPortalEntity> portals, Function<BackroomsPortalEntity, List<BackroomsPortalEntity>> portalsOf,
             RegistryKey<World> soundWorld, Vec3d source, Vec3d listener, double radius) {
         Exit best = null;
         for (int i = 0; i < portals.size(); i++) {
@@ -121,7 +121,7 @@ public final class PortalSound {
     }
 
     /** Le meilleur trajet par deux cadres, s'il y en a un : un portail vu a travers un autre. */
-    private static @Nullable Exit bestThroughTwo(List<BackroomsPortalEntity> portals, Function<RegistryKey<World>, List<BackroomsPortalEntity>> portalsOf,
+    private static @Nullable Exit bestThroughTwo(List<BackroomsPortalEntity> portals, Function<BackroomsPortalEntity, List<BackroomsPortalEntity>> portalsOf,
             RegistryKey<World> soundWorld, Vec3d source, Vec3d listener, double radius) {
         Exit best = null;
         for (int i = 0; i < portals.size(); i++) {
@@ -131,7 +131,7 @@ public final class PortalSound {
             }
             // L'auditeur vu dans le monde intermediaire, par le premier cadre.
             Vec3d listenerThere = first.toDestination(listener);
-            List<BackroomsPortalEntity> inner = portalsOf.apply(first.destinationDim());
+            List<BackroomsPortalEntity> inner = portalsOf.apply(first);
             for (int j = 0; j < inner.size(); j++) {
                 BackroomsPortalEntity second = inner.get(j);
                 if (!second.visible() || !second.teleportable() || !second.destinationDim().equals(soundWorld)) {

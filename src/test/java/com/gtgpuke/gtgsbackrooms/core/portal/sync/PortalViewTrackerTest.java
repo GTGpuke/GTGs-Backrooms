@@ -22,6 +22,7 @@ import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.RegistryKey;
+import net.minecraft.server.network.ChunkFilter;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
@@ -86,6 +87,34 @@ class PortalViewTrackerTest {
         int fitting = (RemoteChunkWindow.MAP_RADIUS - 4) / 2;
         assertEquals(fitting, PortalViewTracker.nearRadius(32, 32, 4), "Dans la carte du client autour du foyer.");
         assertTrue(RemoteChunkWindow.fitsAround(0, 0, 4, 0, fitting), "Une fenetre a ce rayon tient autour du foyer.");
+    }
+
+    @Test
+    @DisplayName("Une arrivee du monde du joueur a sa fenetre des que celle-ci deborde de ce que vanilla lui envoie")
+    void arrivalBeyondVanilla() {
+        ChunkFilter vanilla = ChunkFilter.cylindrical(new ChunkPos(0, 0), 8);
+        assertFalse(PortalViewTracker.beyondVanilla(vanilla, 0, 0, 3), "Fenetre autour du joueur, dans sa distance de vue : vanilla l'envoie.");
+        assertFalse(PortalViewTracker.beyondVanilla(vanilla, 5, 0, 3), "Son bord sur l'axe, encore dessine.");
+        assertTrue(PortalViewTracker.beyondVanilla(vanilla, 7, 0, 3), "Son bord dans l'anneau, que le client ne dessine pas.");
+        assertTrue(PortalViewTracker.beyondVanilla(vanilla, 0, -7, 3), "Pareil de l'autre cote.");
+        assertTrue(PortalViewTracker.beyondVanilla(vanilla, 4, 4, 3), "Un coin hors du disque suffit.");
+        assertTrue(PortalViewTracker.beyondVanilla(vanilla, -4, 4, 3), "Quel que soit le coin.");
+        assertTrue(PortalViewTracker.beyondVanilla(vanilla, -4, -4, 3), "Quel que soit le coin.");
+        assertTrue(PortalViewTracker.beyondVanilla(ChunkFilter.cylindrical(new ChunkPos(0, 0), 2), 0, 0, 3),
+                "Une distance de vue plus courte que la fenetre ne la couvre jamais.");
+    }
+
+    @Test
+    @DisplayName("Un portail visible a une fenetre vers une autre dimension, ou loin dans le monde du joueur")
+    void relevantPortals() {
+        ChunkFilter vanilla = ChunkFilter.cylindrical(new ChunkPos(0, 0), 8);
+        Vec3d position = new Vec3d(0.5, 65.0, 0.5);
+        assertTrue(PortalViewTracker.relevant(portal(position, World.END, true), World.OVERWORLD, vanilla), "Vers une autre dimension.");
+        assertFalse(PortalViewTracker.relevant(portal(position, World.END, false), World.OVERWORLD, vanilla), "Invisible, jamais.");
+        assertFalse(PortalViewTracker.relevant(portal(position, World.OVERWORLD, true), World.OVERWORLD, vanilla),
+                "Vers son propre monde, tout pres : vanilla envoie deja toute la fenetre.");
+        assertTrue(PortalViewTracker.relevant(portal(position, World.OVERWORLD, true), World.OVERWORLD, ChunkFilter.cylindrical(new ChunkPos(40, 0), 8)),
+                "Vers son propre monde, loin du joueur : l'ailleurs a sa fenetre.");
     }
 
     private static BackroomsPortalEntity portal(Vec3d position, RegistryKey<World> destination, boolean visible) {

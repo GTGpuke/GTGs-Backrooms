@@ -9,10 +9,16 @@ import net.minecraft.util.math.ChunkSectionPos;
 /**
  * La cuisson d'une section, sur le thread de cuisson. D'abord la lumiere directe de chaque surface : le facteur de forme
  * de chaque dalle a portee ({@link AreaLight}), multiplie par la part de la dalle que la surface voit (quelques rayons
- * vers des points de la dalle, d'ou des ombres douces). Puis le rebond : des rayons repartis sur la demi-sphere de la
- * surface vont chercher l'eclairement des surfaces qu'ils touchent, teinte par leur albedo, d'ou le mur jaune qui colore
- * ce qui lui fait face. Le dernier rebond assombrit aussi ce que des blocs tout proches cachent, d'ou les coins sombres.
- * Seules les faces d'une cellule d'air posees contre un bloc opaque portent une valeur.
+ * vers des points de la dalle, d'ou des ombres douces). Puis le rebond : des rayons repartis sur la demi-sphere de la surface
+ * vont chercher l'eclairement des surfaces qu'ils touchent, teinte par leur albedo, d'ou le mur jaune qui colore ce qui lui
+ * fait face. Le dernier rebond assombrit aussi ce que des blocs tout proches cachent, d'ou les coins sombres. Seules les faces
+ * d'une cellule d'air posees contre un bloc opaque portent une valeur.
+ *
+ * <p>Les portails ({@link PortalOpenings}) : leur cadre arrete les rayons de son monde qui le traversent. Celui d'un passage les
+ * laisse continuer de l'autre cote, comme si les deux endroits se touchaient : un rayon de rebond qui entre par sa face repart de
+ * l'arrivee, dans les blocs de la zone de la-bas, et en ramene l'eclairement cuit (l'etat qu'aurait lu une voisine) ; les neons de
+ * l'autre cote, reportes de ce cote, eclairent par l'ouverture, et les blocs des deux cotes font de l'ombre a leur faisceau. Les
+ * blocs de l'autre cote se lisent dans une fenetre a part, posee autour de l'arrivee, quelques passages par section.
  */
 final class SectionBaker {
 
@@ -38,10 +44,29 @@ final class SectionBaker {
     static final float FOLLOWING = 2.0f;
     /** Moitie de l'ecart entre les points vises sur une dalle d'un bloc. */
     private static final float SAMPLE_SPREAD = 0.25f;
+    /** Passages vers une zone suivis par section, au plus : chacun a sa fenetre de blocs de l'autre cote. */
+    static final int CROSSINGS = 4;
+    /** Ecart au plan d'arrivee d'ou repart un rayon qui passe un cadre, pour partir de la bonne cellule. */
+    private static final float BEYOND = 1.0e-3f;
+    /** Ce que donne un rayon qui passe un cadre : rien, l'eclairement de l'autre cote, ou rien de connu la-bas (il continue de ce cote). */
+    private static final int CROSS_MISS = 0;
+    private static final int CROSS_HIT = 1;
+    private static final int CROSS_UNKNOWN = 2;
+    /** Ecart entre deux passages d'un segment sous lequel deux cadres sont dans le meme plan, en parts du segment. */
+    private static final float SAME_PLANE = 1.0e-4f;
+    /** Directions de la lumiere qui sort d'un passage, mesuree pour les shaders. */
+    static final int PASSAGE_DIRECTIONS = 16;
+    /** Ecart entre deux directions successives, autour de l'axe du cadre : l'angle d'or, comme les rayons des shaders. */
+    private static final double GOLDEN_ANGLE = 2.3999632;
+    /** Ecart au centre du cadre des points d'ou part chaque direction, en parts de ses cotes : le milieu de chacun de ses quarts. */
+    private static final float QUARTER = 0.25f;
+    /** Part de chacun des quatre points d'ou part une direction, dans ce qu'elle ramene. */
+    private static final float POINT_SHARE = 0.25f;
     private static final int SECTION = 16;
     private static final int MASK = SECTION - 1;
     private static final int NEIGHBORS = 27;
     private static final int INITIAL_LIGHTS = 64;
+    private static final int INITIAL_WALLS = 8;
     /** Entiers par neon rendu au cache de surfaces : position du bloc, face. */
     static final int LIGHT_INTS = 4;
     /** Neons rendus au cache de surfaces, les plus proches de la section : chaque tuile y prend les siens. */
@@ -53,7 +78,38 @@ final class SectionBaker {
     private float[] rects = new float[INITIAL_LIGHTS * AreaLight.VALUES];
     private int[] lightFaces = new int[INITIAL_LIGHTS];
     private int[] lightBlocks = new int[INITIAL_LIGHTS * 3];
+    /** Couleur de chaque neon vu par un portail parmi les lumieres, a la suite des neons. */
+    private float[] lightColors = new float[INITIAL_LIGHTS * 3];
     private int lights;
+    /** Les neons sont les premieres lumieres, les neons vus par les portails les suivantes. */
+    private int neons;
+    /** Le cadre par lequel eclaire chaque neon vu par un portail, rang dans la liste des portails. */
+    private int[] lightPassages = new int[INITIAL_LIGHTS];
+    /** Les cadres a portee de la section, rangs dans la liste des portails : ils arretent les rayons qui les traversent. */
+    private int[] walls = new int[INITIAL_WALLS];
+    private int wallCount;
+    private final float[] rayFrom = new float[3];
+    private final float[] rayTo = new float[3];
+    private final float[] point = new float[3];
+    private PortalOpenings openings = PortalOpenings.NONE;
+    private final float[] boxMin = new float[3];
+    private final float[] boxMax = new float[3];
+    /** Les blocs de l'autre cote des passages a portee de la section, et le rang de chacun dans la liste des portails. */
+    private final LightWindow[] crossWindows = windows();
+    private final int[] crossFrames = new int[CROSSINGS];
+    private int crossCount;
+    private final BlockRay crossRay = new BlockRay();
+    private final float[] crossPoint = new float[3];
+    private final float[] crossDirection = new float[3];
+    /** L'etat de l'autre cote que lisent les rayons de rebond qui passent un cadre ; 0, ils n'y lisent rien. */
+    private int crossStage;
+    /** La part du dernier segment ou il passe le cadre le plus proche. */
+    private float crossT;
+    /** Ce que ramene le dernier rayon passe de l'autre cote, et s'il y touche un bloc tout proche. */
+    private float crossRed;
+    private float crossGreen;
+    private float crossBlue;
+    private boolean crossNear;
     private int @Nullable [] indirect;
     private int @Nullable [] firstBounce;
     private float followingShare;
@@ -95,9 +151,30 @@ final class SectionBaker {
         return directions;
     }
 
+    private static LightWindow[] windows() {
+        LightWindow[] windows = new LightWindow[CROSSINGS];
+        for (int i = 0; i < CROSSINGS; i++) {
+            windows[i] = new LightWindow();
+        }
+        return windows;
+    }
+
     /** Suite a faible discrepance : les bits de l'indice en miroir derriere la virgule. */
     private static double vanDerCorput(int index) {
         return (Integer.reverse(index) & 0xFFFFFFFFL) / 4294967296.0;
+    }
+
+    /** Les portails du monde de la zone, pour les prochaines cuissons. */
+    void openings(PortalOpenings next) {
+        this.openings = next;
+    }
+
+    /**
+     * L'etat de l'autre cote que liront les prochains rebonds : celui qu'ils lisent chez leurs voisines (la lumiere directe, ou elle et
+     * le premier rebond), 0 pour n'y rien lire.
+     */
+    void crossStage(int stage) {
+        this.crossStage = stage;
     }
 
     /**
@@ -113,6 +190,7 @@ final class SectionBaker {
     void direct(LightBlocks blocks, LightBakeSettings settings, int sectionX, int sectionY, int sectionZ, int[] out) {
         this.window.fill(blocks, sectionX, sectionY, sectionZ);
         collectLights(blocks.emissive(), settings);
+        collectOpenings(sectionX, sectionY, sectionZ, settings.reach());
         int baseX = sectionX << 4;
         int baseY = sectionY << 4;
         int baseZ = sectionZ << 4;
@@ -156,15 +234,175 @@ final class SectionBaker {
         }
     }
 
-    private void addLight(int x, int y, int z, float size) {
-        if (this.window.block(x + LightCell.NORMAL_X[EMITTING_FACE], y + LightCell.NORMAL_Y[EMITTING_FACE], z + LightCell.NORMAL_Z[EMITTING_FACE]) != LightBlocks.AIR) {
-            return;
+    /** Les portails a portee de la section : les neons vus par eux a la suite des neons, et les cadres a part. */
+    private void collectOpenings(int sectionX, int sectionY, int sectionZ, float reach) {
+        this.neons = this.lights;
+        collectWalls(sectionX, sectionY, sectionZ, reach);
+        addVirtual(this.openings, reach);
+    }
+
+    /** Les cadres a cette distance de la section : seuls ceux-la coupent un rayon qui part d'elle. */
+    private void collectWalls(int sectionX, int sectionY, int sectionZ, float reach) {
+        this.wallCount = 0;
+        PortalOpenings current = this.openings;
+        this.boxMin[0] = sectionX << 4;
+        this.boxMin[1] = sectionY << 4;
+        this.boxMin[2] = sectionZ << 4;
+        for (int axis = 0; axis < 3; axis++) {
+            this.boxMax[axis] = this.boxMin[axis] + SECTION;
         }
+        this.crossCount = 0;
+        for (int i = 0; i < current.count(); i++) {
+            if (current.isFrame(i) && current.near(i, this.boxMin, this.boxMax, reach)) {
+                if (this.wallCount == this.walls.length) {
+                    this.walls = Arrays.copyOf(this.walls, this.walls.length * 2);
+                }
+                this.walls[this.wallCount++] = i;
+                LightZone beyond = current.zone(i);
+                if (beyond != null && this.crossCount < CROSSINGS) {
+                    // Les blocs autour de l'arrivee : les vingt-sept sections autour de la sienne.
+                    for (int axis = 0; axis < 3; axis++) {
+                        this.crossPoint[axis] = current.center(i, axis);
+                    }
+                    current.toArrival(i, this.crossPoint);
+                    this.crossWindows[this.crossCount].fill(beyond.blocks(), ChunkSectionPos.getSectionCoord(this.crossPoint[0]),
+                            ChunkSectionPos.getSectionCoord(this.crossPoint[1]), ChunkSectionPos.getSectionCoord(this.crossPoint[2]));
+                    this.crossFrames[this.crossCount++] = i;
+                }
+            }
+        }
+    }
+
+    /** La fenetre des blocs de l'autre cote d'un passage, -1 s'il n'en a pas. */
+    private int crossSlot(int frame) {
+        for (int slot = 0; slot < this.crossCount; slot++) {
+            if (this.crossFrames[slot] == frame) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private void addVirtual(PortalOpenings current, float reach) {
+        for (int i = 0; i < current.count(); i++) {
+            if (current.kind(i) == PortalOpenings.VIRTUAL && current.near(i, this.boxMin, this.boxMax, reach)) {
+                grow();
+                current.corners(i, this.rects, this.lights * AreaLight.VALUES);
+                for (int channel = 0; channel < 3; channel++) {
+                    this.lightColors[this.lights * 3 + channel] = current.color(i, channel);
+                }
+                this.lightPassages[this.lights] = current.passage(i);
+                this.lightFaces[this.lights++] = current.faceOf(i);
+            }
+        }
+    }
+
+    /**
+     * Le point d'une face de cellule, dans {@link #point} ; sur le plan d'un cadre (la face que coupe un plan au milieu d'un bloc), il passe
+     * d'un cheveu du cote ou le cadre s'ouvre : cuit sur le plan meme, il ne saurait de quel cote il est, et ne verrait pas le portail,
+     * alors que le terrain lit cette cellule du cote du cadre, jusqu'au plan.
+     */
+    private void offPlane(float x, float y, float z) {
+        this.point[0] = x;
+        this.point[1] = y;
+        this.point[2] = z;
+        for (int i = 0; i < this.wallCount; i++) {
+            int frame = this.walls[i];
+            if (this.openings.onPlane(frame, x, y, z)) {
+                int face = this.openings.faceOf(frame);
+                this.point[0] += LightCell.NORMAL_X[face] * SURFACE_OFFSET;
+                this.point[1] += LightCell.NORMAL_Y[face] * SURFACE_OFFSET;
+                this.point[2] += LightCell.NORMAL_Z[face] * SURFACE_OFFSET;
+                return;
+            }
+        }
+    }
+
+    /** {@code true} si un cadre a portee coupe le segment : la lumiere qui le suit part de l'autre cote du portail. */
+    private boolean walled(float x0, float y0, float z0, float x1, float y1, float z1) {
+        if (this.wallCount == 0) {
+            return false;
+        }
+        this.rayFrom[0] = x0;
+        this.rayFrom[1] = y0;
+        this.rayFrom[2] = z0;
+        this.rayTo[0] = x1;
+        this.rayTo[1] = y1;
+        this.rayTo[2] = z1;
+        for (int i = 0; i < this.wallCount; i++) {
+            if (this.openings.crossing(this.walls[i], this.rayFrom, this.rayTo) >= 0.0f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Le cadre a portee que le segment passe en premier, -1 s'il n'en passe aucun ; la part du segment ou il le passe, dans {@link #crossT}.
+     * Les deux faces d'un portail double sont dans le meme plan : a egalite, celle par laquelle le segment entre l'emporte, l'autre le
+     * prenant de dos.
+     */
+    private int nearestFrame(float x0, float y0, float z0, float x1, float y1, float z1) {
+        this.rayFrom[0] = x0;
+        this.rayFrom[1] = y0;
+        this.rayFrom[2] = z0;
+        this.rayTo[0] = x1;
+        this.rayTo[1] = y1;
+        this.rayTo[2] = z1;
+        int nearest = -1;
+        this.crossT = 2.0f;
+        for (int i = 0; i < this.wallCount; i++) {
+            int frame = this.walls[i];
+            float t = this.openings.crossing(frame, this.rayFrom, this.rayTo);
+            boolean tie = nearest >= 0 && Math.abs(t - this.crossT) < SAME_PLANE;
+            if (t >= 0.0f && (tie ? entering(frame, x1 - x0, y1 - y0, z1 - z0) : t < this.crossT)) {
+                this.crossT = Math.min(t, this.crossT);
+                nearest = frame;
+            }
+        }
+        return nearest;
+    }
+
+    /**
+     * Fait passer un point et une direction de l'autre cote d'un passage, dans {@link #crossPoint} et {@link #crossDirection} : le
+     * point juste au-dela du plan d'arrivee.
+     */
+    private void cross(int frame, float x, float y, float z, float dx, float dy, float dz) {
+        this.crossPoint[0] = x;
+        this.crossPoint[1] = y;
+        this.crossPoint[2] = z;
+        this.openings.toArrival(frame, this.crossPoint);
+        this.crossDirection[0] = dx;
+        this.crossDirection[1] = dy;
+        this.crossDirection[2] = dz;
+        this.openings.turn(frame, this.crossDirection);
+        float length = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        for (int axis = 0; axis < 3; axis++) {
+            this.crossPoint[axis] += this.crossDirection[axis] / length * BEYOND;
+        }
+    }
+
+    /** {@code true} si la direction entre dans le cadre par sa face : du cote d'ou l'on passe. */
+    private boolean entering(int frame, float dx, float dy, float dz) {
+        int face = this.openings.faceOf(frame);
+        return dx * LightCell.NORMAL_X[face] + dy * LightCell.NORMAL_Y[face] + dz * LightCell.NORMAL_Z[face] < 0.0f;
+    }
+
+    private void grow() {
         if (this.lights == this.lightFaces.length) {
             this.rects = Arrays.copyOf(this.rects, this.rects.length * 2);
             this.lightFaces = Arrays.copyOf(this.lightFaces, this.lightFaces.length * 2);
             this.lightBlocks = Arrays.copyOf(this.lightBlocks, this.lightBlocks.length * 2);
+            this.lightColors = Arrays.copyOf(this.lightColors, this.lightColors.length * 2);
+            this.lightPassages = Arrays.copyOf(this.lightPassages, this.lightPassages.length * 2);
         }
+    }
+
+    private void addLight(int x, int y, int z, float size) {
+        if (this.window.block(x + LightCell.NORMAL_X[EMITTING_FACE], y + LightCell.NORMAL_Y[EMITTING_FACE], z + LightCell.NORMAL_Z[EMITTING_FACE]) != LightBlocks.AIR) {
+            return;
+        }
+        grow();
         AreaLight.blockFace(this.rects, this.lights * AreaLight.VALUES, x, y, z, EMITTING_FACE, size);
         this.lightBlocks[this.lights * 3] = x;
         this.lightBlocks[this.lights * 3 + 1] = y;
@@ -184,15 +422,15 @@ final class SectionBaker {
         int centerX = (sectionX << 4) + SECTION / 2;
         int centerY = (sectionY << 4) + SECTION / 2;
         int centerZ = (sectionZ << 4) + SECTION / 2;
-        long[] order = new long[this.lights];
-        for (int i = 0; i < this.lights; i++) {
+        long[] order = new long[this.neons];
+        for (int i = 0; i < this.neons; i++) {
             int dx = this.lightBlocks[i * 3] - centerX;
             int dy = this.lightBlocks[i * 3 + 1] - centerY;
             int dz = this.lightBlocks[i * 3 + 2] - centerZ;
             order[i] = (long) (dx * dx + dy * dy + dz * dz) << 32 | i;
         }
         Arrays.sort(order);
-        int kept = Math.min(this.lights, MAX_NEAR_LIGHTS);
+        int kept = Math.min(this.neons, MAX_NEAR_LIGHTS);
         // Le tri par distance au centre de la section garde ce qui compte pour toutes ses surfaces : une dalle hors de portee d'un
         // coin de la section reste utile a un autre.
         int[] near = new int[kept * LIGHT_INTS];
@@ -235,11 +473,12 @@ final class SectionBaker {
         float nx = LightCell.NORMAL_X[face];
         float ny = LightCell.NORMAL_Y[face];
         float nz = LightCell.NORMAL_Z[face];
-        float px = x + 0.5f - nx * 0.5f;
-        float py = y + 0.5f - ny * 0.5f;
-        float pz = z + 0.5f - nz * 0.5f;
+        offPlane(x + 0.5f - nx * 0.5f, y + 0.5f - ny * 0.5f, z + 0.5f - nz * 0.5f);
+        float px = this.point[0];
+        float py = this.point[1];
+        float pz = this.point[2];
         float sum = 0.0f;
-        for (int i = 0; i < this.lights; i++) {
+        for (int i = 0; i < this.neons; i++) {
             int at = i * AreaLight.VALUES;
             float share = AreaLight.received(this.rects, at, this.lightFaces[i], px, py, pz, nx, ny, nz, settings.reach(), settings.cone());
             if (share >= MIN_SHARE) {
@@ -249,8 +488,93 @@ final class SectionBaker {
                 sum += share * seen(px + nx * SURFACE_OFFSET, py + ny * SURFACE_OFFSET, pz + nz * SURFACE_OFFSET, i, cx, cy, cz);
             }
         }
-        return LightCell.pack(settings.ambientRed() + sum * settings.red(), settings.ambientGreen() + sum * settings.green(),
-                settings.ambientBlue() + sum * settings.blue());
+        if (this.lights == this.neons) {
+            return LightCell.pack(settings.ambientRed() + sum * settings.red(), settings.ambientGreen() + sum * settings.green(),
+                    settings.ambientBlue() + sum * settings.blue());
+        }
+        // Un neon de l'autre cote eclaire comme un neon, du meme calcul, reporte derriere le cadre : par l'ouverture seulement.
+        float beamRed = 0.0f;
+        float beamGreen = 0.0f;
+        float beamBlue = 0.0f;
+        for (int i = this.neons; i < this.lights; i++) {
+            int at = i * AreaLight.VALUES;
+            float cx = (this.rects[at] + this.rects[at + 6]) * 0.5f;
+            float cy = (this.rects[at + 1] + this.rects[at + 7]) * 0.5f;
+            float cz = (this.rects[at + 2] + this.rects[at + 8]) * 0.5f;
+            float share = AreaLight.received(this.rects, at, this.lightFaces[i], px, py, pz, nx, ny, nz, settings.reach(), settings.cone());
+            if (share >= MIN_SHARE) {
+                float received = share * passing(px + nx * SURFACE_OFFSET, py + ny * SURFACE_OFFSET, pz + nz * SURFACE_OFFSET, i, cx, cy, cz);
+                beamRed += received * this.lightColors[i * 3];
+                beamGreen += received * this.lightColors[i * 3 + 1];
+                beamBlue += received * this.lightColors[i * 3 + 2];
+            }
+        }
+        return LightCell.pack(settings.ambientRed() + sum * settings.red() + beamRed, settings.ambientGreen() + sum * settings.green() + beamGreen,
+                settings.ambientBlue() + sum * settings.blue() + beamBlue);
+    }
+
+    /**
+     * La part d'un neon vu par un portail que voit un point : des rayons vers des points repartis sur lui, qui comptent s'ils passent
+     * par l'ouverture et que rien ne les arrete de ce cote, jusqu'au cadre, puis de l'autre, jusqu'au neon, quand la zone de la-bas a
+     * ses blocs.
+     */
+    private float passing(float x, float y, float z, int light, float cx, float cy, float cz) {
+        int at = light * AreaLight.VALUES;
+        float ux = (this.rects[at + 3] - this.rects[at]) * SAMPLE_SPREAD;
+        float uy = (this.rects[at + 4] - this.rects[at + 1]) * SAMPLE_SPREAD;
+        float uz = (this.rects[at + 5] - this.rects[at + 2]) * SAMPLE_SPREAD;
+        float vx = (this.rects[at + 6] - this.rects[at + 3]) * SAMPLE_SPREAD;
+        float vy = (this.rects[at + 7] - this.rects[at + 4]) * SAMPLE_SPREAD;
+        float vz = (this.rects[at + 8] - this.rects[at + 5]) * SAMPLE_SPREAD;
+        int passage = this.lightPassages[light];
+        int free = 0;
+        for (int i = 0; i < LIGHT_SAMPLES; i++) {
+            float su = i < 2 ? -1.0f : 1.0f;
+            float sv = (i & 1) == 0 ? -1.0f : 1.0f;
+            this.rayFrom[0] = x;
+            this.rayFrom[1] = y;
+            this.rayFrom[2] = z;
+            this.rayTo[0] = cx + su * ux + sv * vx;
+            this.rayTo[1] = cy + su * uy + sv * vy;
+            this.rayTo[2] = cz + su * uz + sv * vz;
+            float t = this.openings.crossing(passage, this.rayFrom, this.rayTo);
+            if (t < 0.0f) {
+                continue;
+            }
+            float tx = this.rayTo[0];
+            float ty = this.rayTo[1];
+            float tz = this.rayTo[2];
+            float hx = x + (tx - x) * t;
+            float hy = y + (ty - y) * t;
+            float hz = z + (tz - z) * t;
+            if (this.ray.clear(this.window, x, y, z, hx, hy, hz) && !walled(x, y, z, hx, hy, hz) && clearBeyond(passage, light, hx, hy, hz, tx, ty, tz)) {
+                free++;
+            }
+        }
+        return free / (float) LIGHT_SAMPLES;
+    }
+
+    /** {@code true} si rien n'arrete, de l'autre cote d'un passage, le rayon qui va du cadre au neon ; sans ses blocs, rien. */
+    private boolean clearBeyond(int passage, int light, float hx, float hy, float hz, float tx, float ty, float tz) {
+        int slot = crossSlot(passage);
+        if (slot < 0) {
+            return true;
+        }
+        // Le neon de l'autre cote, juste devant sa face, pour ne pas s'arreter sur lui.
+        int face = this.lightFaces[light];
+        cross(passage, tx + LightCell.NORMAL_X[face] * SURFACE_OFFSET, ty + LightCell.NORMAL_Y[face] * SURFACE_OFFSET,
+                tz + LightCell.NORMAL_Z[face] * SURFACE_OFFSET, tx - hx, ty - hy, tz - hz);
+        float neonX = this.crossPoint[0];
+        float neonY = this.crossPoint[1];
+        float neonZ = this.crossPoint[2];
+        cross(passage, hx, hy, hz, tx - hx, ty - hy, tz - hz);
+        return !inBlock(this.crossWindows[slot]) && this.crossRay.clear(this.crossWindows[slot], this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], neonX, neonY,
+                neonZ);
+    }
+
+    /** {@code true} si le point passe de l'autre cote ({@link #crossPoint}) est dans un bloc : une marche n'y regarde pas sa premiere cellule. */
+    private boolean inBlock(LightWindow beyond) {
+        return beyond.block((int) Math.floor(this.crossPoint[0]), (int) Math.floor(this.crossPoint[1]), (int) Math.floor(this.crossPoint[2])) != LightBlocks.AIR;
     }
 
     /** La part d'une dalle que voit un point : quelques rayons vers des points repartis sur elle, juste devant elle. */
@@ -270,7 +594,10 @@ final class SectionBaker {
         for (int i = 0; i < LIGHT_SAMPLES; i++) {
             float su = i < 2 ? -1.0f : 1.0f;
             float sv = (i & 1) == 0 ? -1.0f : 1.0f;
-            if (this.ray.clear(this.window, x, y, z, frontX + su * ux + sv * vx, frontY + su * uy + sv * vy, frontZ + su * uz + sv * vz)) {
+            float tx = frontX + su * ux + sv * vx;
+            float ty = frontY + su * uy + sv * vy;
+            float tz = frontZ + su * uz + sv * vz;
+            if (this.ray.clear(this.window, x, y, z, tx, ty, tz) && !walled(x, y, z, tx, ty, tz)) {
                 free++;
             }
         }
@@ -343,8 +670,8 @@ final class SectionBaker {
     }
 
     /**
-     * Le prochain rebond ecrit aussi, a part, tout ce qui n'est pas la lumiere directe : le fond et les rebonds, que le
-     * cache de surfaces complete avec sa propre lumiere directe.
+     * Le prochain rebond ecrit aussi, a part, tout ce qui n'est pas la lumiere directe des neons : le fond et les rebonds, ceux qui
+     * passent les portails compris, que le cache de surfaces complete avec sa propre lumiere directe.
      *
      * @param out section a remplir
      * @param settings reglages de la cuisson
@@ -363,9 +690,10 @@ final class SectionBaker {
         this.colorBlue = settings.bounceBlue();
     }
 
-    /** Pose la fenetre de blocs d'une section, sans lumiere directe. */
+    /** Pose la fenetre de blocs d'une section, sans lumiere directe, et les cadres que ses rayons de rebond peuvent passer. */
     void place(LightBlocks blocks, int sectionX, int sectionY, int sectionZ) {
         this.window.fill(blocks, sectionX, sectionY, sectionZ);
+        collectWalls(sectionX, sectionY, sectionZ, BOUNCE_LENGTH);
     }
 
     /** Ce que les rayons d'une surface ramenent, et la part d'elle que cachent des blocs proches : dans les champs. */
@@ -374,15 +702,38 @@ final class SectionBaker {
         float nx = LightCell.NORMAL_X[face];
         float ny = LightCell.NORMAL_Y[face];
         float nz = LightCell.NORMAL_Z[face];
-        float px = x + 0.5f - nx * (0.5f - SURFACE_OFFSET);
-        float py = y + 0.5f - ny * (0.5f - SURFACE_OFFSET);
-        float pz = z + 0.5f - nz * (0.5f - SURFACE_OFFSET);
+        offPlane(x + 0.5f - nx * (0.5f - SURFACE_OFFSET), y + 0.5f - ny * (0.5f - SURFACE_OFFSET), z + 0.5f - nz * (0.5f - SURFACE_OFFSET));
+        float px = this.point[0];
+        float py = this.point[1];
+        float pz = this.point[2];
         float red = 0.0f;
         float green = 0.0f;
         float blue = 0.0f;
         int near = 0;
         for (int i = 0; i < BOUNCE_RAYS; i++) {
-            if (!this.ray.march(this.window, px, py, pz, directions[i * 3], directions[i * 3 + 1], directions[i * 3 + 2], BOUNCE_LENGTH)) {
+            float dx = directions[i * 3];
+            float dy = directions[i * 3 + 1];
+            float dz = directions[i * 3 + 2];
+            boolean hit = this.ray.march(this.window, px, py, pz, dx, dy, dz, BOUNCE_LENGTH);
+            float reached = hit ? this.ray.distance() : BOUNCE_LENGTH;
+            int frame = this.wallCount == 0 ? -1 : nearestFrame(px, py, pz, px + dx * reached, py + dy * reached, pz + dz * reached);
+            if (frame >= 0) {
+                // Un cadre arrete le rayon dans son monde ; celui d'un passage, entre par sa face, le laisse repartir de l'autre cote. Tant
+                // que l'autre cote n'est pas cuit la ou il va, le rayon continue de ce cote, comme sans cadre : un mur sombre serait pire.
+                int slot = crossSlot(frame);
+                boolean passes = this.openings.kind(frame) == PortalOpenings.PASSAGE && entering(frame, dx, dy, dz);
+                int crossed = !passes ? CROSS_MISS : slot < 0 || this.crossStage == 0 ? CROSS_UNKNOWN : crossGather(frame, slot, px, py, pz, dx, dy, dz, reached * this.crossT);
+                if (crossed == CROSS_HIT) {
+                    near += this.crossNear ? 1 : 0;
+                    red += this.crossRed;
+                    green += this.crossGreen;
+                    blue += this.crossBlue;
+                }
+                if (crossed != CROSS_UNKNOWN) {
+                    continue;
+                }
+            }
+            if (!hit) {
                 continue;
             }
             if (this.ray.distance() < NEAR) {
@@ -402,6 +753,113 @@ final class SectionBaker {
         this.bouncedGreen = green / BOUNCE_RAYS;
         this.bouncedBlue = blue / BOUNCE_RAYS;
         this.seenShare = 1.0f - occlusion * near / BOUNCE_RAYS;
+    }
+
+    /**
+     * Un rayon de rebond qui passe un cadre par sa face repart de l'arrivee, dans les blocs de l'autre cote, et ramene l'eclairement de
+     * la surface qu'il y touche, teinte par son albedo, dans les champs.
+     *
+     * @return {@link #CROSS_HIT} s'il touche une surface de la-bas, {@link #CROSS_MISS} s'il n'en touche aucune, {@link #CROSS_UNKNOWN} si
+     *     la section qu'il touche n'y est pas encore cuite
+     */
+    private int crossGather(int frame, int slot, float px, float py, float pz, float dx, float dy, float dz, float travelled) {
+        cross(frame, px + dx * travelled, py + dy * travelled, pz + dz * travelled, dx, dy, dz);
+        BlockRay beyond = this.crossRay;
+        if (inBlock(this.crossWindows[slot])) {
+            // L'arrivee est contre un bloc : le rayon s'y arrete aussitot, sans rien en ramener.
+            this.crossNear = travelled < NEAR;
+            this.crossRed = 0.0f;
+            this.crossGreen = 0.0f;
+            this.crossBlue = 0.0f;
+            return CROSS_HIT;
+        }
+        if (!beyond.march(this.crossWindows[slot], this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], this.crossDirection[0], this.crossDirection[1],
+                this.crossDirection[2], BOUNCE_LENGTH - travelled)) {
+            return CROSS_MISS;
+        }
+        LightZone zone = this.openings.zone(frame);
+        int[] state = zone.peek(ChunkSectionPos.asLong(beyond.cellX() >> 4, beyond.cellY() >> 4, beyond.cellZ() >> 4), this.crossStage);
+        if (state == null) {
+            return CROSS_UNKNOWN;
+        }
+        int value = state[LightCell.index(beyond.cellX() & MASK, beyond.cellY() & MASK, beyond.cellZ() & MASK, beyond.face())];
+        this.crossNear = travelled + beyond.distance() < NEAR;
+        float[] albedos = zone.blocks().albedos();
+        int material = (beyond.block() & 0xFF) * 3;
+        // Une cellule sans surface vaut 0 : ses couleurs aussi, et le rayon n'en ramene rien.
+        this.crossRed = LightCell.red(value) * albedos[material];
+        this.crossGreen = LightCell.green(value) * albedos[material + 1];
+        this.crossBlue = LightCell.blue(value) * albedos[material + 2];
+        return CROSS_HIT;
+    }
+
+    /**
+     * La lumiere qui sort d'un passage, pour les shaders, qui ne marchent que dans les blocs de leur monde : pour chaque direction qui
+     * entre dans le cadre par sa face, ce que ramene de l'autre cote un rayon parti de chacun de ses quarts, en moyenne, teint par
+     * l'albedo de la surface touchee. Six valeurs par direction : la lumiere directe, puis elle et un premier rebond, en rouge, vert et
+     * bleu. Les directions sont reparties selon le cosinus autour de l'axe du cadre, d'un angle d'or a la suivante, comme les rayons des
+     * shaders, qui retrouvent la plus proche.
+     *
+     * @param frame rang du passage, qui a sa zone de l'autre cote
+     * @param out tableau a remplir
+     * @param at premiere valeur a ecrire
+     */
+    void measurePassage(int frame, float[] out, int at) {
+        PortalOpenings current = this.openings;
+        LightZone zone = current.zone(frame);
+        for (int axis = 0; axis < 3; axis++) {
+            this.crossPoint[axis] = current.center(frame, axis);
+        }
+        current.toArrival(frame, this.crossPoint);
+        LightWindow beyond = this.crossWindows[0];
+        beyond.fill(zone.blocks(), ChunkSectionPos.getSectionCoord(this.crossPoint[0]), ChunkSectionPos.getSectionCoord(this.crossPoint[1]),
+                ChunkSectionPos.getSectionCoord(this.crossPoint[2]));
+        float[] albedos = zone.blocks().albedos();
+        int face = current.faceOf(frame);
+        float wx = current.corner(frame, 1, 0) - current.corner(frame, 0, 0);
+        float wy = current.corner(frame, 1, 1) - current.corner(frame, 0, 1);
+        float wz = current.corner(frame, 1, 2) - current.corner(frame, 0, 2);
+        float hx = current.corner(frame, 2, 0) - current.corner(frame, 1, 0);
+        float hy = current.corner(frame, 2, 1) - current.corner(frame, 1, 1);
+        float hz = current.corner(frame, 2, 2) - current.corner(frame, 1, 2);
+        float width = (float) Math.sqrt(wx * wx + wy * wy + wz * wz);
+        float height = (float) Math.sqrt(hx * hx + hy * hy + hz * hz);
+        for (int k = 0; k < PASSAGE_DIRECTIONS; k++) {
+            double share = (k + 0.5) / PASSAGE_DIRECTIONS;
+            double radius = Math.sqrt(share);
+            float along = (float) (Math.cos(k * GOLDEN_ANGLE) * radius);
+            float across = (float) (Math.sin(k * GOLDEN_ANGLE) * radius);
+            float back = (float) -Math.sqrt(1.0 - share);
+            float dx = LightCell.NORMAL_X[face] * back + wx / width * along + hx / height * across;
+            float dy = LightCell.NORMAL_Y[face] * back + wy / width * along + hy / height * across;
+            float dz = LightCell.NORMAL_Z[face] * back + wz / width * along + hz / height * across;
+            int to = at + k * 6;
+            for (int point = 0; point < 4; point++) {
+                float su = point < 2 ? -QUARTER : QUARTER;
+                float sv = (point & 1) == 0 ? -QUARTER : QUARTER;
+                cross(frame, current.center(frame, 0) + wx * su + hx * sv, current.center(frame, 1) + wy * su + hy * sv, current.center(frame, 2) + wz * su + hz * sv,
+                        dx, dy, dz);
+                if (!inBlock(beyond) && this.crossRay.march(beyond, this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], this.crossDirection[0], this.crossDirection[1],
+                        this.crossDirection[2], BOUNCE_LENGTH)) {
+                    long key = ChunkSectionPos.asLong(this.crossRay.cellX() >> 4, this.crossRay.cellY() >> 4, this.crossRay.cellZ() >> 4);
+                    int index = LightCell.index(this.crossRay.cellX() & MASK, this.crossRay.cellY() & MASK, this.crossRay.cellZ() & MASK, this.crossRay.face());
+                    int material = (this.crossRay.block() & 0xFF) * 3;
+                    add(out, to, zone.peek(key, 1), index, albedos, material);
+                    add(out, to + 3, zone.peek(key, 2), index, albedos, material);
+                }
+            }
+        }
+    }
+
+    /**
+     * Ajoute le quart de ce que renvoie une surface touchee, teint par son albedo : un des quatre points du cadre. Une cellule sans
+     * surface, ou d'une section pas encore cuite, vaut 0 : ses couleurs aussi.
+     */
+    private static void add(float[] out, int at, int @Nullable [] state, int index, float[] albedos, int material) {
+        int value = state == null ? 0 : state[index];
+        out[at] += LightCell.red(value) * albedos[material] * POINT_SHARE;
+        out[at + 1] += LightCell.green(value) * albedos[material + 1] * POINT_SHARE;
+        out[at + 2] += LightCell.blue(value) * albedos[material + 2] * POINT_SHARE;
     }
 
     /** Indice d'une section parmi les vingt-sept autour d'une autre, centre a {@code 13}. */

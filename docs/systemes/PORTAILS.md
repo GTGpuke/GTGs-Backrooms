@@ -88,7 +88,7 @@ On voit l'autre côté avec ce qui s'y passe, portails compris. L'eau et le verr
 
 Un objet jeté ou une flèche tirée dans le cadre ressort de l'autre côté, comme un mob qui s'y engage. Un véhicule traverse avec tout ce qui le monte, joueurs compris.
 
-Le son de l'autre côté vient du cadre, et ses particules se voient dans la vue. Un mob hostile qui voit un joueur par le portail vient le chercher en le traversant, comme un mob frappé à travers lui. Si le portail la transmet, une torche éclaire l'autre côté d'un niveau de moins, comme à travers un bloc d'air. La lumière du ciel ne passe pas.
+Le son de l'autre côté vient du cadre, et ses particules se voient dans la vue. Un mob hostile qui voit un joueur par le portail vient le chercher en le traversant, comme un mob frappé à travers lui. Si le portail la transmet, une torche éclaire l'autre côté d'un niveau de moins, comme à travers un bloc d'air. La lumière du ciel ne passe pas. Dans un monde à lumière calculée (les Backrooms), le plan est aussi un mur pour la lumière : celle qui y arrive ne continue pas derrière lui mais passe de l'autre côté, où les néons d'ici éclairent par le cadre avec leur direction, et ce que les murs d'ici renvoient y entre aussi, avec sa direction ([rendu](RENDU.md), « Lumière à travers un portail »).
 
 Viser à travers le cadre vise de l'autre côté, et le contour du bloc visé s'y dessine. On y frappe, mine, pose et utilise, et le clic molette prend le bloc ou la créature. Aucun écran ne s'ouvre et aucune monture ne se monte à travers un portail. Un portail fermé ou invisible ne laisse rien passer, lumière comprise.
 
@@ -211,7 +211,14 @@ Toutes les 5 ticks, le serveur relève pour chaque joueur les portails à porté
 
 À plus de 8 blocs d'un cadre d'arrivée debout, la fenêtre garde ce compte de chunks mais suit l'axe de ce que montre le cadre (`RemoteChunkWindow.collectCone`). Elle prend le carré de 3 × 3 de l'arrivée, puis, anneau par anneau, les chunks du coin de vue au-delà du cadre. Chacun vient avec ses quatre voisins, sans lesquels le client ne construit pas ses sections. Un joueur loin à côté d'une face, ou derrière elle, n'a pas de fenêtre pour elle, et une arrivée couchée garde le carré.
 
-Chaque chunk du cône a son propre ticket côté serveur, relâché cinq secondes après que plus personne ne le veut. Un portail vu à travers un portail du joueur ajoute la fenêtre carrée de son arrivée (`seenThroughAnother`), s'il mène ailleurs que dans le monde du joueur. Un troisième monde se voit ainsi à travers un portail imbriqué.
+Chaque chunk du cône a son propre ticket côté serveur, relâché cinq secondes après que plus personne ne le veut. Un portail vu à travers un portail du joueur ajoute la fenêtre carrée de son arrivée (`seenThroughAnother`), s'il mène ailleurs que dans le monde du joueur. Un troisième monde se voit ainsi à travers un portail imbriqué. Un portail du monde du joueur vu par un cadre vers un endroit lointain de ce monde est dans son ailleurs : sa fenêtre se cherche sous la clef de l'ailleurs (`PortalViewTracker.addNestedWindows`).
+
+#### Ailleurs dans le monde du joueur
+
+Un portail qui mène dans le monde du joueur montre ce que vanilla lui envoie déjà, par la vue secondaire. Quand la fenêtre de son arrivée déborde de ce que vanilla lui envoie et que son client dessine (son filtre de chunks, l'anneau du bord exclu : `PortalViewTracker.relevant`), elle lui parvient comme celle d'une autre dimension, sous une clef à part : l'ailleurs de la dimension (`RemoteKeys`, `gtgs_backrooms:elsewhere/<espace>/<chemin>`), que les payloads portent à la place de la dimension, sans changement du protocole. Le serveur relit la vraie dimension sous la clef pour charger, relayer les blocs, les entités, les sons et les fissures. Le client en fait un monde distant de la vraie dimension, rangé sous la clef. Un portail est montré par l'ailleurs de sa dimension s'il tient le chunk de son arrivée (`RemoteWorldRegistry.viewOf(portal)`, `worldOf(portal)`), sinon par la vue secondaire : la vue, le clic, la lumière cuite, le son et la collision à travers le cadre lisent ce monde-là. Près du cadre, la fenêtre garde le rayon de préchargement plus 2 : une traversée y repart de ce que vanilla envoie. Le joueur lui-même n'est jamais montré dans son ailleurs. Un son, des particules ou des fissures de l'ailleurs ne lui sont relayés
+que si vanilla ne les lui a pas déjà envoyés (à portée du point, sauf s'il en est exclu) et que l'envoi à l'auteur d'une action à
+travers un cadre ne l'a pas servi (`PortalViewTracker.relayToViewers`). Passé dans un autre monde, il voit le serveur lui libérer
+ses ailleurs : plus rien ne les nourrirait.
 
 Les déchargements partent avant les chargements, puis les entités des chunks envoyés sont alignées. Une dimension que plus aucun portail ne montre garde sa fenêtre cinq secondes, pour qu'un demi-tour ne renvoie pas tout. Son monde distant est libéré chez le client après `remoteWorldReleaseSeconds`.
 
@@ -237,7 +244,7 @@ Les récepteurs du client s'exécutent tels que Fabric les appelle, sur le threa
 
 `RemoteWorldRegistry` tient ces mondes et les vues secondaires, et tique leurs entités. Tout est jeté quand vanilla change le monde principal, et un monde seul quand le serveur le libère. Un monde libéré est vidé avant d'être jeté, et ses tampons de dessin servent au renderer suivant.
 
-`ClientPortalIndex` tient les portails chargés par monde client, que les parcours par image lisent. Dans le monde du joueur, `portals` omet les sorties fugaces qu'il ne regarde pas, et `allPortals` les rend toutes. `RemoteParticles` échange le contenu du gestionnaire de particules vanilla avec celui d'un monde distant, le temps de s'en servir.
+`ClientPortalIndex` tient les portails chargés par monde client, que les parcours par image lisent. Dans le monde du joueur, `portals` omet les sorties fugaces qu'il ne regarde pas, et `allPortals` les rend toutes. Un portail qui arrive dans le monde du joueur fait replacer les sons en cours en fin de tick, une fois ses données reçues : à son chargement, sa destination vaut encore l'origine du monde. `RemoteParticles` échange le contenu du gestionnaire de particules vanilla avec celui d'un monde distant, le temps de s'en servir.
 
 ### Rendu des vues
 
@@ -482,7 +489,9 @@ Les options des portails, en `gtgsbackrooms.portal.*`, sont décrites dans la [r
 ### Vues
 
 - Un seul niveau d'imbrication est dessiné. Un portail vu à travers un portail imbriqué est transparent.
-- Une dimension distante n'a qu'une grille de sections, ancrée sur le portail visible le plus proche. Un second portail vers la même dimension, à plus de deux chunks de là, ne montre que ce que cette grille couvre.
+- Une dimension distante n'a qu'une grille de sections, ancrée sur le portail visible le plus proche. Un second portail vers la même dimension, à plus de deux chunks de là, ne montre que ce que cette grille couvre. De même pour l'ailleurs du monde du joueur.
+- Traverser un portail vers un endroit lointain du même monde reste un déplacement dans ce monde : le client attend que vanilla lui envoie les chunks de l'arrivée, que l'ailleurs tenait déjà. Le son, lui, les lit dans l'ailleurs le temps de l'attente (`RemoteWorldRegistry.holding`).
+- Un portail imbriqué qui ramène loin dans le monde du joueur n'a pas de fenêtre : il montre la vue secondaire.
 - Une arrivée qui ne tient pas dans la carte du client autour du foyer de sa dimension reste sombre.
 - La pluie d'un monde distant n'éclabousse qu'autour de la caméra de la vue. Dans une vue secondaire, elle tombe sans éclaboussures.
 - En troisième personne, regard incliné, le recul sort par le haut d'un cadre au bout d'un à deux blocs, et la caméra revient derrière le cadre.
@@ -547,7 +556,7 @@ Les tests en jeu prennent le Nether comme dimension distante, car le serveur de 
 | `PortalOrientationGameTests`, `PortalLyingGameTests` | Les 144 paires d'orientations, cadres couchés, arrivée tête en bas. |
 | `PortalRidingGameTests` | Véhicules et passagers. |
 | `PortalDestinationGameTests`, `PortalArrivalReferenceGameTests` | Recherche d'arrivée, sortie fixée, huit arrivées de référence figées. |
-| `PortalSyncGameTests` | Fenêtre de chunks, entités, météo, chunks tenus, annonces de traversée. |
+| `PortalSyncGameTests` | Fenêtre de chunks, entités, météo, chunks tenus, annonces de traversée, ailleurs du monde du joueur et portails vus dans l'ailleurs. |
 | `PortalInteractionGameTests`, `PortalPropagationGameTests` | Actions à travers le cadre, leur son et leurs éclats chez qui agit, sons et particules relayés, poursuite des mobs. |
 | `PortalLightGameTests` | Lumière transmise. |
 
@@ -557,7 +566,8 @@ Les tests du client vérifient la vue du Level 0 dans un cadre et un aller-retou
 ou au milieu du bloc, vers chaque sortie, vu de face, de biais, de près, de loin et de dos, puis le cadre d'arrivée vu du
 Level 0. À chaque point de vue, les pixels qui montrent l'autre monde couvrent exactement l'ouverture projetée à
 l'écran, et la face arrière d'un cadre couché ou à l'arrivée couchée ne montre rien. `EntityContinuityClientTests` fait
-traverser un porte-armure et un cochon à vitesse constante : à l'écran, ils ne s'arrêtent ni ne sautent. Une entité à
+traverser un porte-armure et un cochon à vitesse constante : à l'écran, ils ne s'arrêtent ni ne sautent. `CrossingTurnClientTests`
+fait passer le joueur et un cochon par un cadre qui les tourne : le corps tourne avec la tête, sans tour sur lui-même. Une entité à
 cheval sur un cadre garde le look du monde du joueur (`straddling_entity_keeps_the_players_look`).
 
 ### Diagnostic

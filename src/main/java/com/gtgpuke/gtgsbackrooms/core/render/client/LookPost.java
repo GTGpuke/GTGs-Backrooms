@@ -154,11 +154,13 @@ public final class LookPost {
         }
         LookPrograms.bindLutSampler();
         GlUniform style = LookPrograms.postStyle();
+        boolean styled = false;
         if (style != null) {
             LookSettings settings = LookSettings.current();
             VisualPreset preset = settings.preset();
             // Les options de confort valent pour la cassette : pas de tremble a l'epaule, et un bruit bien moindre.
             style.set(preset.tape(), preset.bars(), settings.motionReduced() ? 0.0f : 1.0f, settings.noiseReduced() ? QUIET_TAPE : 1.0f);
+            styled = preset.tape() > 0.0f || preset.bars() > 0.0f;
         }
         Framebuffer screen = client.getFramebuffer();
         Vec3d listener = client.gameRenderer.getCamera().getPos();
@@ -189,6 +191,14 @@ public final class LookPost {
                 RenderSystem.setShaderTexture(0, copy.getColorAttachment());
                 RenderSystem.setShaderTexture(1, bloom != null ? bloom.getColorAttachment() : copy.getColorAttachment());
                 GpuTimer.begin(GpuTimer.POST);
+                if (lookBits && styled && (looks & 1) != 0 && client.world != null) {
+                    // Le style est celui de la camera du joueur : son cadre, son objectif, ses bandes noires et sa vignette couvrent aussi
+                    // un monde sans look vu par un portail, qui garde ses couleurs. Sans cela, le cadre du portail y faisait un trou.
+                    params.set(LookProfiles.of(client.world.getRegistryKey()).post().vignette(), 0.0f, 0.0f, 0.0f);
+                    lookParams.set(0.0f, 0.0f, 0.0f, LookState.time());
+                    GL11.glStencilFunc(GL11.GL_EQUAL, 0, StencilLookMask.LOOK_MASK);
+                    FullscreenTriangle.draw(program);
+                }
                 for (int id = 1; id <= StencilLookMask.MAX_LOOK; id++) {
                     if ((looks & 1 << id) == 0) {
                         continue;

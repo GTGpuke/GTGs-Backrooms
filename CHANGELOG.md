@@ -8,6 +8,82 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
 ## [Unreleased]
 
 ### Fixed
+- **Mémoire graphique d'une vue de portail jamais rendue** : en High et en Ultra, la lumière d'une vue (environ 200 Mio de mémoire
+  graphique) restait prise jusqu'à la fin de la session dès qu'un portail avait montré un autre endroit des Backrooms. Elle est
+  maintenant rendue après une minute sans vue, comme un monde distant que plus aucun portail ne montre, et se recrée au retour
+  devant un cadre.
+- **Cadre sombre dans la vue d'un portail lointain du même monde** : un portail vers une autre dimension, vu par un cadre qui mène
+  loin dans le monde du joueur, restait un cadre sombre faute de fenêtre de chunks. Il montre maintenant son autre monde, comme
+  vu par un cadre vers une autre dimension.
+- **Son coupé au passage d'un portail** : le bourdonnement des tubes de l'autre côté d'un cadre n'était presque jamais joué
+  (choisis du mauvais côté de l'arrivée), jamais pour un portail vers un autre endroit du même niveau, et, après le passage,
+  le tube qu'on venait de quitter sonnait à sa place, à soixante blocs, puis s'arrêtait. Les tubes de l'autre côté
+  bourdonnent maintenant au cadre, et au passage chaque son garde sa source et passe par le plus court chemin : il
+  continue sans coupure.
+- **Son en double à travers un cadre lointain du même monde** : casser ou poser un bloc à travers un portail vers un endroit
+  lointain du même monde faisait sortir son son deux fois du cadre, comme tout son que le jeu envoyait déjà au joueur assez proche.
+  Le relais vers la fenêtre lointaine ne sert plus que ceux que le jeu n'a pas servis.
+- **Endroit lointain figé après un passage vers une autre dimension** : le monde à part qui montrait un endroit lointain du monde
+  quitté restait chez le client jusqu'à la déconnexion, plus jamais mis à jour, et pouvait passer avant le monde à jour pour un
+  portail qui menait au même endroit. Le serveur le libère maintenant à la traversée.
+- **Endroit lointain du même monde lu dans le mauvais monde** : la réverbération et l'occlusion d'un son de là-bas, la lumière d'une
+  torche transmise par le cadre et le son qui passe deux cadres cherchaient cet endroit dans le monde du joueur, qui n'en a pas les
+  chunks. Ils le trouvent maintenant là où le client le tient.
+- **Relief faux dans la vue d'un portail, en High et en Ultra** : les tuiles de la vue prenaient le relief d'une autre texture, lu
+  dans la table des matières de la zone du joueur, qui les numérote dans un autre ordre.
+- **Mémoire gardée après une partie ou une vue de portail** : la zone de lumière du joueur gardait chaque zone de vue abandonnée dont
+  un passage menait à elle, et deux tableaux gardaient les zones de l'autre côté après la partie. Ils les oublient maintenant.
+- **Travail perdu dans la vue d'un monde sans néons** : la passe des ombres des corps y calculait des tuiles pour les corps de la vue
+  précédente.
+- **Son coupé après un portail vers un endroit lointain du même monde** : le client attend quelques ticks les chunks de l'arrivée
+  après une telle traversée. Le tube qu'on venait de quitter se taisait alors, puis repartait d'un autre son, et l'arrivée du cadre de
+  retour, dont les données n'étaient pas encore reçues, renvoyait les sons en cours à leur place, à trois cents blocs. Le son lit
+  maintenant les tubes et les cadres de l'arrivée là où le client les tient déjà, l'index des néons relève d'abord les chunks qu'on
+  interroge, l'arrivée d'un portail ne replace les sons qu'une fois ses données reçues, et un tube qu'une revue ne retrouve pas le
+  temps de cet échange ne se tait qu'une seconde plus tard.
+- **Pénombre des corps plus claire derrière le plan d'un portail, en High et en Ultra** : l'ombre portée du joueur collé à un cadre
+  s'éclaircissait sur ses bords de l'autre côté du plan (jusqu'à 9 niveaux sur une bande, au banc). La lumière qu'un corps retire à un
+  néon vu par le cadre se mesure maintenant au point de la dalle que la surface voit le mieux, comme la lumière qu'elle en reçoit.
+- **Ombre de contact coupée au plan d'un portail, à tous les paliers** : le joueur collé à un cadre n'avait son ombre de contact que
+  de son côté ; derrière le plan, le sol était plus clair de 13 niveaux en Low et en Medium, de 10 en High et en Ultra. Les corps de
+  l'autre côté d'un cadre comptent maintenant pour l'ombre de contact, par l'ouverture, une seule fois même si le portail a deux faces.
+- **Ombre du joueur coupée au plan d'un portail aller simple**, en High et en Ultra : la vue d'un portail sans cadre de
+  retour ne recevait aucun corps, et l'ombre portée du joueur s'arrêtait net au plan. Les corps devant l'entrée sont maintenant
+  reportés derrière l'arrivée, comme pour un aller-retour.
+- **Halo des tubes coupé par un portail** : un tube juste devant un cadre avait son halo sur le plafond, mais plus dans le
+  cadre, que la vue recouvrait ; et les tubes de l'autre côté, derrière l'arrivée, prêtaient leur halo à l'air de ce côté.
+  Dans la vue, l'air jusqu'au plan d'arrivée prend maintenant exactement le halo de ce côté (les mêmes tubes que l'image du
+  joueur, passés par le portail), et celui d'au-delà les tubes de là-bas.
+- **Marche de lumière au plan d'un portail en Low et en Medium, murs par blocs derrière le plan en High** : la cellule de la zone
+  que coupe le plan d'un cadre posé au milieu d'un bloc se cuisait sur le plan même, sans voir le portail, et se sautait à la lecture ;
+  la lumière de la zone sautait de 20 niveaux au pied du cadre, et les rebonds de la zone dessinaient les murs de l'autre côté bloc par
+  bloc. Elle se cuit maintenant du côté où le cadre s'ouvre et se lit jusqu'au plan.
+- **Reflets qui s'arrêtaient au plan d'un portail** : les dalles de l'autre côté, qui éclairent par le cadre, ne se reflétaient pas sur
+  les surfaces brillantes de ce côté, ni celles de ce côté sur celles de là-bas vues par le cadre. Elles se reflètent maintenant comme
+  elles éclairent, par l'ouverture.
+- **Sol noir derrière un portail aller simple** : un couloir éclairé bouché par un portail sans cadre de retour (aller simple, ou sortie
+  fugace que personne ne regarde) montrait, dès le plan, un sol sans aucune lumière de ce côté, alors qu'un aller-retour continue la
+  lumière. L'arrivée d'un tel portail est maintenant un passage pour la lumière, comme le serait son cadre de retour : ce qu'on voit par
+  l'entrée a la lumière de ce côté, dans les deux sens de cuisson.
+- **Performance en High et en Ultra** : les ombres des corps se calculaient dans le shader du terrain, à chaque pixel, et dans une
+  grande salle ouverte les rayons vers les dalles coûtaient à eux seuls 4 ms par image en Ultra (127 images par seconde au banc, contre
+  537 sans ombres). Elles se calculent maintenant une fois par pixel de texture des tuiles proches d'un corps et vues par la caméra,
+  dans une passe à part, et le terrain lit le résultat : 478 images par seconde en Ultra et 590 en High au même banc. Rien ne change à
+  l'image sur la grille des pixels d'ombre ; en lumière lisse (Ultra), la pénombre d'un corps se lit entre quatre pixels de texture au
+  lieu de se recalculer à chaque pixel de l'écran.
+- **Vue d'un portail trop sombre en Ultra** : à travers un portail aller-retour, le mur du fond perdait jusqu'à un quart de sa lumière, et une
+  destination lointaine paraissait mal éclairée ; les rebonds tracés de la vue avaient été calculés avant que ce qui sort du cadre de
+  retour ne soit mesuré, et rien ne les recalculait. Ils repartent maintenant dès que la mesure d'un passage change.
+- **Bord d'un portail qui scintille en marchant**, sous l'Ultra : le mur, le sol et le plafond tout contre le cadre lisaient, d'un pixel
+  à l'autre, tantôt leur lumière, tantôt celle de derrière le cadre ; ils lisent toujours la leur.
+- **Ombres venues de derrière un portail** : un néon derrière un cadre qui bouche un couloir faisait encore, de ce côté, l'ombre des
+  créatures, des reflets et un halo dans l'air, alors que sa lumière était bien arrêtée. Le cadre les arrête maintenant aussi.
+- **Styles VHS et Cinématique troués par un portail** : un monde sans look vu par un portail depuis les Backrooms (l'Overworld)
+  échappait aux effets de la caméra, cadre 4:3, objectif, signal de la cassette et bandes noires ; il les reçoit maintenant, en gardant
+  ses couleurs.
+- **Joueur qui tourne sur lui-même en passant un portail**, vu à la troisième personne : un portail qui tourne le regard tournait le
+  corps deux fois, et il revenait d'un quart de tour en une seconde. De même, une créature passée par un tel portail gardait la tête
+  tournée vers l'ancienne direction, qui revenait ensuite ; tête et corps tournent maintenant avec le regard.
 - **Lumière lente à suivre un bloc en Ultra** : après un bloc posé sous une dalle, la lumière directe suivait en 0,55 s et les rebonds en
   2,9 s. Les tuiles et les rebonds se calculent maintenant autant par image que 1,5 ms en permettent, temps mesuré sur le processeur et la
   carte graphique, au lieu d'un nombre fixe, et les rebonds du plus proche de la caméra au plus loin : 0,4 à 0,5 s et 0,7 s au banc, sans
@@ -36,6 +112,26 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/). Versions : [S
   une autre dimension aura ses propres valeurs.
 
 ### Added
+- **Lumière à travers les portails** : entre deux endroits des Backrooms (deux niveaux, ou deux endroits du même), un portail qui
+  laisse passer la lumière (le réglage « la lumière passe », actif par défaut) est une continuité : la lumière calculée du mod le passe
+  comme si les deux endroits se touchaient, dans les deux sens et à tous les paliers. Les néons de l'autre côté éclairent par le cadre
+  avec leur direction, le faisceau découpé par l'ouverture et ombré par les blocs des deux côtés, et ce que les murs éclairés de là-bas
+  renvoient entre par le cadre avec sa direction, rebonds de l'Ultra et créatures compris. Le cadre arrête la lumière du monde qui est
+  vraiment derrière lui. Tant que la lumière de l'autre côté n'est pas encore calculée, le cadre ne l'assombrit pas : la lumière
+  continue comme sans portail. Un portail qui mène à sa propre place donne la même lumière que sans portail, à 2 % près. Un portail vers ou
+  depuis l'Overworld ne change rien à cette lumière, et la lumière de vanilla n'y entre jamais.
+- **Vues de portail au loin dans le même monde** : un portail vers un autre endroit du même monde, plus loin que ce que le jeu envoie
+  autour du joueur, montrait un cadre vide ; il montre maintenant l'endroit, avec sa lumière, ses créatures, ses blocs qui changent et
+  ses sons, comme un portail vers une autre dimension. Le serveur l'envoie au joueur à part, dans un monde à lui.
+- **Lumière des vues de portail** : la vue d'un portail vers un endroit du Level 0 que la lumière du joueur ne couvre pas (une autre
+  dimension, ou le même monde un peu loin) avait la lumière brune de vanilla ; elle a maintenant sa propre lumière calculée, autour de ce
+  qu'elle montre, au palier choisi : en High et en Ultra, ses surfaces ont leur lumière au pixel, leurs ombres et (en Ultra) leurs rebonds
+  tracés, comme autour du joueur. Dans le même Level 0, le cadre ne se voit plus comme une limite entre deux qualités de lumière. Cela
+  demande environ 150 Mio de mémoire graphique en plus, et un peu de temps par image : la vue ne calcule que lorsque la lumière du
+  joueur n'a rien à faire, en une demi-milliseconde au plus.
+- **Ombres à travers les portails** : les créatures font leur ombre dans la vue d'un portail, et les néons vus par un portail qui laisse
+  passer la lumière font l'ombre des créatures de ce côté. Les ombres passent le cadre comme la lumière : une créature de l'autre côté,
+  près de l'arrivée, cache la lumière qui vient de là-bas par le cadre, et son ombre se prolonge de ce côté (en High et en Ultra).
 - **Ombres des corps** : l'ombre d'un corps reprend les cubes de son modèle, posés et animés comme le jeu le dessine, pour toutes les
   créatures : jambes, bras, torse et tête d'un joueur, pattes et corps d'une vache, bras d'une statue d'armure. Un cube transparent dans
   la texture, comme le bord du chapeau d'un villageois sans métier, n'en fait pas. À tous les paliers,

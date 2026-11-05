@@ -7,7 +7,6 @@ import java.util.function.BiFunction;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import org.jetbrains.annotations.Nullable;
 
-import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
@@ -40,7 +39,7 @@ public final class PortalLightTransmission {
     private static final String PERF_LIGHT = "portal.light";
     /** Calcul des mondes du serveur. */
     public static final PortalLightTransmission SERVER =
-            new PortalLightTransmission(PERF_LIGHT, (source, key) -> ((ServerWorld) source).getServer().getWorld(key));
+            new PortalLightTransmission(PERF_LIGHT, (source, portal) -> ((ServerWorld) source).getServer().getWorld(portal.destinationDim()));
 
     private static final int INITIAL_CAPACITY = 16;
     /** Recul devant le plan ou se prend chaque bloc du cadre : le bloc que la face eclaire, plan au milieu ou au bord. */
@@ -50,7 +49,7 @@ public final class PortalLightTransmission {
     /** Section du moniteur de performance ou se compte une passe. */
     private final String perfSection;
     /** Monde d'arrivee d'un portail, vu depuis le monde du portail ; {@code null} s'il n'est pas disponible. */
-    private final BiFunction<World, RegistryKey<World>, @Nullable World> worlds;
+    private final BiFunction<World, BackroomsPortalEntity, @Nullable World> worlds;
     private final Long2ByteOpenHashMap wanted = new Long2ByteOpenHashMap();
     private final BlockPos.Mutable cell = new BlockPos.Mutable();
     private final BlockPos.Mutable remoteCell = new BlockPos.Mutable();
@@ -65,9 +64,10 @@ public final class PortalLightTransmission {
      * Calcul pour un cote (serveur ou client), chacun avec ses tampons.
      *
      * @param perfSection section du moniteur de performance ou se compte une passe (constante)
-     * @param worlds monde d'arrivee d'un portail, vu depuis le monde du portail
+     * @param worlds monde d'arrivee d'un portail, vu depuis le monde du portail : cherche par le portail, un endroit lointain du
+     *     monde du joueur n'etant chez le client que dans son ailleurs
      */
-    public PortalLightTransmission(String perfSection, BiFunction<World, RegistryKey<World>, @Nullable World> worlds) {
+    public PortalLightTransmission(String perfSection, BiFunction<World, BackroomsPortalEntity, @Nullable World> worlds) {
         this.perfSection = perfSection;
         this.worlds = worlds;
     }
@@ -103,7 +103,7 @@ public final class PortalLightTransmission {
                 if (portal.getWorld() != world || !portal.transmitsLight() || !portal.visible() || !portal.teleportable()) {
                     continue;
                 }
-                World destination = this.worlds.apply(world, portal.destinationDim());
+                World destination = this.worlds.apply(world, portal);
                 if (destination != null) {
                     collect(portal, destination, portal.takeLightRefresh());
                 }

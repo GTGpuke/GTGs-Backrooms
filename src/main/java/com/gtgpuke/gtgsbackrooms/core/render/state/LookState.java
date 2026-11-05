@@ -216,8 +216,8 @@ public final class LookState {
         return TICK[depth];
     }
 
-    /** Nombre de vues empilees. */
-    public static int depth() {
+    /** Nombre de vues empilees (tests). */
+    static int depth() {
         return depth;
     }
 

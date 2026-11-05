@@ -35,8 +35,8 @@ public abstract class MixinPlayerManager {
             Packet<?> packet,
             CallbackInfo ci) {
         if (ModConfig.ENABLE_PORTAL_FEATURE) {
-            RemoteInteractionHandler.sendWithheld(player, worldKey, packet);
-            PortalViewTracker.relayToViewers(worldKey, x, z, packet);
+            boolean withheld = RemoteInteractionHandler.sendWithheld(player, worldKey, packet);
+            PortalViewTracker.relayToViewers(worldKey, x, y, z, distance, player == null ? -1 : player.getId(), withheld, packet);
         }
     }
 }

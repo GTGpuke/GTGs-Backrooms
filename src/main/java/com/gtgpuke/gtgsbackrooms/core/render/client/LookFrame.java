@@ -7,6 +7,7 @@ import org.lwjgl.opengl.GL11;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.Util;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConfig;
@@ -15,6 +16,7 @@ import com.gtgpuke.gtgsbackrooms.core.audio.cue.CueClock;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ShaderPackState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteViewRenderer;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.render.post.StencilLookMask;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfile;
 import com.gtgpuke.gtgsbackrooms.core.render.profile.LookProfiles;
@@ -57,6 +59,7 @@ public final class LookFrame {
         LookLuts.bind();
         LightVolume.frame();
         NeonLights.beginWorld(world, cameraPos, positionMatrix, tickDelta);
+        BodyShadows.render(NeonLights.depth(), positionMatrix);
         GpuTimer.begin(GpuTimer.WORLD);
     }
 
@@ -90,27 +93,33 @@ public final class LookFrame {
     }
 
     /**
-     * Entree d'une vue de portail : son look et ses neons, vus de sa camera. A rendre par {@link #popView()}.
+     * Entree d'une vue de portail : son look, la zone de lumiere cuite qui couvre sa camera, et ses neons, vus de sa camera. A rendre par
+     * {@link #popView()}.
      *
      * @param world monde de la vue
      * @param cameraPos camera de la vue
      * @param positionMatrix matrice de vue de cette camera
      * @param tickDelta fraction de tick de l'image
      * @param screenArea part de l'ecran que couvre le cadre de la vue, de 0 a 1 (plafond de clignotement)
+     * @param portal portail dont la vue se dessine : son arrivee borde la vue, et l'air d'avant elle est celui de la vue qui le contient
      */
-    public static void pushView(ClientWorld world, Vec3d cameraPos, Matrix4f positionMatrix, float tickDelta, float screenArea) {
+    public static void pushView(ClientWorld world, Vec3d cameraPos, Matrix4f positionMatrix, float tickDelta, float screenArea, BackroomsPortalEntity portal) {
         CueTracker.viewSeen(world.getRegistryKey().getValue(), screenArea);
         if (!ModConfig.ENABLE_LOOK) {
             return;
         }
         LookState.push(LookProfiles.of(world.getRegistryKey()), cameraPos.x, cameraPos.y, cameraPos.z, CueClock.tick(world.getTime()));
-        NeonLights.push(world, cameraPos, positionMatrix, tickDelta);
+        LightVolume.enterView(world.getRegistryKey().getValue(), MathHelper.floor(cameraPos.x), MathHelper.floor(cameraPos.y), MathHelper.floor(cameraPos.z));
+        NeonLights.push(world, cameraPos, positionMatrix, tickDelta, portal);
+        BodyShadows.render(NeonLights.depth(), positionMatrix);
     }
 
     /** Sortie d'une vue : le look et les neons de la vue qui la contient reprennent. */
     public static void popView() {
         if (ModConfig.ENABLE_LOOK) {
             NeonLights.pop();
+            LightVolume.leaveView();
+            BodyShadows.bind(NeonLights.depth());
             LookState.pop();
         }
     }

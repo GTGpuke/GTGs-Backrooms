@@ -26,6 +26,7 @@ class ModConfigTest {
         assertEquals(16, ModConfig.PORTAL_ACTIVATION_RADIUS_BLOCKS, "Rayon d'activation.");
         assertEquals(3, ModConfig.PORTAL_PRELOAD_RADIUS_CHUNKS, "Rayon de prechargement.");
         assertEquals(60, ModConfig.PORTAL_REMOTE_WORLD_RELEASE_SECONDS, "Une minute sans portail a portee avant de liberer un monde distant.");
+        assertEquals(60, ModConfig.LOOK_VIEW_LIGHT_RELEASE_SECONDS, "Une minute sans vue avant de rendre la memoire graphique de sa zone.");
         assertEquals(64, ModConfig.PORTAL_RENDER_DISTANCE_BLOCKS, "Distance de rendu.");
     }
 

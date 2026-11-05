@@ -44,6 +44,8 @@ public final class ClientPortalIndex {
     /** Portails predits encore en attente du vrai, avec le tick client ou ils cessent de l'attendre. */
     private static final List<Predicted> PREDICTED = new ArrayList<>();
     private static long ticks;
+    /** Un portail est arrive dans le monde du joueur depuis le dernier tick : les sons en cours se replacent en fin de tick. */
+    private static boolean soundsToReplace;
 
     /** Portail predit dans un monde, en attente du vrai jusqu'au tick donne. */
     private record Predicted(World world, BackroomsPortalEntity portal, long expiresAt) {
@@ -67,7 +69,7 @@ public final class ClientPortalIndex {
             @Override
             public @Nullable World destination(BackroomsPortalEntity portal) {
                 return portal.getWorld().isClient()
-                        ? RemoteWorldRegistry.worldOf(portal.destinationDim())
+                        ? RemoteWorldRegistry.worldOf(portal)
                         : PortalCollision.SERVER_WORLDS.destination(portal);
             }
 
@@ -118,6 +120,10 @@ public final class ClientPortalIndex {
     /** Tick client : les portails predits que le serveur n'a pas confirmes a temps sont retires. */
     public static void tick() {
         ticks++;
+        if (soundsToReplace) {
+            soundsToReplace = false;
+            SoundAnchors.refresh(MinecraftClient.getInstance());
+        }
         for (int i = PREDICTED.size() - 1; i >= 0; i--) {
             Predicted predicted = PREDICTED.get(i);
             if (predicted.expiresAt() <= ticks) {
@@ -143,6 +149,7 @@ public final class ClientPortalIndex {
 
     /** Deconnexion : plus aucun monde. */
     public static void clear() {
+        soundsToReplace = false;
         PREDICTED.clear();
         PORTALS.clear();
         shownWorld = null;
@@ -169,11 +176,12 @@ public final class ClientPortalIndex {
             if (world == shownWorld && !portal.hiddenFromPlayer()) {
                 SHOWN.add(portal);
             }
-            // Un portail de plus dans le monde du joueur : un son d'un autre monde encore joue a peut-etre un chemin desormais
-            // (apres une bascule menee par le serveur, les portails de l'arrivee peuvent arriver apres le joueur).
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (world == client.world) {
-                SoundAnchors.refresh(client);
+            // Un portail de plus dans le monde du joueur : un son d'un autre monde, ou de loin dans celui-ci, a peut-etre un chemin
+            // desormais (apres une bascule, les portails de l'arrivee peuvent arriver apres le joueur). Le replacement attend la fin du
+            // tick : a son chargement, le portail n'a pas encore recu ses donnees (sa destination vaut l'origine du monde), et un
+            // replacement immediat ramenait a sa place, a trois cents blocs, le son que le cadre de retour faisait encore entendre.
+            if (world == MinecraftClient.getInstance().world) {
+                soundsToReplace = true;
             }
         }
     }

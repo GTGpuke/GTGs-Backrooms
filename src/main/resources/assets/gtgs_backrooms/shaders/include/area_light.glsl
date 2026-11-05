@@ -11,6 +11,19 @@ float gtgs_falloff(float distance2, float reach) {
     return left * left / (1.0 + share / GTGS_SOFT_SHARE);
 }
 
+// Ou un segment passe le plan d'un cadre de portail, s'il le passe dans le cadre, de 0 a 1 ; -1 sinon. Un bout pose sur le plan ne le
+// traverse pas. Le meme calcul que la cuisson (PortalOpenings.crossing) : la lumiere qui traverse un cadre part de l'autre cote.
+float gtgs_frameCrossing(vec3 from, vec3 to, vec3 center, vec3 halfWidth, vec3 halfHeight, vec3 normal) {
+    float start = dot(from - center, normal);
+    float end = dot(to - center, normal);
+    if (start > -1.0e-3 && end > -1.0e-3 || start < 1.0e-3 && end < 1.0e-3) {
+        return -1.0;
+    }
+    float t = start / (start - end);
+    vec3 d = from + (to - from) * t - center;
+    return abs(dot(d, halfWidth)) <= dot(halfWidth, halfWidth) && abs(dot(d, halfHeight)) <= dot(halfHeight, halfHeight) ? t : -1.0;
+}
+
 // La part d'une dalle que recoit une surface de cette normale : toLight va de la surface au point le plus proche de la dalle, axis
 // est la normale de la dalle, cone le cosinus de l'angle ou elle cesse d'eclairer. Rien derriere elle, rien hors de sa portee.
 float gtgs_received(vec3 toLight, vec3 axis, vec3 surface, float reach, float cone) {

@@ -33,11 +33,15 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - `core/` : `ModConstants`, `ModConfig` (options lues en `-D`) et `registry/` : registres (`Registry.register` dans des
   champs `static final`), un par type (blocs, items, block entities, entities, composants, sons, onglet créatif,
   payloads). Le bloc portail n'a pas d'item : la baguette le pose.
-- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), arrivée tête en bas, synchronisation des chunks et des entités, rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/systemes/PORTAILS.md` avant d'y toucher.
+- `core/portal/` : portails (bloc portail double face et ses réglages, plan au milieu ou au bord du bloc, baguette (`item/`), seule façon d'en créer un, debout, au sol ou au plafond, entity, téléportation de tout ce qui traverse, attelages compris, collision à travers le cadre, blocs derrière le plan cachés à qui s'engage dans le cadre (cadre contre un mur, trappe au sol), arrivée tête en bas, synchronisation des chunks et des entités (un endroit lointain du monde du joueur comme une autre dimension,
+  sous la clef de son ailleurs, `RemoteKeys`), rendu stencil avec un niveau d'imbrication et la météo de l'autre côté, paliers de détail des vues lointaines (vue allégée, terrain simplifié, image figée jusqu'à 128 blocs) et fenêtre en cône de loin, interaction à travers le cadre, sons, particules et regard des mobs qui le traversent), actifs par défaut (`ModConfig.ENABLE_PORTAL_FEATURE`). Lire `docs/systemes/PORTAILS.md` avant d'y toucher.
 - `core/render/client/menu/` : icône du menu pause et écrans de réglages du joueur ; `core/render/quality/` : paliers, presets visuels et réglages (`LookSettings`, `config/gtgs_backrooms.json`).
 - `core/perf/` : moniteur de performance opt-in.
 - `core/audio/` : moteur audio maison (`docs/systemes/AUDIO.md`) : profil acoustique par dimension (`profile/`, `assets/gtgs_backrooms/audio_profiles/`), dimension d'émission, occlusion, rayons, forme générée d'un niveau et réglages de réverb (`acoustic/`), liaison son-image (`cue/` : horloge commune, enveloppes, perturbations, plafond de clignotement, `assets/gtgs_backrooms/sound_cues/`), colle OpenAL EFX, routage des sons et bourdonnement des néons (`client/`). La forme générée du Level 0 vient du contenu (`backrooms/level0/LevelZeroRoomShape`, graine du layout envoyée par `LevelZeroLayoutSync`).
-- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), lumière cuite du terrain (`light/bake/` : dalles en rectangles, ombres et rebonds sur une copie des blocs, sur un fil à part ; `client/LightCopy`, `LightWorker`, `LightVolume` pour la texture 3D de zone, `FarVolume` pour celle du loin (jusqu'à 128 blocs), `LightSurfaces` et `shaders/bake/surface.fsh` pour le cache de surfaces, lightmap au pixel de texture calculée sur le GPU, `EntityShadows`, `BodyModels` (cubes posés du modèle de chaque corps) et `light/ShadowCasters` pour les ombres des corps, `LightBounces` et `shaders/bake/bounce.fsh` pour les rebonds tracés de l'Ultra, `BlockMaterials` pour la matière des blocs, écrite dans leurs textures (`x_s.png`, `x_n.png`) et recopiée dans une table alignée sur l'atlas ; calcul d'une dalle et marche dans la grille communs au Java et au GLSL, `shaders/include/area_light.glsl`, `block_march.glsl`, `surface_light.glsl`, tenus d'accord par `src/test/resources/area_light_vectors.json` ; `body_box.glsl`, le rayon contre une boîte des ombres des corps, tenu par `body_box_vectors.json`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
+- `core/render/` : moteur de shaders maison (`docs/systemes/RENDU.md`) : shaders vanilla patchés au chargement par enveloppe de `main` (`patch/`, patchs déclarés dans `assets/gtgs_backrooms/shader_patches/`), profil de look par dimension (`profile/`, `assets/gtgs_backrooms/look_profiles/`), pile des looks par vue (`state/`), lumière cuite du terrain (`light/bake/` : dalles en rectangles, ombres et rebonds sur une copie des blocs, sur un fil à part ; `client/LightCopy`, `LightWorker`, `LightVolume` pour la texture 3D de zone, `FarVolume` pour celle du loin (jusqu'à 128 blocs), `LightSurfaces` et `shaders/bake/surface.fsh` pour le cache de surfaces (un par zone, avec ses rebonds : `PLAYER`, `VIEW`), lightmap au pixel de texture calculée sur le GPU, `ZoneTextures` (zone du joueur et zone d'une vue de portail), `PortalOpeningLights` et `bake/PortalOpenings` (lumière à travers un
+  portail, une continuité entre mondes à lumière cuite : le cadre arrête la lumière de son monde, les rayons qui y entrent continuent
+  de l'autre côté dans la zone qui y cuit, les néons de là-bas éclairent par lui, reportés derrière lui ; `PortalLightUniforms` et
+  `LightZone.passageLight` pour les shaders), `EntityShadows`, `BodyModels` (cubes posés du modèle de chaque corps) et `light/ShadowCasters` pour les ombres des corps, `LightBounces` et `shaders/bake/bounce.fsh` pour les rebonds tracés de l'Ultra, `BlockMaterials` pour la matière des blocs, écrite dans leurs textures (`x_s.png`, `x_n.png`) et recopiée dans une table alignée sur l'atlas ; calcul d'une dalle et marche dans la grille communs au Java et au GLSL, `shaders/include/area_light.glsl`, `block_march.glsl`, `surface_light.glsl`, tenus d'accord par `src/test/resources/area_light_vectors.json` ; `body_box.glsl`, le rayon contre une boîte des ombres des corps, tenu par `body_box_vectors.json`), courbe de lightmap, brouillard et néons du profil (`light/`, calendrier `NeonSchedule` et son jumeau GLSL `shaders/include/neon_schedule.glsl`, tenus d'accord par `src/test/resources/neon_schedule_vectors.json`), bits de look du stencil (`post/`), colle GL (`client/`).
 - `backrooms/level0/generation/` : `coord` → `noise` → `sector` → `layout` → `write`, orchestrés par `LevelZeroChunkGenerator`.
 - `backrooms/level0/client/model/` : rendu adaptatif du mur (client uniquement).
 - `backrooms/level0/LevelZeroArrival` : où un portail arrive dans le Level 0 ; seul lien, avec les registres, du socle vers le contenu.
@@ -357,6 +361,16 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   été signalé, un joueur témoin qui le suit reçoit de vanilla chaque bloc changé pendant le tick (`BlockUpdateS2CPacket`,
   `ChunkDeltaUpdateS2CPacket`), une fois le chunk reçu. Le serveur de test coupe déjà le feu, les ticks aléatoires et
   l'apparition des mobs, sur une graine fixe (0) : un test instable y dépend du minutage, pas du terrain.
+- Tests en jeu : le serveur de test plafonne la vue vanilla à deux chunks (`PlayerManager.getViewDistance()` vaut 0 à la création de
+  ses mondes, `watchDistance` 2) : `withViewDistance` n'élargit pas ce que vanilla envoie, le filtre d'un joueur y reste de deux chunks.
+  L'ordre des lots suit une table de hachage : ajouter un lot change l'ordre de tous, et un test qui comptait sur l'état laissé par le
+  lot d'avant (chunks encore chargés) devient instable. Ce qu'il suppose, il le pose (chunks forcés, relâchés après son lot).
+- Ailleurs du monde du joueur : son monde distant porte la vraie clef de dimension (`getRegistryKey`) mais se range sous la clef de
+  l'ailleurs ; ce qui cherche le monde montré par un portail passe par `RemoteWorldRegistry.viewOf(portal)` ou `worldOf(portal)`, jamais
+  par sa seule dimension (un portail lointain du même monde y trouverait un monde sans ses chunks).
+- GLSL : une fonction se déclare avant sa première utilisation, dans l'ordre des bibliothèques importées et du fichier. Sinon le
+  programme patché est refusé à la compilation et reste vanilla (journal « ne compile pas », bilan des étages patchés) : une image
+  prise ensuite ne montre rien du patch.
 - Tests en jeu : la CI les rejoue trois fois sur le même monde (étapes tests en jeu, couverture, `build`, sans `clean`)
   et mesure la couverture sur le deuxième passage : un test tient sur un monde déjà joué (il remet ce qu'il suppose,
   comme le vide de l'End), et une branche que seul un monde neuf fait prendre fait tomber la couverture de la CI.
@@ -627,6 +641,68 @@ Les sels de `StageRandom.Stage` et l'algorithme de `LevelZeroSectorGenerator` ne
   d'une mesure à vide, prise au même endroit.
 - Tests du client : l'ombre du joueur suit son modèle, balancement des bras au repos compris ; un test qui compare deux images du sol
   autour de lui rend le joueur invisible le temps de ses mesures (`BlockMaterialClientTests`), sinon cette ombre passe pour un écart.
+- Lacet du corps : `ClientPlayerEntity.getBodyYaw()` rend le regard (`getYaw()`), pas le corps ; tourner le corps du joueur du client
+  passe par le champ `bodyYaw` (le joueur tournait sur lui-même après un portail qui tourne). Côté serveur, `refreshPositionAndAngles`
+  ne pose que le lacet d'une créature, et la copie de `teleportTo` relit tête et corps dans le lacet de ses données : les poser après.
+- Post par look : chaque look a sa passe sous le stencil de ses bits, et le look vanilla (bit 0) n'en a pas. Un effet de caméra (style
+  VHS, bandes noires) passe aussi sur ses pixels, sinon le cadre d'un portail vers l'Overworld y fait un trou (`LookPost`).
+- Banc d'un portail vers sa propre place : à deux faces, la face arrière mène au même point et fait un miroir (lumière doublée) ; à une
+  face, son dos arrête la lumière à la cuisson. Ni l'un ni l'autre ne mesure le dessin d'une vue : comparer à un portail lointain.
+- Référence d'une vue de portail : le joueur téléporté à la place de la caméra de la vue (`portal.toDestination(oeil)`), le portail
+  retiré d'abord (sinon il regarde à travers le retour), et l'endroit libéré s'il faut (la caméra d'une vue est derrière le plan
+  d'arrivée, souvent dans un mur). Un portail aller simple donne alors une vue égale à la référence au bit près ; un aller-retour
+  est plus clair, la lumière de ce côté passant par le retour : ce n'est pas un défaut. Pour comparer composante par composante
+  (direct, rebonds tracés, zone), faire sortir les valeurs par le shader (`c.rgb = vec3(...); return c;`), bloom et vignette coupés.
+- Mesure d'un passage (`LightZone.measurePassages`) : refaite à chaque section cuite, de ce côté comme de l'autre ; ce qui la lit
+  une fois pour toutes (les rebonds tracés) doit repartir quand elle change (`LightSurfaces.followPassages`), sinon un cadre mesuré
+  avant que l'autre côté ne cuise reste noir pour ses rayons. Le juge est le recalcul complet (`LightVolume.rebake`).
+- Banc de performance : deux lancements à une heure d'écart diffèrent de 10 % (349 contre 382 pour le même commit) ; une comparaison se
+  fait dans la même session, commit et version l'un après l'autre, et un changement de shader se juge en variantes
+  (`perf_variant_patch.py`, script de banc du scratchpad, hors du dépôt). Le coût d'une fonction du shader du terrain se mesure étape par étape (un `return` ou un `continue` forcé
+  après chaque étape) : ce qui semble cher à la lecture (une boucle de 32 néons) peut ne rien coûter, et une étape anodine (une marche
+  dans la grille par paire pixel-dalle) coûter 1 ms. Ce que le terrain calcule par fragment au point du texel (`gtgs_texelPoint`) se
+  calcule une fois par texel dans une passe à part : une tuile à trois blocs couvre une centaine de pixels en 1080p.
+- Égalité au pixel entre deux versions du shader : les néons du banc doivent être stables (`NeonSchedule.kind` == `STEADY`, secteur
+  sans panne), sinon un néon qui vacille éteint une ombre dans une capture et pas dans l'autre (écarts de 100 niveaux concentrés dans
+  les ombres : un faux positif) ; et la pose des corps doit être figée (`age` posé à chaque tick : le balancement des bras au repos
+  suit l'âge, et deux lancements ne capturent pas au même tick ; sans cela, l'ombre des bras diffère de 3 à 4 niveaux sur toute sa
+  pénombre). Le bruit restant du banc (contour du corps dessiné) se mesure en relançant la même version deux fois.
+- Lumière à travers un portail : la continuité vient d'un PASSAGE par côté (`PortalOpeningLights`), porté par un cadre réel de ce côté.
+  Un portail aller simple n'a pas de cadre de retour : sans passage à son arrivée, ce qu'on voit par l'entrée n'a rien de la lumière de
+  ce côté (sol noir dès le plan, 4 niveaux contre 93). Un banc qui reproduit une capture de l'auteur pose la scène dans les deux sens
+  (éclairé ici et sombre là-bas, puis l'inverse) et dans les deux réglages (aller-retour, aller simple) avant de conclure, et aux
+  quatre paliers : l'Ultra (rebonds tracés par texel) cachait une marche de 20 niveaux de la zone au pied du cadre en Low et Medium
+  (cellule coupée par un plan au milieu d'un bloc, cuite sur le plan même puis sautée à la lecture). Un profil de luminance ligne par
+  ligne au centre de l'image, de bas en haut, montre une marche que l'œil attribue à « la vue ».
+- Sens d'un portail : la normale du cadre d'entrée (`facingSource`) regarde le côté du joueur, celle de l'arrivée
+  (`facingDestination`) le côté de la sortie, et `PortalFacing.transformPoint` inverse la largeur et la normale : ce que le cadre montre est
+  du côté de la normale de l'arrivée, et son image derrière le cadre d'entrée. Le bourdonnement au cadre testait le côté opposé et ne jouait
+  presque jamais (corrigé le 4 novembre 2026). Un portail vers un autre endroit du même niveau a la même dimension des deux côtés : un code qui
+  écarte « la dimension du joueur » écarte aussi ces portails.
+- Halo d'une vue : l'image du joueur ne fait le halo que de ses dix néons les plus proches (`gtgs_airGlow`, `min(gtgs_NeonCount, 10)`) ;
+  l'air d'une vue d'avant son plan d'arrivée doit reprendre exactement ces dix-là, passés par le portail (`NeonLights.haloBefore`), pas
+  « les néons vus par le cadre » : de loin, ceux du cadre ne sont pas parmi les dix, et la vue avait une tache claire que le couloir n'a
+  pas (+27 niveaux en Ultra). Un banc de couture le montre seulement si la scène a assez de tubes près du joueur pour que ceux du cadre
+  sortent de ses dix ; sinon la mutation qui rétablit le défaut passe le test.
+- Portail chargé chez le client : à `ClientEntityEvents.ENTITY_LOAD`, il n'a pas encore reçu ses données (destination à l'origine du
+  monde) ; elles arrivent dans le même paquet groupé, avant la fin du tick. Ce qui le lit à son arrivée attend la fin du tick
+  (`ClientPortalIndex.tick`) : un replacement immédiat des sons ramenait à sa place, à trois cents blocs, le son que le cadre de
+  retour faisait entendre. Traverser vers un endroit lointain du même monde laisse le client quelques ticks sans les chunks de
+  l'arrivée, encore dans l'ailleurs (`RemoteWorldRegistry.holding`), et l'index des néons relève les chunks reçus dans une file,
+  quelques-uns par tick : ce qu'on interroge passe devant (`NeonIndex.collect`). Un test du son à 60 blocs ne voit rien de cela :
+  l'arrivée y est dans les chunks du joueur ; à 300, elle n'est que dans l'ailleurs.
+- Ailleurs du monde du joueur et envois vanilla : l'ailleurs est dans le monde même du joueur, et vanilla sert déjà les joueurs à
+  portée d'un son (16 blocs par unité de volume) ou de particules et fissures (32 blocs), sauf celui qu'il exclut ; un relais vers
+  l'ailleurs qui ne les saute pas fait entendre le son deux fois (`PortalViewTracker.relayToViewers`). Deux zones de lumière (joueur,
+  vue) numérotent chacune leurs matières dans l'ordre où elles les rencontrent : ce qui se lit par matière (rectangle de texture) se
+  lit dans la table de sa zone. Une zone abandonnée se retire (`LightZone.retire`) : celles où menaient ses passages la tenaient.
+- Corps de l'autre côté d'un portail : les deux faces d'un portail sont dans le même plan, et un corps à moins de sa largeur du plan est
+  devant les deux à la fois (la tolérance `ahead > -largeur`). Repris par chacune, il est reporté deux fois au même endroit : une valeur
+  qui s'additionne (l'ombre de contact) double, un test d'arrêt (l'ombre portée) ne le montre pas. Un corps ne compte qu'une fois, par
+  la face devant laquelle il est le plus (`EntityShadows.Bodies.offer`).
+- Tests du client : `LookResources.applySettings` (un réglage, les reflets compris) recuit toute la lumière (`LightVolume.rebake`) ; une
+  capture prise quelques images après la bascule tombe dans le recalcul (zone et vue partielles) et le test devient instable selon
+  l'ordre des tests. Après toute bascule de réglage, attendre le repos (`settled`, vue comprise) avant de capturer.
 
 ## Avant de push
 

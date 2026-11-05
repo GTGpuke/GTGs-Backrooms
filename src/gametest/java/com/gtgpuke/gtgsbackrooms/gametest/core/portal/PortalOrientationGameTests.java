@@ -1,7 +1,9 @@
 package com.gtgpuke.gtgsbackrooms.gametest.core.portal;
 
 import net.minecraft.block.Blocks;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.passive.PigEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -10,6 +12,7 @@ import net.minecraft.test.GameTest;
 import net.minecraft.test.TestContext;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.GameMode;
 import net.minecraft.world.World;
@@ -33,7 +36,8 @@ import com.gtgpuke.gtgsbackrooms.gametest.support.GameTestPlayers;
  * Tests en jeu des portails d'une orientation a une autre, les 144 paires : debout, au sol, au plafond, dans tous les
  * sens, droits ou retournes (tete en bas). Un joueur qui traverse chaque paire file hors du cadre d'arrivee, regarde ou il
  * va, garde sa chute seulement si le bas reste le bas, et ressort du bon cote, dans l'ouverture ; un objet traverse seul
- * chacune des six normales, un cadre sur deux retourne ; une longue chute renvoyee a l'horizontale ne blesse pas a
+ * chacune des six normales, un cadre sur deux retourne ; une creature tournee par le cadre tourne aussi sa tete et son
+ * corps ; une longue chute renvoyee a l'horizontale ne blesse pas a
  * l'atterrissage, une chute qui continue si ; un portail couche n'a que sa face avant ; un bloc a l'arrivee tete en bas
  * retourne les portails de son cadre d'arrivee, et on en ressort tete en bas.
  */
@@ -52,6 +56,9 @@ public final class PortalOrientationGameTests implements FabricGameTest {
     /** Une chute de vingt blocs : dix-sept points de degats, sous les vingt points de vie d'un joueur. */
     private static final float LONG_FALL = 20.0f;
     private static final float FULL_HEALTH = 20.0f;
+    /** Tete et corps d'une creature, tournes par rapport a son regard avant de traverser, en degres. */
+    private static final float HEAD_TURN = 30.0f;
+    private static final float BODY_TURN = 10.0f;
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 40)
     public void everyPairOfOrientationsCarriesAPlayerOutOfTheArrivalFrame(TestContext context) {
@@ -166,6 +173,32 @@ public final class PortalOrientationGameTests implements FabricGameTest {
             }
             context.complete();
         });
+    }
+
+    @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 20)
+    public void aCreatureTurnedByTheFrameTurnsItsHeadAndBodyWithIt(TestContext context) {
+        ServerWorld world = context.getWorld();
+        Vec3d entry = context.getAbsolute(ENTRY);
+        // D'un cadre face au nord a une sortie face a l'est : un quart de tour.
+        BackroomsPortalEntity portal = frame(world, entry, PortalFacing.NORTH, PortalFacing.EAST, context.getAbsolute(ARRIVAL));
+        world.spawnEntity(portal);
+        PigEntity pig = EntityType.PIG.create(world);
+        pig.refreshPositionAndAngles(entry.x, entry.y - 1.0, entry.z - 0.3, 0.0f, 0.0f);
+        pig.setHeadYaw(HEAD_TURN);
+        pig.setBodyYaw(BODY_TURN);
+        world.spawnEntity(pig);
+        try {
+            context.assertTrue(TeleportExecutor.execute(pig, portal), "Le cochon traverse.");
+            context.assertTrue(Math.abs(Math.abs(MathHelper.wrapDegrees(pig.getYaw())) - 90.0f) < EPSILON, "Le regard tourne d'un quart de tour : " + pig.getYaw() + ".");
+            context.assertTrue(Math.abs(MathHelper.wrapDegrees(pig.getHeadYaw() - pig.getYaw() - HEAD_TURN)) < EPSILON,
+                    "La tete tourne avec le regard : " + pig.getHeadYaw() + " pour un regard " + pig.getYaw() + ".");
+            context.assertTrue(Math.abs(MathHelper.wrapDegrees(pig.getBodyYaw() - pig.getYaw() - BODY_TURN)) < EPSILON,
+                    "Le corps tourne avec le regard : " + pig.getBodyYaw() + " pour un regard " + pig.getYaw() + ".");
+        } finally {
+            pig.discard();
+            portal.discard();
+        }
+        context.complete();
     }
 
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 200)

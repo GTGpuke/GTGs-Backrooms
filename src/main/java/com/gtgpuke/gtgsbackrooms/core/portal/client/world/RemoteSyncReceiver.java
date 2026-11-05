@@ -21,6 +21,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteChunkUnloadPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionPayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionReleasePayload;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteEntityPacketPayload;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteKeys;
 
 /**
  * Recoit les payloads de synchronisation des portails (dimensions, chunks, blocs, paquets d'entities, fissures de minage)
@@ -113,15 +114,23 @@ public final class RemoteSyncReceiver {
         }
     }
 
-    /** Fissures d'un bloc mine a travers un portail, sur la vue qui le montre (monde distant ou vue secondaire). */
+    /**
+     * Fissures d'un bloc mine a travers un portail, sur la vue qui le montre (monde distant ou vue secondaire), et sur
+     * l'ailleurs de sa dimension s'il y en a un : un portail lointain du meme monde le montre par lui.
+     */
     private static void onBlockBreaking(MinecraftClient client, RemoteBlockBreakingPayload payload) {
         if (!ModConfig.ENABLE_PORTAL_FEATURE || client.player == null) {
             return;
         }
         RemoteWorldRegistry.syncWithMainWorld(client.world);
-        RemoteWorld view = RemoteWorldRegistry.viewOf(worldKey(payload.dimension()));
+        RegistryKey<World> dimension = worldKey(payload.dimension());
+        RemoteWorld view = RemoteWorldRegistry.viewOf(dimension);
         if (view != null) {
             view.renderer().setBlockBreakingInfo(client.player.getId(), payload.pos(), payload.stage());
+        }
+        RemoteWorld elsewhere = RemoteWorldRegistry.get(RemoteKeys.elsewhere(dimension));
+        if (elsewhere != null) {
+            elsewhere.renderer().setBlockBreakingInfo(client.player.getId(), payload.pos(), payload.stage());
         }
     }
 

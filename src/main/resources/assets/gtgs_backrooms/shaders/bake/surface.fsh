@@ -29,6 +29,12 @@ uniform float gtgs_Cone;
 uniform float gtgs_Relief;
 // Rayons par dalle (x) et rayons de l'ouverture (y), selon le palier.
 uniform ivec2 gtgs_Rays;
+// Portails, relatifs au bloc gtgs_PortalOrigin : leurs cadres (x), qui arretent les rayons de ce monde (centre et face, demi-largeur,
+// demi-hauteur), et les neons de l'autre cote vus par eux (y), reportes de ce cote (centre et face, puis couleur et rang du cadre).
+uniform ivec3 gtgs_PortalOrigin;
+uniform ivec2 gtgs_PortalCount;
+uniform vec4 gtgs_Frames[12];
+uniform vec4 gtgs_Seen[32];
 
 out vec4 fragColor;
 
@@ -47,6 +53,22 @@ vec2 inSprite(vec2 st) {
 
 float height(vec2 st) {
     return dot(textureLod(gtgs_BlockAtlas, inSprite(st), 0.0).rgb, vec3(0.299, 0.587, 0.114));
+}
+
+// Ou un segment, relatif a la cellule, passe le cadre de ce rang ; -1 s'il ne le passe pas.
+float frameCrossing(vec3 from, vec3 to, int frame, vec3 shift) {
+    return gtgs_frameCrossing(from, to, gtgs_Frames[frame * 3].xyz + shift, gtgs_Frames[frame * 3 + 1].xyz, gtgs_Frames[frame * 3 + 2].xyz,
+            GTGS_FACE_NORMAL[int(gtgs_Frames[frame * 3].w)]);
+}
+
+// true si un cadre coupe le segment : la lumiere qui le suit part de l'autre cote du portail.
+bool walled(vec3 from, vec3 to, vec3 shift) {
+    for (int i = 0; i < gtgs_PortalCount.x; i++) {
+        if (frameCrossing(from, to, i, shift) >= 0.0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void main() {
@@ -78,6 +100,7 @@ void main() {
     float seenLight = 0.0;
     float raised = 0.0;
     float size = gtgs_Emission.y * 0.5;
+    vec3 shift = vec3(gtgs_PortalOrigin - gtgs_Cell);
     for (int i = 0; i < gtgs_LightCount; i++) {
         ivec4 neon = gtgs_Lights[i];
         vec3 axis = GTGS_FACE_NORMAL[neon.w];
@@ -98,13 +121,48 @@ void main() {
             float angle = float(s) * 2.3999632;
             float radius = sqrt((float(s) + 0.5) / float(rays)) * gtgs_Emission.z;
             vec3 target = center + axis * OFFSET + ax * (cos(angle) * radius) + ay * (sin(angle) * radius);
-            if (gtgs_march(gtgs_Cell, start, target - start) >= 2.0) {
+            if (gtgs_march(gtgs_Cell, start, target - start) >= 2.0 && !walled(start, target, shift)) {
                 seen += 1.0;
             }
         }
         arriving += form;
         seenLight += form * seen / float(rays);
         raised += relief ? gtgs_received(toLight, axis, lit, gtgs_Emission.w, gtgs_Cone) : form;
+    }
+
+    // Les neons de l'autre cote d'un portail, reportes derriere son cadre : du meme calcul qu'un neon, comme la cuisson, et seulement par
+    // l'ouverture, ce qui les arrete de ce cote faisant de l'ombre au faisceau.
+    for (int i = 0; i < gtgs_PortalCount.y; i++) {
+        vec3 axis = GTGS_FACE_NORMAL[int(gtgs_Seen[i * 2].w)];
+        vec3 center = gtgs_Seen[i * 2].xyz + shift;
+        vec3 color = gtgs_Seen[i * 2 + 1].rgb;
+        int frame = int(gtgs_Seen[i * 2 + 1].w);
+        float strength = max(color.r, max(color.g, color.b)) / max(gtgs_Emission.x, 1.0e-4);
+        vec3 ax = axis.z != 0.0 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
+        vec3 ay = cross(axis, ax);
+        vec3 extent = (abs(ax) + abs(ay)) * size;
+        vec3 toLight = clamp(point, center - extent, center + extent) - point;
+        float form = gtgs_received(toLight, axis, normal, gtgs_Emission.w, gtgs_Cone) * strength;
+        if (form < 1.0e-4) {
+            continue;
+        }
+        int rays = form < WEAK_LIGHT ? min(gtgs_Rays.x, 2) : gtgs_Rays.x;
+        float seen = 0.0;
+        for (int s = 0; s < rays; s++) {
+            float angle = float(s) * 2.3999632;
+            float radius = sqrt((float(s) + 0.5) / float(rays)) * gtgs_Emission.z;
+            vec3 target = center + ax * (cos(angle) * radius) + ay * (sin(angle) * radius);
+            float t = frameCrossing(start, target, frame, shift);
+            if (t >= 0.0) {
+                vec3 hit = start + (target - start) * t;
+                if (gtgs_march(gtgs_Cell, start, hit - start) >= 2.0 && !walled(start, hit, shift)) {
+                    seen += 1.0;
+                }
+            }
+        }
+        arriving += form;
+        seenLight += form * seen / float(rays);
+        raised += relief ? gtgs_received(toLight, axis, lit, gtgs_Emission.w, gtgs_Cone) * strength : form;
     }
 
     // Les blocs tout proches cachent le ciel de la surface : c'est ce qui assombrit les coins.

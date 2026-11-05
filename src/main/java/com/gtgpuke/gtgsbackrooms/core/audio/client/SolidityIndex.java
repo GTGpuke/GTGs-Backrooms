@@ -135,7 +135,7 @@ public final class SolidityIndex {
                 if (!portal.visible() || !portal.teleportable() || !AudioProfiles.of(destination).acoustics().computed()) {
                     continue;
                 }
-                ClientWorld arrivalWorld = RemoteWorldRegistry.worldOf(destination);
+                ClientWorld arrivalWorld = RemoteWorldRegistry.worldOf(portal);
                 if (arrivalWorld == null) {
                     continue;
                 }

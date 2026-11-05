@@ -8,6 +8,7 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
+import net.minecraft.world.World;
 import net.minecraft.world.dimension.DimensionTypes;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
@@ -18,7 +19,7 @@ import com.gtgpuke.gtgsbackrooms.core.ModConstants;
  * <p>Le client cree alors un monde local pour cette dimension avec le bon type
  * de dimension (hauteur, ciel, lumiere ambiante).
  *
- * @param dimension identifiant de la dimension distante
+ * @param dimension clef du monde distant : sa dimension, ou l'ailleurs du monde du joueur ({@link RemoteKeys})
  * @param dimensionType identifiant du type de dimension
  * @param index index de cette dimension chez le joueur, que les payloads frequents portent a la place de l'identifiant
  */
@@ -39,11 +40,12 @@ public record RemoteDimensionPayload(Identifier dimension, Identifier dimensionT
     /**
      * Annonce d'un monde serveur.
      *
+     * @param key clef du monde distant annonce : la dimension du monde, ou son ailleurs ({@link RemoteKeys})
      * @param world monde annonce
      * @param index index de cette dimension chez le joueur, que les payloads frequents portent a la place de l'identifiant
      */
-    public static RemoteDimensionPayload of(ServerWorld world, int index) {
-        return new RemoteDimensionPayload(world.getRegistryKey().getValue(), dimensionTypeId(world), index);
+    public static RemoteDimensionPayload of(RegistryKey<World> key, ServerWorld world, int index) {
+        return new RemoteDimensionPayload(key.getValue(), dimensionTypeId(world), index);
     }
 
     /** Identifiant du type de dimension d'un monde ; l'overworld si le type n'est pas enregistre sous une cle. */

@@ -37,6 +37,7 @@ import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteSyncReceiver;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.world.RemoteWorldRegistry;
 import com.gtgpuke.gtgsbackrooms.core.registry.ModEntities;
 import com.gtgpuke.gtgsbackrooms.core.render.client.BlockMaterials;
+import com.gtgpuke.gtgsbackrooms.core.render.client.BodyShadows;
 import com.gtgpuke.gtgsbackrooms.core.render.client.FramebufferRegistry;
 import com.gtgpuke.gtgsbackrooms.core.render.client.FullscreenTriangle;
 import com.gtgpuke.gtgsbackrooms.core.render.client.GpuTimer;
@@ -141,6 +142,7 @@ public class GtgsBackroomsClientMod implements ClientModInitializer {
         FramebufferRegistry.close();
         NeonIndex.clear();
         NeonLights.close();
+        BodyShadows.close();
         FullscreenTriangle.close();
         GpuTimer.close();
         AcousticRouter.clear();

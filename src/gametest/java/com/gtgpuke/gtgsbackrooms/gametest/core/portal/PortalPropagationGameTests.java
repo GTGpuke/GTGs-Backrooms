@@ -114,6 +114,9 @@ public final class PortalPropagationGameTests implements FabricGameTest {
         return payloads.stream().anyMatch(payload -> packetType.isInstance(payload.packet()));
     }
 
+    /** Portee de vanilla pour un son de volume 1, en blocs. */
+    private static final double SOUND_RANGE = 16.0;
+
     @GameTest(templateName = GameTestPlayers.ARENA, tickLimit = 3000, batchId = "portal_relay")
     public void soundsAndParticlesReachPortalViewers(TestContext context) {
         ServerWorld world = context.getWorld();
@@ -127,15 +130,15 @@ public final class PortalPropagationGameTests implements FabricGameTest {
                 RELAY_EXIT.x, RELAY_EXIT.y, RELAY_EXIT.z, 1.0f, 1.0f, 0L);
         // Le serveur de test tique sans attendre : on guette l'arrivee du chunk de l'arrivee dans la fenetre du joueur.
         context.createTimedTaskRunner()
-                .createAndAdd(() -> context.assertTrue(PortalViewTracker.relayToViewers(World.NETHER, RELAY_EXIT.x, RELAY_EXIT.z, bell) == 1,
+                .createAndAdd(() -> context.assertTrue(PortalViewTracker.relayToViewers(World.NETHER, RELAY_EXIT.x, RELAY_EXIT.y, RELAY_EXIT.z, SOUND_RANGE, -1, false, bell) == 1,
                         "Un son de l'arrivee part au joueur qui la regarde par le portail."))
                 .createAndAddReported(() -> {
                     try {
-                        context.assertTrue(PortalViewTracker.relayToViewers(World.NETHER, RELAY_EXIT.x + 4096.0, RELAY_EXIT.z, bell) == 0,
+                        context.assertTrue(PortalViewTracker.relayToViewers(World.NETHER, RELAY_EXIT.x + 4096.0, RELAY_EXIT.y, RELAY_EXIT.z, SOUND_RANGE, -1, false, bell) == 0,
                                 "Hors de sa fenetre, rien.");
-                        context.assertTrue(PortalViewTracker.relayToViewers(World.END, RELAY_EXIT.x, RELAY_EXIT.z, bell) == 0,
+                        context.assertTrue(PortalViewTracker.relayToViewers(World.END, RELAY_EXIT.x, RELAY_EXIT.y, RELAY_EXIT.z, SOUND_RANGE, -1, false, bell) == 0,
                                 "Une dimension qu'il ne regarde pas, rien.");
-                        context.assertTrue(PortalViewTracker.relayToViewers(World.NETHER, RELAY_EXIT.x, RELAY_EXIT.z,
+                        context.assertTrue(PortalViewTracker.relayToViewers(World.NETHER, RELAY_EXIT.x, RELAY_EXIT.y, RELAY_EXIT.z, SOUND_RANGE, -1, false,
                                 new GameMessageS2CPacket(Text.literal("Bonjour."), false)) == 0, "Seuls sons, evenements de monde et particules passent.");
                         // Les chemins vanilla passent par les mixins : son, evenement de monde, particules diffusees. Les envois
                         // precedents (le son relaye directement ci-dessus) sont d'abord ecartes.

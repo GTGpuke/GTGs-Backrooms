@@ -259,7 +259,7 @@ public final class ShaderPackPortalRenderer {
             Matrix4f projection,
             LightmapTextureManager lightmap) {
         GL11.glStencilFunc(GL11.GL_EQUAL, value, FULL_MASK);
-        RemoteWorld view = RemoteWorldRegistry.viewOf(portal.destinationDim());
+        RemoteWorld view = RemoteWorldRegistry.viewOf(portal);
         if (view == null) {
             // Destination pas encore annoncee par le serveur : cadre sombre.
             FrameAreaRenderer.fill(portal, cameraPos, positionMatrix, 0.0f, 0.0f, 0.0f);
@@ -352,7 +352,7 @@ public final class ShaderPackPortalRenderer {
             Matrix4f projection,
             Framebuffer framebuffer) {
         GL11.glStencilFunc(GL11.GL_EQUAL, nestedValue, FULL_MASK);
-        RemoteWorld innerView = RemoteWorldRegistry.viewOf(inner.destinationDim());
+        RemoteWorld innerView = RemoteWorldRegistry.viewOf(inner);
         if (innerView == null || !PortalStencilRenderer.hasChunkAt(innerView, inner.destinationPos())) {
             // Pas de donnees pour ce que ce portail montre : cadre sombre, comme un portail trop profond.
             FrameAreaRenderer.fill(inner, remoteCameraPos, VIEW_POSITION, 0.0f, 0.0f, 0.0f);

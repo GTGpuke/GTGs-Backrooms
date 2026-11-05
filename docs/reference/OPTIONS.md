@@ -48,6 +48,7 @@ Les tâches de test posent elles-mêmes quelques propriétés.
 | `runGameTest` | `gtgsbackrooms.portal.teleportCooldownTicks` | `3` | Les tests en jeu exercent le délai entre deux traversées, nul par défaut |
 | `runGameTest` | `fabric-api.gametest.report-file` | `build/junit.xml` | Rapport des tests en jeu, propriété de Fabric API |
 | `runClientTest` | `gtgsbackrooms.portal.remoteWorldReleaseSeconds` | `5` | Un monde distant sans portail se libère au plancher du délai |
+| `runClientTest` | `gtgsbackrooms.look.viewLightReleaseSeconds` | `5` | La zone d'une vue sans vue rend sa mémoire graphique au plancher du délai |
 | `runClientTest` | `gtgsbackrooms.look.verifyNeonShader` | Chemin de `src/test/resources/neon_schedule_vectors.json` | Le client confronte le jumeau GLSL du calendrier des néons aux vecteurs communs |
 | `runClientTest` | `gtgsbackrooms.clientTest.report` | `build/client-junit.xml` | Rapport des tests du client |
 
@@ -110,6 +111,7 @@ Le fonctionnement des portails est dans [PORTAILS.md](../systemes/PORTAILS.md).
 | `gtgsbackrooms.look.bakedLight` | `-PlookBakedLight` | `true` | Lumière cuite du terrain, dans les dimensions dont le profil en a une ; coupée, la lightmap et l'ombrage vanilla reviennent. |
 | `gtgsbackrooms.look.pixelShadows` | `-PlookPixelShadows` | `32` | Taille des pixels d'ombre : pas de la grille des texels par bloc sur laquelle se calcule la lumière des néons, `32` (celui des textures du mod) ou `0` pour une lumière lisse ; toute autre valeur vaut `32`. |
 | `gtgsbackrooms.look.reduceNoise` | `-PreduceNoise` | `false` | Confort : retire du look le grain, le vacillement de la lumière de l'écran et l'aberration chromatique ; sous le style VHS, le bruit de la cassette tombe à 30 %. |
+| `gtgsbackrooms.look.viewLightReleaseSeconds` | Aucune | `60` | Secondes sans vue de portail qui la montre avant que la zone de lumière d'une vue ne rende sa mémoire graphique (environ 200 Mio en High et en Ultra). |
 | `gtgsbackrooms.look.debugStencil` | `-PlookDebugStencil` | `false` | Remplace l'image par le stencil, une couleur par niveau d'imbrication. |
 | `gtgsbackrooms.look.checkGlState` | `-PlookCheckGlState` | `false` | Vérifie que chaque passe du moteur rend l'état GL tel qu'elle l'a trouvé. |
 | `gtgsbackrooms.look.verifyNeonShader` | `-PlookVerifyNeonShader` | Vide | Chemin des vecteurs communs du calendrier des néons, à confronter au jumeau GLSL. |
@@ -122,6 +124,8 @@ Quelques précisions :
   chaîne `GL_RENDERER` du pilote contient `intel`, `llvmpipe` ou `swiftshader`. Toute valeur inconnue vaut `auto`, et
   le journal note le choix.
 - `reduceNoise` garde la teinte, la lumière, le brouillard, la vignette et le bloom.
+- `viewLightReleaseSeconds` ne descend jamais sous 5 secondes. Une très grande valeur revient à ne jamais libérer. Une vue
+  qui revient après la libération recrée sa zone et reprend ses tuiles, avec la lumière de sa zone le temps de les calculer.
 - Dans `debugStencil`, les niveaux 0 à 3 sont gris, bleu, vert et rouge. Le look de chaque pixel les éclaircit et les
   jaunit.
 - `checkGlState` relit l'état au pilote avant et après chaque passe, et journalise une fois chaque écart. Ces lectures

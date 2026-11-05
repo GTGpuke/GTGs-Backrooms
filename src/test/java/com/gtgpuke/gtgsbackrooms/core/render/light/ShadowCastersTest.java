@@ -202,4 +202,46 @@ class ShadowCastersTest {
         assertEquals(0, casters.bodies(), "Vide.");
         assertTrue(casters.begin(0.0, 0.0, 0.0), "De nouveau de la place.");
     }
+
+    @Test
+    @DisplayName("Un corps de l'autre cote d'un portail est reporte derriere son cadre, lie a lui, apres ceux de ce cote")
+    void bodyBeyondAFrame() {
+        ShadowCasters casters = new ShadowCasters();
+        casters.begin(1.0, 0.0, 2.0);
+        cube(casters, 1.0, 1.0, 2.0, 0.5, 0.25, 0.125);
+        casters.end();
+        // Un quart de tour autour de la verticale (x devient z, z devient -x), puis un decalage.
+        double[] quarter = {0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0};
+        casters.beyond(quarter, 10.0, 0.0, 5.0, 3);
+        casters.begin(1.0, 0.0, 2.0);
+        cube(casters, 1.0, 1.0, 2.0, 0.5, 0.25, 0.125);
+        casters.end();
+        casters.begin(-1.0, 0.0, 0.0);
+        casters.boxOf(0.6, 1.8, 0.0f);
+        casters.end();
+        assertEquals(3, casters.bodies(), "Trois corps.");
+        assertEquals(1, casters.here(), "Un seul de ce cote, le premier.");
+        assertEquals(-1.0f, bounds(casters, 0, ShadowCasters.FRAME), EPSILON, "Le premier compte pour toute lumiere.");
+        assertEquals(1.0f, box(casters, 0, 0, X), EPSILON, "Il reste ou il est.");
+        assertEquals(3.0f, bounds(casters, 1, ShadowCasters.FRAME), EPSILON, "Le deuxieme ne compte que pour son cadre.");
+        assertEquals(12.0f, bounds(casters, 1, X), EPSILON, "Ses pieds sont reportes.");
+        assertEquals(4.0f, bounds(casters, 1, Z), EPSILON, "Ses pieds sont reportes.");
+        assertEquals(12.0f, box(casters, 1, 0, X), EPSILON, "Le centre de sa boite aussi.");
+        assertEquals(1.0f, box(casters, 1, 0, Y), EPSILON, "A la meme hauteur.");
+        assertEquals(4.0f, box(casters, 1, 0, Z), EPSILON, "Le centre de sa boite aussi.");
+        assertEquals(-0.5f, box(casters, 1, 0, LONGEST + Z), EPSILON, "Son plus long demi-axe tourne avec lui.");
+        assertEquals(0.125f, box(casters, 1, 0, THIRD + X), EPSILON, "Les autres aussi.");
+        assertContained(casters, 1);
+        assertEquals(10.0f, box(casters, 2, 0, X), EPSILON, "La boite de collision part des pieds reportes.");
+        assertEquals(0.9f, box(casters, 2, 0, Y), EPSILON, "Au milieu de sa hauteur.");
+        assertEquals(6.0f, box(casters, 2, 0, Z), EPSILON, "La boite de collision part des pieds reportes.");
+        assertContained(casters, 2);
+        casters.clear();
+        casters.begin(1.0, 0.0, 2.0);
+        cube(casters, 1.0, 1.0, 2.0, 0.5, 0.25, 0.125);
+        casters.end();
+        assertEquals(1, casters.here(), "Videe, la liste reprend de ce cote.");
+        assertEquals(1.0f, box(casters, 0, 0, X), EPSILON, "Sans report.");
+        assertEquals(-1.0f, bounds(casters, 0, ShadowCasters.FRAME), EPSILON, "Sans cadre.");
+    }
 }

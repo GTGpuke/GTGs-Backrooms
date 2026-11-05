@@ -17,6 +17,8 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.ChunkSectionPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.world.dimension.DimensionType;
 
@@ -27,16 +29,20 @@ import com.gtgpuke.gtgsbackrooms.core.ModConstants;
 import com.gtgpuke.gtgsbackrooms.core.perf.ModPerformanceMonitor;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.PortalRenderState;
 import com.gtgpuke.gtgsbackrooms.core.portal.client.view.ViewLightmaps;
+import com.gtgpuke.gtgsbackrooms.core.portal.entity.BackroomsPortalEntity;
 import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteDimensionPayload;
+import com.gtgpuke.gtgsbackrooms.core.portal.sync.RemoteKeys;
 import com.gtgpuke.gtgsbackrooms.mixin.client.ClientWorldAccessor;
 import com.gtgpuke.gtgsbackrooms.mixin.client.MinecraftClientAccessor;
 
 /**
  * Mondes distants du client, un par dimension annoncee par le serveur, plus les vues secondaires des mondes qui ont ete
- * principaux.
+ * principaux. Un portail qui mene loin dans le monde du joueur, plus loin que ce que vanilla lui envoie, a lui aussi un
+ * monde distant, l'ailleurs de cette dimension ({@link RemoteKeys}) : sa vue le montre tant qu'il tient l'arrivee.
  *
- * <p>Ils sont tous oublies quand le monde principal change (changement de dimension, reconnexion) :
- * le serveur repart lui aussi de zero a ce moment-la, les deux cotes restent donc d'accord.
+ * <p>Ils sont tous oublies quand vanilla remplace le monde principal (respawn, changement de dimension vanilla, reconnexion) :
+ * le serveur repart lui aussi de zero a ce moment-la, les deux cotes restent donc d'accord. Une traversee par portail les
+ * garde, sauf les ailleurs du monde quitte, que le serveur libere : plus rien ne les nourrirait.
  */
 public final class RemoteWorldRegistry {
 
@@ -55,6 +61,8 @@ public final class RemoteWorldRegistry {
     private static final Map<RegistryKey<World>, RemoteWorld> WORLDS = new HashMap<>();
     /** Memes mondes que {@link #WORLDS}, pour les parcourir a chaque tick sans iterateur. */
     private static final List<RemoteWorld> WORLD_LIST = new ArrayList<>();
+    /** Les ailleurs, par dimension : sans entree, aucun portail n'en cherche. */
+    private static final Map<RegistryKey<World>, RemoteWorld> ELSEWHERE = new HashMap<>();
     private static @Nullable ClientWorld mainWorld;
     /** Monde distant devenu principal a la derniere traversee, avec son renderer ; {@code null} avant la premiere. */
     private static @Nullable RemoteWorld promotedWorld;
@@ -148,9 +156,65 @@ public final class RemoteWorldRegistry {
     }
 
     /**
+     * Vue d'un portail : l'ailleurs de sa dimension s'il tient le chunk de l'arrivee, sinon la vue de sa dimension
+     * ({@link #viewOf(RegistryKey)}).
+     *
+     * @return vue de l'arrivee, ou {@code null} si le serveur n'a pas annonce sa dimension
+     */
+    public static @Nullable RemoteWorld viewOf(BackroomsPortalEntity portal) {
+        RemoteWorld elsewhere = elsewhereOf(portal);
+        return elsewhere != null ? elsewhere : viewOf(portal.destinationDim());
+    }
+
+    /**
+     * Monde client qui tient l'arrivee d'un portail : l'ailleurs de sa dimension s'il en a le chunk, sinon le monde de sa
+     * dimension ({@link #worldOf(RegistryKey)}).
+     *
+     * @return monde de l'arrivee, ou {@code null} si le client ne tient pas sa dimension
+     */
+    public static @Nullable ClientWorld worldOf(BackroomsPortalEntity portal) {
+        RemoteWorld elsewhere = elsewhereOf(portal);
+        return elsewhere != null ? elsewhere.world() : worldOf(portal.destinationDim());
+    }
+
+    /**
+     * Le monde client qui tient ce point du monde du joueur : le sien, ou, juste apres une traversee vers un endroit lointain de ce monde,
+     * tant que vanilla ne lui a pas encore envoye les chunks de l'arrivee, l'ailleurs de sa dimension, qui les tenait deja. Le son y
+     * trouve les tubes et les cadres autour de l'auditeur, sans attendre.
+     *
+     * @param world monde du joueur
+     * @param x point
+     * @param z point
+     * @return le monde du joueur s'il tient ce chunk, ou si aucun ailleurs ne le tient
+     */
+    public static ClientWorld holding(ClientWorld world, double x, double z) {
+        int chunkX = ChunkSectionPos.getSectionCoord(x);
+        int chunkZ = ChunkSectionPos.getSectionCoord(z);
+        if (ELSEWHERE.isEmpty() || world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+            return world;
+        }
+        RemoteWorld elsewhere = ELSEWHERE.get(world.getRegistryKey());
+        return elsewhere != null && elsewhere.world().getChunkManager().isChunkLoaded(chunkX, chunkZ) ? elsewhere.world() : world;
+    }
+
+    /** L'ailleurs de la dimension d'un portail, s'il tient le chunk de son arrivee. */
+    private static @Nullable RemoteWorld elsewhereOf(BackroomsPortalEntity portal) {
+        if (ELSEWHERE.isEmpty()) {
+            return null;
+        }
+        RemoteWorld elsewhere = ELSEWHERE.get(portal.destinationDim());
+        if (elsewhere == null) {
+            return null;
+        }
+        Vec3d arrival = portal.destinationPos();
+        return elsewhere.world().getChunkManager().isChunkLoaded(ChunkSectionPos.getSectionCoord(arrival.x), ChunkSectionPos.getSectionCoord(arrival.z))
+                ? elsewhere : null;
+    }
+
+    /**
      * Cree le monde distant d'une dimension annoncee, ou renvoie celui qui existe deja.
      *
-     * @param dimension dimension distante
+     * @param dimension clef du monde distant : sa dimension, ou l'ailleurs du monde du joueur
      * @param dimensionTypeId type de dimension, resolu dans les registres de la connexion
      * @param index index de la dimension chez ce joueur, porte par les payloads frequents
      * @return monde distant, ou {@code null} hors connexion ou si le type est inconnu
@@ -177,11 +241,14 @@ public final class RemoteWorldRegistry {
         }
         RemoteWorld remote;
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_WORLD_CREATE)) {
-            remote = RemoteWorld.create(client, networkHandler, dimension, dimensionType.get());
+            remote = RemoteWorld.create(client, networkHandler, RemoteKeys.dimension(dimension), dimensionType.get());
         }
         remote.syncEnvironment(client.world);
         WORLDS.put(dimension, remote);
         WORLD_LIST.add(remote);
+        if (RemoteKeys.isElsewhere(dimension)) {
+            ELSEWHERE.put(RemoteKeys.dimension(dimension), remote);
+        }
         // Creer un WorldRenderer rebranche le dispatcher d'entities partage : on le rend au monde principal.
         client.getEntityRenderDispatcher().setWorld(client.world);
         ModConstants.LOGGER.debug("[Portal] Monde distant cree pour {}.", dimension.getValue());
@@ -231,6 +298,7 @@ public final class RemoteWorldRegistry {
         }
         WORLDS.remove(dimension);
         WORLD_LIST.remove(remote);
+        ELSEWHERE.values().remove(remote);
         // Vide d'abord (chunks, lumiere, entities) : ce qui garderait encore le monde ne garde qu'un monde vide.
         try (ModPerformanceMonitor.Scope ignored = ModPerformanceMonitor.scope(PERF_WORLD_RELEASE)) {
             remote.clear();
@@ -423,6 +491,7 @@ public final class RemoteWorldRegistry {
         }
         WORLDS.clear();
         WORLD_LIST.clear();
+        ELSEWHERE.clear();
         Arrays.fill(ANNOUNCED, null);
         promotedWorld = null;
         disposeMirrors();

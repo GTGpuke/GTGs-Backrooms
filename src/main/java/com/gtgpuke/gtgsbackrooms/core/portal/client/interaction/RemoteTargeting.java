@@ -145,7 +145,7 @@ public final class RemoteTargeting {
             client.targetedEntity = null;
             return;
         }
-        RemoteWorld target = RemoteWorldRegistry.viewOf(crossed.destinationDim());
+        RemoteWorld target = RemoteWorldRegistry.viewOf(crossed);
         if (target == null) {
             return;
         }

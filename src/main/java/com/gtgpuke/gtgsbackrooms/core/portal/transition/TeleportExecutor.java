@@ -646,6 +646,13 @@ public final class TeleportExecutor {
         Vec3d exitVelocity = PortalFacing.transformVector(source, exitFacing, entity.getVelocity());
         Vec2f look = PortalFacing.transformLook(source, exitFacing, entity.getYaw(), entity.getPitch());
         LivingEntity chased = PortalPursuit.targetAfterCrossing(entity, portal);
+        // Le portail tourne aussi la tete et le corps d'une creature, du meme angle que son regard : vanilla ne pose que le
+        // lacet, et la tete restee en arriere revenait vers l'ancienne direction chez ceux qui la voient. Le lacet est pose
+        // avant le passage : la copie d'une autre dimension en reprend tete et corps a son apparition.
+        float yawShift = MathHelper.wrapDegrees(look.x - entity.getYaw());
+        float headYaw = entity.getHeadYaw() + yawShift;
+        float bodyYaw = entity.getBodyYaw() + yawShift;
+        entity.setYaw(look.x);
         Entity arrived;
         if (destinationWorld == world) {
             entity.refreshPositionAndAngles(exit.x, exit.y, exit.z, look.x, look.y);
@@ -663,6 +670,8 @@ public final class TeleportExecutor {
             // Vanilla ne reprend que le yaw de la cible : le pitch suit, pour les projectiles.
             arrived.setPitch(look.y);
         }
+        arrived.setHeadYaw(headYaw);
+        arrived.setBodyYaw(bodyYaw);
         arrived.setPortalCooldown(ENTITY_PORTAL_COOLDOWN_TICKS);
         arrived.fallDistance = fall;
         // Seul un mob poursuit, et sa proie est dans le monde d'arrivee : de ce cote, il la reprend sans s'arreter.

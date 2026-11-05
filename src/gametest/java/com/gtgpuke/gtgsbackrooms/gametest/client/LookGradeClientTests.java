@@ -57,7 +57,7 @@ final class LookGradeClientTests {
     private static final int LOOK_STAGES = 72;
     private static final Identifier GRADE_LIBRARY = Identifier.of(ModConstants.MOD_ID, "shaders/include/look_grade.glsl");
     private static final Identifier LOOK_LIBRARY = Identifier.of(ModConstants.MOD_ID, "shaders/include/look.glsl");
-    private static final String LIGHT_START = "vec3 gtgs_texelPoint() {";
+    private static final String LIGHT_START = "vec3 gtgs_texelOf(vec3 p) {";
     private static final String LIGHT_LAST = "vec3 gtgs_lightPosition() {";
     private static final int BATCH = 64;
     private static final int CHANNELS = 4;

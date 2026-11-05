@@ -30,6 +30,7 @@ import net.minecraft.network.packet.s2c.play.WorldEventS2CPacket;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ChunkDataSender;
+import net.minecraft.server.network.ChunkFilter;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerChunkLoadingManager;
 import net.minecraft.server.world.ServerWorld;
@@ -112,6 +113,10 @@ public final class PortalViewTracker {
      * plus tard) a pu etre oublie par le client entre-temps, et doit partir comme les autres.
      */
     public static final int HELD_CHUNKS_TTL_TICKS = 100;
+    /** Distance a laquelle vanilla envoie particules et fissures d'un bloc aux joueurs de leur dimension, en blocs. */
+    public static final double NEAR_RANGE = 32.0;
+    /** Distance a laquelle vanilla envoie les particules de longue distance, en blocs. */
+    public static final double LONG_PARTICLE_RANGE = 512.0;
     /**
      * Chunks de sa nouvelle dimension que le client d'un joueur tient deja, le temps que vanilla les lui propose. Peu
      * d'entrees (les joueurs passes depuis moins de {@link #HELD_CHUNKS_TTL_TICKS} ticks) : une liste, parcourue sans
@@ -229,13 +234,20 @@ public final class PortalViewTracker {
                 held.chunks().remove(chunkKey);
             }
         }
+        RegistryKey<World> elsewhere = RemoteKeys.elsewhere(dimension);
         for (int i = 0; i < VIEW_LIST.size(); i++) {
             PlayerView view = VIEW_LIST.get(i);
-            LongSet sent = view.sentChunks.get(dimension);
-            if (sent != null && sent.contains(chunkKey)) {
-                view.pendingBlockUpdates.computeIfAbsent(dimension, key -> new LongOpenHashSet()).add(pos.asLong());
-                view.hasPendingBlockUpdates = true;
-            }
+            pendBlockUpdate(view, dimension, chunkKey, pos);
+            pendBlockUpdate(view, elsewhere, chunkKey, pos);
+        }
+    }
+
+    /** Un bloc change dans un chunk que la fenetre de cette clef a envoye : il part au prochain envoi. */
+    private static void pendBlockUpdate(PlayerView view, RegistryKey<World> key, long chunkKey, BlockPos pos) {
+        LongSet sent = view.sentChunks.get(key);
+        if (sent != null && sent.contains(chunkKey)) {
+            view.pendingBlockUpdates.computeIfAbsent(key, ignored -> new LongOpenHashSet()).add(pos.asLong());
+            view.hasPendingBlockUpdates = true;
         }
     }
 
@@ -337,7 +349,7 @@ public final class PortalViewTracker {
         Departure pending = removeDeparture(player.getUuid());
         if (pending != null) {
             RegistryKey<World> dimension = pending.world().getRegistryKey();
-            announceDimension(player, view, pending.world());
+            announceDimension(player, view, pending.world().getRegistryKey(), pending.world());
             LongSet sent = view.sentChunks.computeIfAbsent(dimension, key -> new LongOpenHashSet());
             int before = sent.size();
             sent.addAll(pending.chunks());
@@ -426,20 +438,38 @@ public final class PortalViewTracker {
      * Envoie un son, un evenement de monde, des particules ou des fissures d'une dimension aux joueurs qui la voient a travers un
      * portail, si le point tombe dans un chunk de leur fenetre ; appele par les mixins de {@code PlayerManager} et de
      * {@code ServerWorld}, apres l'envoi vanilla aux joueurs de la dimension. C'est le client qui decide par quel
-     * portail le son lui parvient et ou s'affichent les particules.
+     * portail le son lui parvient et ou s'affichent les particules. La fenetre de l'ailleurs d'un joueur est dans son propre
+     * monde : un joueur que vanilla a deja servi (a portee du point, sauf celui qu'il exclut), ou l'exclu quand l'envoi a l'auteur
+     * d'une action a travers un cadre l'a servi, ne le recoit pas une seconde fois par elle ; sinon le son d'un bloc casse a
+     * travers un cadre lointain du meme monde sortait deux fois.
      *
+     * @param dimension dimension de l'envoi
+     * @param x point
+     * @param y point
+     * @param z point
+     * @param vanillaRange distance du point jusqu'a laquelle vanilla sert les joueurs de la dimension
+     * @param excludedId identifiant de l'entity que vanilla exclut de l'envoi, -1 si aucune
+     * @param excludedServed {@code true} si l'exclu a recu l'envoi autrement (l'auteur d'une action a travers un cadre)
+     * @param packet son, evenement de monde, particules ou fissures
      * @return nombre de joueurs servis
      */
-    public static int relayToViewers(RegistryKey<World> dimension, double x, double z, Packet<?> packet) {
+    public static int relayToViewers(RegistryKey<World> dimension, double x, double y, double z, double vanillaRange, int excludedId,
+            boolean excludedServed, Packet<?> packet) {
         if (watchedChunkCount == 0 || !isRelayed(packet)) {
             return 0;
         }
         long chunk = ChunkPos.toLong(ChunkSectionPos.getSectionCoord(x), ChunkSectionPos.getSectionCoord(z));
+        RegistryKey<World> elsewhere = RemoteKeys.elsewhere(dimension);
         int served = 0;
         for (int i = 0; i < VIEW_LIST.size(); i++) {
             RemoteEntityView entities = viewerOf(VIEW_LIST.get(i), dimension, chunk);
             if (entities != null) {
                 entities.sendPacket(packet);
+                served++;
+            }
+            RemoteEntityView far = viewerOf(VIEW_LIST.get(i), elsewhere, chunk);
+            if (far != null && !alreadyServed(VIEW_LIST.get(i).player, x, y, z, vanillaRange, excludedId, excludedServed)) {
+                far.sendPacket(packet);
                 served++;
             }
         }
@@ -460,11 +490,16 @@ public final class PortalViewTracker {
             return;
         }
         RegistryKey<World> dimension = destination.getRegistryKey();
+        RegistryKey<World> elsewhere = RemoteKeys.elsewhere(dimension);
         long chunk = entity.getChunkPos().toLong();
         for (int i = 0; i < VIEW_LIST.size(); i++) {
             RemoteEntityView entities = viewerOf(VIEW_LIST.get(i), dimension, chunk);
             if (entities != null) {
                 entities.track(destination, entity);
+            }
+            RemoteEntityView far = viewerOf(VIEW_LIST.get(i), elsewhere, chunk);
+            if (far != null) {
+                far.track(destination, entity);
             }
         }
     }
@@ -484,10 +519,15 @@ public final class PortalViewTracker {
             return;
         }
         RegistryKey<World> dimension = world.getRegistryKey();
+        RegistryKey<World> elsewhere = RemoteKeys.elsewhere(dimension);
         for (int i = 0; i < VIEW_LIST.size(); i++) {
             RemoteEntityView entities = VIEW_LIST.get(i).entities.get(dimension);
             if (entities != null) {
                 entities.forget(entity.getId());
+            }
+            RemoteEntityView far = VIEW_LIST.get(i).entities.get(elsewhere);
+            if (far != null) {
+                far.forget(entity.getId());
             }
         }
     }
@@ -512,6 +552,19 @@ public final class PortalViewTracker {
         // Une vue d'entities n'existe que pour une dimension dont des chunks ont ete envoyes.
         RemoteEntityView entities = view.entities.get(dimension);
         return entities != null && view.sentChunks.get(dimension).contains(chunk) ? entities : null;
+    }
+
+    /**
+     * {@code true} si un joueur de la dimension d'un envoi l'a deja recu : de vanilla, a portee du point, ou, exclu par vanilla, de
+     * l'envoi a l'auteur d'une action. Un bloc de marge au bord de la portee : mieux vaut un son en double qu'un son perdu.
+     */
+    private static boolean alreadyServed(ServerPlayerEntity player, double x, double y, double z, double vanillaRange, int excludedId,
+            boolean excludedServed) {
+        if (player.getId() == excludedId) {
+            return excludedServed;
+        }
+        double reach = Math.max(0.0, vanillaRange - 1.0);
+        return player.squaredDistanceTo(x, y, z) < reach * reach;
     }
 
     /** Paquets qu'un joueur recoit d'une dimension vue a travers un portail, en plus de ceux de ses entities. */
@@ -618,13 +671,16 @@ public final class PortalViewTracker {
         return false;
     }
 
-    /** Portails du monde du joueur a sa portee de rendu, devant comme dans son dos, qui menent dans une autre dimension. */
+    /**
+     * Portails du monde du joueur a sa portee de rendu, devant comme dans son dos, qui menent dans une autre dimension, ou ailleurs dans
+     * la sienne, plus loin que ce que vanilla lui envoie autour de lui.
+     */
     private static void collectRelevantPortals(ServerPlayerEntity player, ServerWorld world) {
         RELEVANT_SCRATCH.clear();
         List<BackroomsPortalEntity> portals = BackroomsPortalEntityRegistry.all();
         for (int i = 0; i < portals.size(); i++) {
             BackroomsPortalEntity portal = portals.get(i);
-            if (portal.getWorld() != world || !portal.visible() || portal.destinationDim().equals(world.getRegistryKey())) {
+            if (portal.getWorld() != world || !relevant(portal, world.getRegistryKey(), player.getChunkFilter())) {
                 continue;
             }
             if (PortalRelevance.isInRange(player, portal.getPos(), PortalRelevance.MAX_DISTANCE)) {
@@ -647,6 +703,42 @@ public final class PortalViewTracker {
         return Math.max(DestinationLoader.syncRadius(true), Math.min(Math.min(playerView, serverView) + 1, (RemoteChunkWindow.MAP_RADIUS - anchorDistance) / 2));
     }
 
+    /**
+     * {@code true} si un portail visible du monde du joueur a une fenetre a lui envoyer : il mene dans une autre dimension, ou ailleurs
+     * dans la sienne, et la fenetre de son arrivee deborde alors de ce que vanilla lui envoie autour de lui.
+     *
+     * @param world monde du joueur, celui du portail
+     * @param vanilla chunks que vanilla envoie au joueur
+     */
+    static boolean relevant(BackroomsPortalEntity portal, RegistryKey<World> world, ChunkFilter vanilla) {
+        if (!portal.visible()) {
+            return false;
+        }
+        Vec3d arrival = portal.destinationPos();
+        return !portal.destinationDim().equals(world)
+                || beyondVanilla(vanilla, ChunkSectionPos.getSectionCoord(arrival.x), ChunkSectionPos.getSectionCoord(arrival.z), DestinationLoader.syncRadius(false));
+    }
+
+    /**
+     * {@code true} si une fenetre de ce rayon autour de cette arrivee deborde des chunks que vanilla envoie au joueur et que son client
+     * dessine (l'anneau du bord exclu : ses sections attendent leurs voisins). Le filtre est un disque : la fenetre, un carre, y tient
+     * si ses quatre coins y tiennent.
+     *
+     * @param vanilla chunks que vanilla envoie au joueur
+     */
+    static boolean beyondVanilla(ChunkFilter vanilla, int arrivalChunkX, int arrivalChunkZ, int radius) {
+        return !vanilla.isWithinDistanceExcludingEdge(arrivalChunkX - radius, arrivalChunkZ - radius)
+                || !vanilla.isWithinDistanceExcludingEdge(arrivalChunkX + radius, arrivalChunkZ - radius)
+                || !vanilla.isWithinDistanceExcludingEdge(arrivalChunkX - radius, arrivalChunkZ + radius)
+                || !vanilla.isWithinDistanceExcludingEdge(arrivalChunkX + radius, arrivalChunkZ + radius);
+    }
+
+    /** La clef de la fenetre d'un portail : sa dimension d'arrivee, ou l'ailleurs du monde du joueur s'il y mene. */
+    private static RegistryKey<World> windowKey(ServerPlayerEntity player, BackroomsPortalEntity portal) {
+        RegistryKey<World> destination = portal.destinationDim();
+        return destination.equals(player.getWorld().getRegistryKey()) ? RemoteKeys.elsewhere(destination) : destination;
+    }
+
     /** Par dimension distante : foyer = portail le plus proche ; fenetres de tous les portails qui tiennent autour. */
     private static void computeWantedWindows(ServerPlayerEntity player) {
         ANCHOR_SCRATCH.clear();
@@ -656,9 +748,10 @@ public final class PortalViewTracker {
         }
         for (int i = 0; i < RELEVANT_SCRATCH.size(); i++) {
             BackroomsPortalEntity portal = RELEVANT_SCRATCH.get(i);
-            BackroomsPortalEntity anchor = ANCHOR_SCRATCH.get(portal.destinationDim());
+            RegistryKey<World> key = windowKey(player, portal);
+            BackroomsPortalEntity anchor = ANCHOR_SCRATCH.get(key);
             if (anchor == null || player.squaredDistanceTo(portal) < player.squaredDistanceTo(anchor)) {
-                ANCHOR_SCRATCH.put(portal.destinationDim(), portal);
+                ANCHOR_SCRATCH.put(key, portal);
             }
         }
         for (int i = 0; i < RELEVANT_SCRATCH.size(); i++) {
@@ -666,15 +759,16 @@ public final class PortalViewTracker {
             // Pres du portail, la traversee est imminente : la fenetre couvre ce que le joueur verra en sortant, jusqu'a sa
             // distance de vue. Ses chunks seront chez lui avant le passage, et vanilla ne les lui renverra pas d'un coup.
             boolean near = DestinationLoader.isNear(player, portal);
-            RegistryKey<World> dimension = portal.destinationDim();
+            RegistryKey<World> dimension = windowKey(player, portal);
             Vec3d anchorPos = ANCHOR_SCRATCH.get(dimension).destinationPos();
             Vec3d destinationPos = portal.destinationPos();
             int anchorX = ChunkSectionPos.getSectionCoord(anchorPos.x);
             int anchorZ = ChunkSectionPos.getSectionCoord(anchorPos.z);
             int chunkX = ChunkSectionPos.getSectionCoord(destinationPos.x);
             int chunkZ = ChunkSectionPos.getSectionCoord(destinationPos.z);
-            int radius = near ? nearRadius(player.getViewDistance(), player.getServer().getPlayerManager().getViewDistance(),
-                    Math.max(Math.abs(chunkX - anchorX), Math.abs(chunkZ - anchorZ))) : DestinationLoader.syncRadius(false);
+            // Ailleurs dans le monde du joueur, une traversee le fait repartir de ce que vanilla lui envoie : la fenetre reste celle du cadre.
+            int radius = near && !RemoteKeys.isElsewhere(dimension) ? nearRadius(player.getViewDistance(), player.getServer().getPlayerManager().getViewDistance(),
+                    Math.max(Math.abs(chunkX - anchorX), Math.abs(chunkZ - anchorZ))) : DestinationLoader.syncRadius(near);
             if (!RemoteChunkWindow.fitsAround(anchorX, anchorZ, chunkX, chunkZ, radius)) {
                 continue;
             }
@@ -709,15 +803,18 @@ public final class PortalViewTracker {
      * en vue imbriquee. S'il mene vers un troisieme monde, ou ailleurs dans le meme, la fenetre carree de son arrivee
      * rejoint les fenetres voulues : sans elle, sa vue n'aurait rien a montrer. Le foyer d'une dimension qu'aucun portail
      * du joueur n'atteint est le premier de ces portails ; une arrivee qui ne tient pas autour du foyer de sa dimension est
-     * laissee, comme pour un portail du joueur.
+     * laissee, comme pour un portail du joueur. Un portail du monde du joueur se voit a travers un autre dans l'ailleurs de ce
+     * monde : sa fenetre est rangee sous la clef de l'ailleurs.
      */
     private static void addNestedWindows(ServerPlayerEntity player) {
         RegistryKey<World> own = player.getWorld().getRegistryKey();
+        RegistryKey<World> elsewhere = RemoteKeys.elsewhere(own);
         List<BackroomsPortalEntity> portals = BackroomsPortalEntityRegistry.all();
         NESTED_SCRATCH.clear();
         for (int i = 0; i < portals.size(); i++) {
             BackroomsPortalEntity portal = portals.get(i);
-            if (seenThroughAnother(portal, own, WANTED_SCRATCH.get(portal.getWorld().getRegistryKey()))) {
+            RegistryKey<World> world = portal.getWorld().getRegistryKey();
+            if (seenThroughAnother(portal, own, WANTED_SCRATCH.get(world.equals(own) ? elsewhere : world))) {
                 NESTED_SCRATCH.add(portal);
             }
         }
@@ -817,7 +914,7 @@ public final class PortalViewTracker {
                 PortalNetwork.send(player, new RemoteChunkUnloadPayload(index, new ChunkPos(key)));
             }
         }
-        ServerWorld destination = server.getWorld(dimension);
+        ServerWorld destination = server.getWorld(RemoteKeys.dimension(dimension));
         if (destination == null) {
             return false;
         }
@@ -841,8 +938,8 @@ public final class PortalViewTracker {
                     // Pas encore charge : le ticket de DestinationLoader s'en occupe, on reessaie au prochain passage.
                     continue;
                 }
-                index = announceDimension(player, view, destination);
-                PortalNetwork.send(player, RemoteChunkPayload.of(destination, chunk));
+                index = announceDimension(player, view, dimension, destination);
+                PortalNetwork.send(player, RemoteChunkPayload.of(dimension, destination, chunk));
                 sent.add(key);
                 watchedChunkCount++;
                 left--;
@@ -869,8 +966,7 @@ public final class PortalViewTracker {
      * qu'une annonce precede tout ce qui s'en reclame. Une dimension dont le monde a ete libere ({@link #release}) est
      * annoncee de nouveau, sous le meme index, avant tout nouvel envoi.
      */
-    private static int announceDimension(ServerPlayerEntity player, PlayerView view, ServerWorld destination) {
-        RegistryKey<World> dimension = destination.getRegistryKey();
+    private static int announceDimension(ServerPlayerEntity player, PlayerView view, RegistryKey<World> dimension, ServerWorld destination) {
         int index = view.announcedDimensions.indexOf(dimension);
         if (index >= 0 && !view.releasedDimensions.remove(dimension)) {
             return index;
@@ -879,7 +975,7 @@ public final class PortalViewTracker {
             index = view.announcedDimensions.size();
             view.announcedDimensions.add(dimension);
         }
-        PortalNetwork.send(player, RemoteDimensionPayload.of(destination, index));
+        PortalNetwork.send(player, RemoteDimensionPayload.of(dimension, destination, index));
         return index;
     }
 
@@ -900,7 +996,7 @@ public final class PortalViewTracker {
     private static void unloadAll(MinecraftServer server, ServerPlayerEntity player, PlayerView view, RegistryKey<World> dimension, LongSet sent) {
         RemoteEntityView entities = view.entities.remove(dimension);
         if (entities != null) {
-            entities.clear(server.getWorld(dimension), true);
+            entities.clear(server.getWorld(RemoteKeys.dimension(dimension)), true);
         }
         int index = view.announcedDimensions.indexOf(dimension);
         LongIterator iterator = sent.iterator();
@@ -921,7 +1017,7 @@ public final class PortalViewTracker {
             for (Map.Entry<RegistryKey<World>, LongSet> entry : view.pendingBlockUpdates.entrySet()) {
                 LongSet pending = entry.getValue();
                 // La dimension existe tant que le serveur tourne, et un chunk envoye a eu son annonce.
-                ServerWorld world = server.getWorld(entry.getKey());
+                ServerWorld world = server.getWorld(RemoteKeys.dimension(entry.getKey()));
                 int index = view.announcedDimensions.indexOf(entry.getKey());
                 LongIterator iterator = pending.iterator();
                 while (iterator.hasNext()) {
@@ -954,7 +1050,23 @@ public final class PortalViewTracker {
             watchedChunkCount -= sent.size();
         }
         for (RemoteEntityView entities : view.entities.values()) {
-            entities.clear(server.getWorld(entities.dimension()), notifyClient);
+            entities.clear(server.getWorld(RemoteKeys.dimension(entities.dimension())), notifyClient);
+        }
+        if (notifyClient) {
+            releaseElsewhere(view);
+        }
+    }
+
+    /**
+     * Un ailleurs ne vaut que pour le monde ou se trouve le joueur : passe dans un autre, plus rien ne le nourrit, et son client le
+     * gardait fige jusqu'a la deconnexion, prefere au monde a jour pour un portail qui mene a l'endroit qu'il tenait. Il est libere
+     * chez lui, comme une dimension que plus aucun portail ne montre (une seconde liberation n'y fait rien).
+     */
+    private static void releaseElsewhere(PlayerView view) {
+        for (int i = 0; i < view.announcedDimensions.size(); i++) {
+            if (RemoteKeys.isElsewhere(view.announcedDimensions.get(i))) {
+                PortalNetwork.send(view.player, new RemoteDimensionReleasePayload(i));
+            }
         }
     }
 }

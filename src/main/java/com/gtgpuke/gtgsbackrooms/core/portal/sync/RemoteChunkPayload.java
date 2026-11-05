@@ -5,9 +5,11 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.network.packet.s2c.play.ChunkData;
 import net.minecraft.network.packet.s2c.play.LightData;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.World;
 import net.minecraft.world.chunk.WorldChunk;
 
 import com.gtgpuke.gtgsbackrooms.core.ModConstants;
@@ -18,7 +20,7 @@ import com.gtgpuke.gtgsbackrooms.core.ModConstants;
  * <p>Le contenu reutilise le format vanilla ({@link ChunkData}, {@link LightData}) : le client le
  * charge dans son monde distant exactement comme il chargerait un chunk de son propre monde.
  *
- * @param dimension identifiant de la dimension distante
+ * @param dimension clef du monde distant : sa dimension, ou l'ailleurs du monde du joueur ({@link RemoteKeys})
  * @param chunkX coordonnee X du chunk
  * @param chunkZ coordonnee Z du chunk
  * @param chunkData sections, heightmaps et block entities
@@ -36,14 +38,15 @@ public record RemoteChunkPayload(Identifier dimension, int chunkX, int chunkZ, C
     /**
      * Payload d'un chunk serveur charge, avec toute sa lumiere.
      *
+     * @param key clef du monde distant qui le recoit : la dimension du chunk, ou son ailleurs ({@link RemoteKeys})
      * @param world monde du chunk
      * @param chunk chunk complet
      * @return payload pret a envoyer
      */
-    public static RemoteChunkPayload of(ServerWorld world, WorldChunk chunk) {
+    public static RemoteChunkPayload of(RegistryKey<World> key, ServerWorld world, WorldChunk chunk) {
         ChunkPos pos = chunk.getPos();
         return new RemoteChunkPayload(
-                world.getRegistryKey().getValue(),
+                key.getValue(),
                 pos.x,
                 pos.z,
                 new ChunkData(chunk),

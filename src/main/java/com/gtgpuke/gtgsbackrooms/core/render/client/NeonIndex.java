@@ -176,12 +176,41 @@ public final class NeonIndex {
      * @param selection liste a remplir, videe d'abord
      */
     public static void collect(World world, double x, double y, double z, double reach, NeonSelection selection) {
+        scanAround(world, x, z, reach);
         NeonMap map = WORLDS.get(world);
         if (map == null) {
             selection.clear();
             return;
         }
         map.collect(x, y, z, reach, selection);
+    }
+
+    /**
+     * Les chunks encore en attente a portee de ce point se relevent tout de suite : ce que la lumiere et le bourdonnement demandent
+     * maintenant, autour de la camera ou de l'arrivee d'un portail, n'attend pas la fin d'une rafale. Juste apres une traversee vers un
+     * endroit lointain du meme monde, le chunk du tube qu'on venait de quitter arrivait dans l'ailleurs derriere une rafale du monde du
+     * joueur : releve vingt ticks plus tard, son bourdonnement s'etait tu entre-temps. Quelques chunks, une fois chacun, sans allocation
+     * hors des neons trouves.
+     */
+    private static void scanAround(World world, double x, double z, double reach) {
+        LongLinkedOpenHashSet pending = PENDING.get(world);
+        if (pending == null || pending.isEmpty() || !(world instanceof ClientWorld client)) {
+            return;
+        }
+        int minX = ChunkSectionPos.getSectionCoord(x - reach);
+        int maxX = ChunkSectionPos.getSectionCoord(x + reach);
+        int minZ = ChunkSectionPos.getSectionCoord(z - reach);
+        int maxZ = ChunkSectionPos.getSectionCoord(z + reach);
+        for (int chunkZ = minZ; chunkZ <= maxZ; chunkZ++) {
+            for (int chunkX = minX; chunkX <= maxX; chunkX++) {
+                if (pending.remove(ChunkPos.toLong(chunkX, chunkZ))) {
+                    WorldChunk chunk = client.getChunkManager().getWorldChunk(chunkX, chunkZ);
+                    if (chunk != null) {
+                        scanChunk(client, chunk);
+                    }
+                }
+            }
+        }
     }
 
     /** Monde oublie (libere, ou remplace par vanilla) : ses neons et sa file sont oublies, et le monde n'est plus retenu. */

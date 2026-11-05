@@ -12,7 +12,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import net.minecraft.registry.RegistryKey;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
@@ -134,8 +133,8 @@ class PortalSoundTest {
         // La source, dans l'End : l'image d'un point quatre blocs derriere le second cadre.
         Vec3d behindSecond = innerCenter.add(0.0, 0.0, innerFacing == PortalFacing.NORTH ? 4.0 : -4.0);
         Vec3d source = second.toDestination(behindSecond);
-        Function<RegistryKey<World>, List<BackroomsPortalEntity>> portalsOf =
-                world -> world.equals(World.NETHER) ? List.of(second) : List.of();
+        Function<BackroomsPortalEntity, List<BackroomsPortalEntity>> portalsOf =
+                portal -> portal.destinationDim().equals(World.NETHER) ? List.of(second) : List.of();
         PortalSound.Exit exit = PortalSound.bestExit(List.of(first), portalsOf, World.END, source, listener, 64.0);
         assertNotNull(exit, "Le son passe par les deux cadres.");
         assertSame(first, exit.portal(), "Il ressort du premier, celui du monde de l'auditeur.");
@@ -165,7 +164,7 @@ class PortalSoundTest {
                 .facingDestination(PortalFacing.SOUTH).destinationDim(World.END).destinationPos(source.add(0.0, 0.0, -30.0)).size(1.0f, 2.0f).build();
         assertSame(first, PortalSound.bestExit(List.of(farDirect, first), portalsOf, World.END, source, listener, 64.0).portal(),
                 "Mais deux cadres plus courts qu'un cadre direct l'emportent.");
-        assertEquals(0, PortalSound.NO_SECOND_FRAME.apply(World.NETHER).size(), "Aucun monde intermediaire par defaut.");
+        assertEquals(0, PortalSound.NO_SECOND_FRAME.apply(first).size(), "Aucun monde intermediaire par defaut.");
         Vec3d backOff = new Vec3d(10.5, 65.0, 0.5);
         assertNotNull(PortalSound.bestExit(List.of(first), portalsOf, World.END, source, backOff, 14.0),
                 "Le second cadre se voit de plus loin que la portee : seul le trajet entier compte (quatre et huit blocs).");

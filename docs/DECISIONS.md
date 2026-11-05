@@ -346,9 +346,74 @@ sous sa forme finale. Un nouvel écart entre le [guide](GUIDE.md) et le code s'a
   rebonds pour la session. Auto se décide d'après `GL_RENDERER` seul, sans test de
   performance. Les paliers Medium et High n'ont pas les lumières par tuiles ni le SSAO de la spec : le cache de surfaces les
   remplace.
-- Écart à la spec : la cuisson va jusqu'à sept sections de côté, et une seule zone existe à la fois : une vue loin de la
-  caméra garde la lightmap.
+- Écart à la spec : la cuisson va jusqu'à sept sections de côté, et deux zones au plus existent à la fois (celle du joueur, celle de
+  la vue du portail visible le plus proche qu'elle ne couvre pas, depuis le 3 novembre 2026) : une vue plus loin encore garde la
+  lightmap. La zone d'une vue a son cache de surfaces et ses rebonds depuis le même jour (voir plus bas).
 
 - Entré en marchant par un cadre debout et sorti d'un cadre au sol, le joueur est poussé dans le sens de son regard pour
   retomber au-delà du bord du cadre devant lui, au lieu de retomber dedans. Un petit saut complète la poussée quand il
   sort loin de ce bord ([portails](systemes/PORTAILS.md)).
+
+## 3 novembre 2026
+
+- Un portail vers un endroit du monde du joueur plus loin que ce que vanilla lui envoie a sa propre fenêtre, synchronisée comme une
+  autre dimension sous une clef à part, l'ailleurs de la dimension (choix de l'auteur du 3 novembre 2026, « étendre la synchro », pour
+  que les vues de portail montrent correctement les Backrooms) : c'est une extension du protocole des portails, sans changement de
+  format. Une traversée vers un tel endroit reste un déplacement dans le même monde.
+- La lumière passe par un portail qui la laisse passer, dans la lumière cuite (choix de l'auteur du 3 novembre 2026, « ouverture
+  lumineuse », précisé le même jour : « considérer le plan du portail comme un mur, mais aussi comme un moyen de faire passer la
+  lumière vers la destination », puis : « entre deux niveaux des Backrooms et le même niveau, que la lumière traverse correctement un
+  portail comme si c'était une continuité », « l'Overworld et le vanilla restent sans communication avec le shader »). Depuis, un
+  rayon de la cuisson qui entre dans le cadre continue de l'autre côté, dans les blocs et la lumière cuite de la zone qui y cuit, et
+  les shaders reçoivent ce qui sort du passage, mesuré par la cuisson. Un portail vers ou depuis un monde sans lumière cuite n'est
+  rien pour elle : la lueur tirée de la lumière vanilla devant l'arrivée est retirée. Ce qui suit dans ce paragraphe décrit la première
+  version. Le cadre de tout portail visible arrête la lumière de son monde ; celui d'un portail ouvert qui la
+  laisse passer y fait entrer les néons de l'autre côté, reportés derrière lui par la transformation du portail et qui n'éclairent que
+  par l'ouverture (direction, forme du faisceau, ombres de ce côté), plus une lueur pour ce que l'autre côté renvoie. La lueur se lit
+  dans la lumière vanilla devant l'arrivée, le seul relevé commun à toutes les dimensions, cuites ou non ; ses gains (0,6 dalle pour
+  une lampe au plus fort, 1 pour le plein jour) sont un réglage de départ, à ajuster à l'œil. Écarts : les corps ne font d'ombre
+  qu'aux néons vus par le cadre (pas à la lueur), le soleil ne passe qu'en lueur, et en Ultra les rebonds tracés traversent les cadres
+  et ne connaissent pas cette lumière près de la caméra.
+- Une vue de portail a le palier choisi (demande de l'auteur du 3 novembre 2026 : « qu'à travers le portail je puisse voir la bonne
+  qualité que j'ai choisie », choix « cache dédié ») : la zone d'une vue a son propre cache de surfaces, sa grille des blocs, ses
+  rebonds tracés et ses corps qui font de l'ombre, environ 150 Mio de mémoire graphique en plus en High et en Ultra. La vue ne calcule
+  qu'aux images que le joueur laisse libres, en 0,5 ms par image pour les tuiles et autant pour les rebonds (1,5 ms d'abord, ramenées à
+  0,5 après la mesure de l'auteur en jeu : « un gros souci de performance »). Choix « ombres dans la vue » et « ombres de la lumière qui passe » : les corps font de l'ombre dans la vue
+  d'un portail qui a sa zone, et aux néons vus par un portail.
+- Deux tests en jeu dépendaient de l'ordre des lots, qui change avec leur nombre : le témoin de la traversée attendait toute la fenêtre
+  alors que le serveur de test plafonne la vue vanilla à deux chunks (il n'attend plus que les chunks de sa vue, les seuls que vanilla
+  peut reproposer), et la fenêtre près du cadre dépendait de chunks relus du disque (elle reste chargée le temps du test).
+
+## 4 novembre 2026
+
+- L'arrivée d'un portail sans cadre de retour est un passage pour la lumière cuite (demande de l'auteur du 4 novembre 2026 : « je veux
+  qu'on ne voie pas la différence au moment du passage, pour créer de la géométrie non euclidienne » ; sa capture : un sol noir dès le plan
+  d'un portail aller simple). Un aller-retour continuait déjà la lumière par son cadre de retour ; un aller simple n'en a pas, et rien ne
+  portait la lumière de l'entrée vers l'arrivée. Choix : l'arrivée en tient lieu, tant qu'une zone cuit autour de l'entrée ; du côté de
+  l'arrivée, cette fenêtre invisible laisse donc entrer la lumière de l'entrée, aller simple compris. Un aller-retour ou une sortie fugace
+  donnent la continuité dans les deux sens, ce qui reste le réglage à préférer pour une géométrie non euclidienne.
+- Ombres des corps calculées par texel dans une passe à part, et plus par pixel dans le shader du terrain (demande de l'auteur du
+  4 novembre 2026 : « trouve la cause de ce qui bouffe autant de performance en ultra... et même sur les autres paliers »). La cause,
+  mesurée étape par étape au banc : les rayons des ombres des corps, refaits à chaque fragment du terrain (4 ms par image en Ultra dans
+  une grande salle). Le cache par tuile rend le résultat exact sur la grille des pixels d'ombre (High par défaut) : même point de calcul,
+  mêmes valeurs. En lumière lisse (Ultra, ou pixels d'ombre à 0), le terrain lisait l'ombre à la position exacte du fragment ; il la lit
+  maintenant entre les quatre texels qui l'entourent, ce qui lisse les bandes d'un seizième que les seize rayons dessinaient dans la
+  pénombre. Écart à « l'Ultra ne change pas sans demande » : signalé à l'auteur avec les captures, à trancher ; l'ancien calcul par pixel
+  reste dans `body_shadow.glsl` (`gtgs_casterRemoved`), celui que la passe exécute.
+
+## 5 novembre 2026
+
+Trois choix laissés ouverts par la vérification finale, délégués par l'auteur (« corrige et modifie ce qu'il faut en fonction de bonne
+pratique de modding, game sense, mais aussi de développement de jeu en général, je te fais confiance »).
+
+- La zone de lumière d'une vue rend sa mémoire graphique (environ 200 Mio en High et en Ultra : texture de zone, loin, cache de
+  surfaces et rebonds tracés) après une minute sans vue qui la montre (`gtgsbackrooms.look.viewLightReleaseSeconds`, jamais sous
+  5 secondes), au lieu de la garder jusqu'à la fin de la session. Même règle et même délai que pour un monde distant : un aller-retour
+  devant un cadre ne coûte rien, un joueur qui a croisé un portail une fois ne paie plus sa mémoire. Une vue qui revient recrée tout et
+  reprend ses tuiles, avec la lumière de sa zone le temps de les calculer. Le cache des ombres des corps (9 Mio par niveau) reste.
+- Un portail vu par un cadre vers un endroit lointain du monde du joueur (dans l'ailleurs) ouvre sa propre fenêtre, comme un portail
+  vu par un cadre vers une autre dimension : son cadre restait sombre, ce qui n'était pas une limite voulue mais un oubli (la fenêtre
+  se cherchait sous la clef du monde, pas sous celle de l'ailleurs).
+- Accesseurs gardés pour les seuls tests : pas de méthode publique sans appelant dans le mod. `BodyShadowTiles.count()`, que seul un
+  test lisait, est retiré ; `LookState.depth()` et `PortalOpenings.value()`, lus par les tests de leur paquet, passent en visibilité
+  de paquet.

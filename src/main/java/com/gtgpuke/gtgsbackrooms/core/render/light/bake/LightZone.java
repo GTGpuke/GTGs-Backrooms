@@ -1,9 +1,14 @@
 package com.gtgpuke.gtgsbackrooms.core.render.light.bake;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import it.unimi.dsi.fastutil.longs.Long2IntMap;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import org.jetbrains.annotations.Nullable;
@@ -18,6 +23,12 @@ import net.minecraft.util.math.ChunkSectionPos;
  * loin cuit de la meme facon, une fois la fenetre au repos, et ne garde que des cellules de deux blocs ; de tout ce qui est publie se
  * mesure la piece moyenne de la dimension, qui eclaire au-dela. {@link #step} tourne sur le thread de cuisson ; ancre, changements et
  * resultats passent par des champs surs entre threads.
+ *
+ * <p>Un portail vers un monde a lumiere cuite est un passage ({@link PortalOpenings}) : ses rayons lisent l'autre cote dans la zone
+ * qui y cuit, au meme etat que chez une voisine. Les sections que ces rayons vont lire se cuisent d'abord, a la demande, comme les
+ * voisines. Un bloc qui change de l'autre cote fait recuire ce qui est pres du cadre de ce cote, un quart de seconde apres le dernier
+ * changement, puis, de l'autre cote, ce qui est pres du cadre de retour : une fois, sans aller-retour sans fin. Toutes les zones
+ * cuisent sur le meme thread.
  */
 public final class LightZone {
 
@@ -60,6 +71,12 @@ public final class LightZone {
     private static final int ROOM_SECTION_VALUES = 6;
     /** Ce qu'une surface doit recevoir au moins, en parts du fond, pour compter dans la piece moyenne : une piece eclairee. */
     private static final float ROOM_LIT = 3.0f;
+    /** Directions de la lumiere qui sort d'un passage, pour les shaders. */
+    public static final int PASSAGE_DIRECTIONS = SectionBaker.PASSAGE_DIRECTIONS;
+    /** Valeurs de la lumiere qui sort d'un passage : par direction, la lumiere directe puis elle et un rebond, en rouge, vert et bleu. */
+    public static final int PASSAGE_VALUES = PASSAGE_DIRECTIONS * 6;
+    /** Attente apres le dernier changement de l'autre cote d'un passage avant de recuire pres de son cadre, en nanosecondes. */
+    private static final long CROSS_DELAY = 250_000_000L;
     /** Sections copiees au-dela de la fenetre : les rayons et les rebonds les lisent. */
     public static final int COPY_MARGIN = 1;
     /** Portee de ce dont depend une section, en sections : la lumiere directe, puis les deux rebonds. */
@@ -82,6 +99,16 @@ public final class LightZone {
      * @param stamp nombre de changements connus quand sa cuisson a commence : plus vieille qu'un bloc change, elle est perimee
      */
     public record Baked(long key, int[] values, int[] indirect, int[] surfaces, int[] lights, long stamp) {
+    }
+
+    /**
+     * La lumiere qui sort des passages de la zone, mesuree de l'autre cote, pour les shaders : par passage, {@value #PASSAGE_VALUES}
+     * valeurs au format de {@link SectionBaker#measurePassage}, zero pour un autre element.
+     *
+     * @param openings les portails mesures : un autre jeu ne se lit pas avec elle
+     * @param values les valeurs, element par element
+     */
+    public record PassageLight(PortalOpenings openings, float[] values) {
     }
 
     /**
@@ -149,8 +176,24 @@ public final class LightZone {
     private volatile long anchor;
     private volatile int baseSection;
     private volatile boolean republish;
+    /** Les portails du monde de la zone, poses par le thread de rendu. */
+    private volatile PortalOpenings openings = PortalOpenings.NONE;
     private volatile long changes;
     private volatile boolean working;
+    /** Les zones dont un passage mene ici (thread de cuisson). */
+    private final Set<LightZone> incoming = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** La zone ne sert plus, posee par le thread de rendu : celles ou menaient ses passages l'oublient a leur prochain pas. */
+    private volatile boolean retired;
+    /** Les sections des cadres pres desquels recuire, et combien de fois encore prevenir l'autre cote (thread de cuisson). */
+    private final Long2IntMap crossPending = new Long2IntOpenHashMap();
+    private long crossChangedAt;
+    private volatile boolean crossWaiting;
+    /** La lumiere qui sort des passages, et si elle est a remesurer. */
+    private volatile @Nullable PassageLight passageLight;
+    private volatile boolean passagesStale;
+    private final float[] crossMin = new float[3];
+    private final float[] crossMax = new float[3];
+    private final float[] crossPoint = new float[3];
 
     /**
      * La premiere section de la fenetre pour une camera : la meme tant que la camera reste loin de ses bords, pour qu'un saut
@@ -218,10 +261,68 @@ public final class LightZone {
         return stamp;
     }
 
-    /** {@code true} si plus rien n'est a cuire ni a prendre : le thread de cuisson est au repos (tests du client). */
+    /** Les ouvertures des portails que la cuisson compte en ce moment. */
+    public PortalOpenings openings() {
+        return this.openings;
+    }
+
+    /**
+     * Les ouvertures des portails du monde de la zone ont change (thread de rendu) : les sections a la portee d'une dalle de celles qui
+     * partent ou arrivent sont a recuire.
+     *
+     * @param next les ouvertures du moment
+     */
+    public void openings(PortalOpenings next) {
+        PortalOpenings previous = this.openings;
+        this.openings = next;
+        this.passagesStale = true;
+        changedAround(previous);
+        changedAround(next);
+    }
+
+    /** La lumiere qui sort des passages de la zone, {@code null} avant la premiere mesure (tout thread). */
+    public @Nullable PassageLight passageLight() {
+        return this.passageLight;
+    }
+
+    /**
+     * {@code true} si ce point est dans la fenetre de la zone : c'est elle qui y cuit la lumiere (tout thread).
+     *
+     * @param x point
+     * @param y point
+     * @param z point
+     */
+    public boolean covers(double x, double y, double z) {
+        long center = this.anchor;
+        int base = this.baseSection;
+        int sectionY = ChunkSectionPos.getSectionCoord(y);
+        return Math.abs(ChunkSectionPos.getSectionCoord(x) - ChunkSectionPos.unpackX(center)) <= RADIUS
+                && Math.abs(ChunkSectionPos.getSectionCoord(z) - ChunkSectionPos.unpackZ(center)) <= RADIUS && sectionY >= base && sectionY < base + HEIGHT;
+    }
+
+    private void changedAround(PortalOpenings openings) {
+        int reach = (int) Math.ceil(this.settings.reach());
+        for (int i = 0; i < openings.count(); i++) {
+            int x = (int) Math.floor(openings.center(i, 0));
+            int y = (int) Math.floor(openings.center(i, 1));
+            int z = (int) Math.floor(openings.center(i, 2));
+            for (int sz = (z - reach) >> 4; sz <= (z + reach) >> 4; sz++) {
+                for (int sy = (y - reach) >> 4; sy <= (y + reach) >> 4; sy++) {
+                    for (int sx = (x - reach) >> 4; sx <= (x + reach) >> 4; sx++) {
+                        onChanged(ChunkSectionPos.asLong(sx, sy, sz));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * {@code true} si plus rien n'est a cuire, a mesurer ni a prendre : le thread de cuisson est au repos (tests du client). Une mesure
+     * des passages en attente compte : sans elle, un test jugeait au repos une vue dont la lumiere des passages allait changer.
+     */
     public boolean idle() {
-        return !this.working && this.changed.isEmpty() && this.baked.isEmpty() && this.forgotten.isEmpty() && this.farBaked.isEmpty()
-                && this.farForgotten.isEmpty();
+        return !this.working && !this.crossWaiting && this.changed.isEmpty() && this.baked.isEmpty() && this.forgotten.isEmpty() && this.farBaked.isEmpty()
+                && this.farForgotten.isEmpty() && !this.passagesStale;
     }
 
     /** {@code true} si cette section existe dans le monde. */
@@ -279,9 +380,29 @@ public final class LightZone {
      */
     public boolean step() {
         this.working = true;
+        if (!this.incoming.isEmpty()) {
+            this.incoming.removeIf(source -> source.retired);
+        }
         boolean baking = advance();
+        if (!baking && this.passagesStale) {
+            this.passagesStale = false;
+            measurePassages();
+        }
         this.working = baking;
         return baking;
+    }
+
+    /**
+     * La zone ne sert plus (son monde est oublie, ou les reglages ont change) : les zones ou mene un de ses passages cessent de la tenir a
+     * leur prochain pas (thread de rendu). Sans cela, la zone du joueur gardait chaque zone de vue abandonnee, copie des blocs comprise.
+     */
+    public void retire() {
+        this.retired = true;
+    }
+
+    /** Nombre de zones dont un passage mene ici (tests). */
+    int incomingZones() {
+        return this.incoming.size();
     }
 
     private boolean advance() {
@@ -291,6 +412,7 @@ public final class LightZone {
         int centerZ = ChunkSectionPos.unpackZ(center);
         int base = this.baseSection;
         applyChanges();
+        applyCross();
         applyForgotten();
         if (this.republish) {
             this.republish = false;
@@ -324,6 +446,10 @@ public final class LightZone {
         int z = ChunkSectionPos.unpackZ(best);
         Section section = ensure(best, x, y, z, FINAL_STAGE, centerX, base, centerZ);
         section.published = true;
+        this.passagesStale = true;
+        for (LightZone source : this.incoming) {
+            source.passagesStale = true;
+        }
         this.baked.add(new Baked(best, section.values, section.indirect, section.surfaces, section.lights, stamp));
         // Le loin d'une section de la fenetre vient de son propre eclairement : rien a recuire, et il reste quand la fenetre s'en va.
         FarSection far = new FarSection();
@@ -366,6 +492,7 @@ public final class LightZone {
             section = new FarSection();
             this.far.put(best, section);
         }
+        this.baker.openings(this.openings);
         this.baker.direct(this.blocks, this.settings, x, y, z, this.farDirect);
         if (section.stage == 0) {
             section.direct = reduced(this.farDirect);
@@ -663,7 +790,92 @@ public final class LightZone {
                     }
                 }
             }
+            for (LightZone source : this.incoming) {
+                source.crossChanged(this, key, 1);
+            }
             key = this.changed.poll();
+        }
+    }
+
+    /**
+     * Une section a change dans une zone ou mene un passage de celle-ci : le cadre de ce passage est a recuire, si elle est a portee de
+     * son arrivee (thread de cuisson).
+     *
+     * @param from zone ou elle a change
+     * @param key section changee
+     * @param hops combien de fois prevenir encore l'autre cote, une fois recuit
+     */
+    void crossChanged(LightZone from, long key, int hops) {
+        PortalOpenings current = this.openings;
+        float reach = this.settings.reach() + SECTION_BLOCKS;
+        for (int i = 0; i < current.count(); i++) {
+            if (current.zone(i) != from) {
+                continue;
+            }
+            for (int axis = 0; axis < 3; axis++) {
+                this.crossPoint[axis] = current.center(i, axis);
+            }
+            current.toArrival(i, this.crossPoint);
+            if (nearSection(this.crossPoint, key, reach)) {
+                long frame = ChunkSectionPos.asLong(ChunkSectionPos.getSectionCoord(current.center(i, 0)), ChunkSectionPos.getSectionCoord(current.center(i, 1)),
+                        ChunkSectionPos.getSectionCoord(current.center(i, 2)));
+                this.crossPending.put(frame, Math.max(this.crossPending.getOrDefault(frame, -1), hops));
+                this.crossChangedAt = System.nanoTime();
+                this.crossWaiting = true;
+            }
+        }
+    }
+
+    /** {@code true} si un point est a moins de cette distance d'une section. */
+    private static boolean nearSection(float[] point, long key, float reach) {
+        float gapX = gap(point[0], ChunkSectionPos.unpackX(key) << 4);
+        float gapY = gap(point[1], ChunkSectionPos.unpackY(key) << 4);
+        float gapZ = gap(point[2], ChunkSectionPos.unpackZ(key) << 4);
+        return gapX * gapX + gapY * gapY + gapZ * gapZ < reach * reach;
+    }
+
+    /** L'ecart d'une coordonnee a une section, sur un axe : 0 dedans. */
+    private static float gap(float coordinate, int low) {
+        return Math.max(Math.max(low - coordinate, coordinate - (low + SECTION_BLOCKS)), 0.0f);
+    }
+
+    /**
+     * Un quart de seconde apres le dernier changement de l'autre cote, recuit tout ce qui est a portee d'une dalle des cadres en attente,
+     * puis previent les zones dont un passage mene ici, si l'autre cote doit encore suivre.
+     */
+    private void applyCross() {
+        if (this.crossPending.isEmpty() || System.nanoTime() - this.crossChangedAt < CROSS_DELAY) {
+            return;
+        }
+        // Les cadres en attente, recopies : prevenir une zone dont un passage mene ici peut en remettre un, pour plus tard.
+        long[] frames = this.crossPending.keySet().toLongArray();
+        int[] hops = this.crossPending.values().toIntArray();
+        this.crossPending.clear();
+        this.crossWaiting = false;
+        int sections = ((int) Math.ceil(this.settings.reach()) + SECTION_BLOCKS - 1) / SECTION_BLOCKS;
+        for (int i = 0; i < frames.length; i++) {
+            int x = ChunkSectionPos.unpackX(frames[i]);
+            int y = ChunkSectionPos.unpackY(frames[i]);
+            int z = ChunkSectionPos.unpackZ(frames[i]);
+            // Les sections a portee du cadre repartent de zero ; l'anneau suivant, dont le second rebond relit leur premier, recuit son
+            // dernier etat, comme autour d'un bloc change : sinon il gardait un rebond lu sur l'ancien, a la difference d'un recalcul complet.
+            for (int dz = -sections - 1; dz <= sections + 1; dz++) {
+                for (int dy = -sections - 1; dy <= sections + 1; dy++) {
+                    for (int dx = -sections - 1; dx <= sections + 1; dx++) {
+                        Section section = this.sections.get(ChunkSectionPos.asLong(x + dx, y + dy, z + dz));
+                        if (section != null) {
+                            int ring = Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz)));
+                            section.stage = ring <= sections ? 0 : Math.min(section.stage, FINAL_STAGE - 1);
+                            section.published = false;
+                        }
+                    }
+                }
+            }
+            if (hops[i] > 0) {
+                for (LightZone source : this.incoming) {
+                    source.crossChanged(this, frames[i], hops[i] - 1);
+                }
+            }
         }
     }
 
@@ -685,6 +897,11 @@ public final class LightZone {
         if (y < this.bottomSection || y >= this.topSection || section != null && section.published) {
             return false;
         }
+        return ready(x, y, z, centerX, base, centerZ);
+    }
+
+    /** {@code true} si tout ce dont depend la cuisson de cette section est copie. */
+    private boolean ready(int x, int y, int z, int centerX, int base, int centerZ) {
         for (int sz = z - DEPENDS; sz <= z + DEPENDS; sz++) {
             for (int sy = y - DEPENDS; sy <= y + DEPENDS; sy++) {
                 for (int sx = x - DEPENDS; sx <= x + DEPENDS; sx++) {
@@ -712,6 +929,7 @@ public final class LightZone {
         }
         if (section.stage == 0) {
             int[] direct = new int[LightCell.VALUES];
+            this.baker.openings(this.openings);
             this.baker.direct(this.blocks, this.settings, x, y, z, direct);
             section.direct = direct;
             section.values = direct;
@@ -734,7 +952,10 @@ public final class LightZone {
                 neighbors[i] = at(ensure(SectionBaker.neighborKey(i, x, y, z), nx, ny, nz, stage - 1, centerX, base, centerZ), stage - 1);
             }
         }
+        PortalOpenings current = this.openings;
+        prepareBeyond(current, x, y, z, stage - 1);
         int[] out = new int[LightCell.VALUES];
+        this.baker.openings(current);
         this.baker.place(this.blocks, x, y, z);
         boolean last = stage == FINAL_STAGE;
         if (last) {
@@ -745,12 +966,90 @@ public final class LightZone {
                 this.baker.keepFollowing(section.once, this.settings.following());
             }
         }
+        this.baker.crossStage(stage - 1);
         this.baker.bounce(this.blocks, x, y, z, section.direct, neighbors, last ? this.settings.occlusion() : 0.0f, this.settings.bounce(), out);
+        this.baker.crossStage(0);
         section.values = out;
         if (stage == FINAL_STAGE - 1) {
             section.once = out;
         }
         section.stage = stage;
+    }
+
+    /**
+     * Avant un rebond, cuit de l'autre cote de chaque passage a portee de la section ce que ses rayons vont y lire, a l'etat d'avant : les
+     * sections autour de l'arrivee. La zone de la-bas sait desormais qu'un passage mene a elle.
+     */
+    private void prepareBeyond(PortalOpenings current, int x, int y, int z, int stage) {
+        int reach = (int) Math.ceil(SectionBaker.BOUNCE_LENGTH) + 1;
+        for (int i = 0; i < current.count(); i++) {
+            LightZone beyond = current.zone(i);
+            // La boite de la section, reposee a chaque passage : quand un passage mene a cette zone meme (un autre endroit de son
+            // monde), la cuisson de l'autre cote repasse ici et reecrit ces tableaux.
+            this.crossMin[0] = x << 4;
+            this.crossMin[1] = y << 4;
+            this.crossMin[2] = z << 4;
+            for (int axis = 0; axis < 3; axis++) {
+                this.crossMax[axis] = this.crossMin[axis] + SECTION_BLOCKS;
+            }
+            if (beyond == null || !current.near(i, this.crossMin, this.crossMax, SectionBaker.BOUNCE_LENGTH)) {
+                continue;
+            }
+            beyond.incoming.add(this);
+            for (int axis = 0; axis < 3; axis++) {
+                this.crossPoint[axis] = current.center(i, axis);
+            }
+            current.toArrival(i, this.crossPoint);
+            beyond.prepareAround(this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], reach, stage);
+        }
+    }
+
+    /** Amene a un etat les sections de la fenetre a cette distance d'un point, celles dont tout est copie (thread de cuisson). */
+    private void prepareAround(float px, float py, float pz, int reach, int stage) {
+        long center = this.anchor;
+        int centerX = ChunkSectionPos.unpackX(center);
+        int centerZ = ChunkSectionPos.unpackZ(center);
+        int base = this.baseSection;
+        for (int z = ChunkSectionPos.getSectionCoord(pz - reach); z <= ChunkSectionPos.getSectionCoord(pz + reach); z++) {
+            for (int y = ChunkSectionPos.getSectionCoord(py - reach); y <= ChunkSectionPos.getSectionCoord(py + reach); y++) {
+                for (int x = ChunkSectionPos.getSectionCoord(px - reach); x <= ChunkSectionPos.getSectionCoord(px + reach); x++) {
+                    if (y >= this.bottomSection && y < this.topSection && copied(x, y, z, centerX, base, centerZ) && ready(x, y, z, centerX, base, centerZ)) {
+                        ensure(ChunkSectionPos.asLong(x, y, z), x, y, z, stage, centerX, base, centerZ);
+                    }
+                }
+            }
+        }
+    }
+
+    /** L'etat d'une section a ce niveau, s'il est connu, sans rien cuire : ce que lit un rayon venu par un passage (thread de cuisson). */
+    int @Nullable [] peek(long key, int stage) {
+        Section section = this.sections.get(key);
+        return section == null || section.stage < stage ? null : at(section, stage);
+    }
+
+    /**
+     * Mesure la lumiere qui sort de chaque passage, de l'autre cote, une fois ce qu'elle lit cuit la-bas : pour les rebonds traces et les
+     * corps, qui ne marchent que dans les blocs de leur monde.
+     */
+    private void measurePassages() {
+        PortalOpenings current = this.openings;
+        float[] values = new float[current.count() * PASSAGE_VALUES];
+        int reach = (int) Math.ceil(SectionBaker.BOUNCE_LENGTH) + 1;
+        for (int i = 0; i < current.count(); i++) {
+            LightZone beyond = current.zone(i);
+            if (beyond == null) {
+                continue;
+            }
+            for (int axis = 0; axis < 3; axis++) {
+                this.crossPoint[axis] = current.center(i, axis);
+            }
+            current.toArrival(i, this.crossPoint);
+            beyond.incoming.add(this);
+            beyond.prepareAround(this.crossPoint[0], this.crossPoint[1], this.crossPoint[2], reach, FINAL_STAGE - 1);
+            this.baker.openings(current);
+            this.baker.measurePassage(i, values, i * PASSAGE_VALUES);
+        }
+        this.passageLight = new PassageLight(current, values);
     }
 
     /**

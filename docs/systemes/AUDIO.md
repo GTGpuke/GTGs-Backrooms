@@ -145,12 +145,26 @@ dimension d'émission.
 
 `NeonHum` lit l'index des néons du moteur de rendu, revu toutes les dix ticks (voir [RENDU.md](RENDU.md#néons)). Il fait
 bourdonner les quatre tubes les plus proches de la caméra, à moins de douze blocs. Derrière chaque portail visible vers
-une dimension à ambiance, il ajoute jusqu'à quatre tubes à moins de douze blocs de l'arrivée. Ceux-là s'entendent au
-cadre, comme tout son de l'autre côté.
+une dimension à ambiance, un autre endroit du même niveau compris, il ajoute jusqu'à quatre tubes à moins de douze blocs
+de l'arrivée, du côté de la sortie (celui que montre le cadre). Ceux-là s'entendent au cadre, comme tout son de l'autre
+côté. Un tube à la fois proche de la caméra et vu par un cadre ne compte qu'une fois, à sa place.
 
 Chaque bourdonnement suit l'état de son tube, donné par le même calendrier que son image (`NeonSchedule`). Le volume
 suit l'intensité, et un tube qui s'éteint ou se rallume joue `click_off` ou `click_on`. À la traversée, chaque
-bourdonnement est replacé avec les autres sons (`SoundAnchors`), sans relance.
+bourdonnement est replacé avec les autres sons (`SoundAnchors`), sans relance, par le plus court chemin : à sa place si
+c'est le plus court, sinon au cadre qui le rapproche le plus. Le tube qu'on vient de quitter, à soixante blocs à vol
+d'oiseau pour un portail vers un autre endroit du même niveau, bourdonne ainsi au cadre de retour, et celui qu'on
+entendait au cadre bourdonne à sa place : les mêmes sources jouent tout du long. Vers un endroit lointain du même
+monde, le client attend quelques ticks que vanilla lui envoie les chunks de l'arrivée, que l'ailleurs tenait déjà : le
+bourdonnement et le replacement lisent alors les tubes et les cadres dans l'ailleurs (`RemoteWorldRegistry.holding`),
+et l'index des néons relève d'abord les chunks autour du point qu'on interroge. Le cadre de retour qui arrive ensuite
+dans le monde du joueur ne replace les sons qu'en fin de tick, une fois ses données reçues. Monde du joueur et ailleurs
+s'échangent chunks et entités de l'arrivée sur quelques ticks, dans un ordre qui varie avec la charge : un tube qu'une
+revue ne retrouve pas continue de bourdonner, et ne se tait qu'à la troisième revue manquée de suite, une seconde plus
+tard. Avant le 4 novembre 2026, les tubes
+de l'autre côté étaient choisis du mauvais côté de l'arrivée (aucun ne passait le cadre) et jamais pour le même
+niveau, et un son du monde du joueur était toujours replacé à sa place : à chaque passage, le bourdonnement d'un côté
+se coupait, puis celui de l'autre démarrait, jusqu'à une demi-seconde plus tard.
 
 ### Liaison son-image
 
@@ -298,6 +312,10 @@ Les tests du client tournent sur le périphérique nul d'OpenAL Soft, avec EFX c
   puis rejoué reste traité sur sa nouvelle source, sans `source perimee`.
 - `PortalFeaturesClientTests` vérifie qu'un cri perturbe les néons et s'entend à travers le cadre depuis l'Overworld. Il
   vérifie aussi l'occlusion d'un son du Level 0 entendu au cadre.
+- `CrossingSoundClientTests` (`hum_crosses_with_the_player`, `hum_crosses_far_away`) passe à pied un portail
+  aller-retour vers un autre endroit du même niveau, à 60 puis à 300 blocs : avant le cadre, le tube de l'autre côté
+  bourdonne au cadre ; juste après le passage, et après trois revues, les deux mêmes sons jouent encore, chacun à moins
+  de six blocs de l'auditeur (à sa place, ou au cadre de retour). À 300 blocs, l'arrivée n'est que dans l'ailleurs.
 
 Au démarrage, le journal doit dire `[Audio] EFX disponible, 2 envoi(s) auxiliaire(s) par source` et donner le nombre de
 profils. L'option `compareGenerated` lance aussi les rayons là où la génération suffit, et journalise l'accord des
