@@ -431,3 +431,26 @@ pratique de modding, game sense, mais aussi de développement de jeu en généra
   bande) : la mesure lit les cellules de la cuisson, et à 60 blocs de la caméra il n'y a pas de tuiles à lire de l'autre côté. La
   grille de quatre points par côté, meilleure au pire, est écartée parce qu'elle rend une vue moins bonne qu'avant (le sol collé au
   plan, de 0,5 niveau).
+
+## 6 novembre 2026
+
+Choix de l'auteur pour le moteur natif (son, monstres, physique des objets, voix), document de conception interne
+`MOTEUR_NATIF_RUST.md`. Rien de ce qui suit n'est encore dans le code.
+
+- Le moteur natif s'écrit en Rust, appelé depuis Java : la performance d'abord, et le rendu sonore visé (« non
+  négociable »). La note de la vision qui ne l'envisageait « qu'après mesure » est remplacée : les mesures du moteur
+  audio Java livré deviennent la référence à battre, et ce moteur reste le repli (plateforme sans binaire, natif
+  coupé).
+- Une bibliothèque peut s'embarquer quand le moteur natif en a besoin. Elle s'embarque telle quelle, jamais recopiée
+  ni paraphrasée dans notre code (la règle d'or 3 du [guide](GUIDE.md) vaut pour le code qu'on écrit) ; la licence du
+  mod restant propriétaire, elle a une licence permissive (MIT, Apache 2.0, BSD ou équivalent, jamais copyleft), sa
+  notice va dans le JAR, et `verifyJarContents` nommera un par un les binaires admis. Toujours interdits : une
+  dépendance à un autre mod Minecraft, et son nom hors de son module `compat/`.
+- La physique des objets prend le moteur le plus performant au meilleur rendu, dans le moteur natif, au lieu d'une
+  physique légère écrite par nous. Il se choisit au banc, sur nos cas.
+- Dans les Backrooms, les blocs sont incassables pour les joueurs et sans contour de sélection ; les monstres peuvent
+  agir sur eux, la manière reste à concevoir. Aujourd'hui, les blocs du Level 0 se cassent comme les blocs vanilla
+  qu'ils copient, et le contour s'affiche.
+- Le niveau de la voix (chuchoter, parler, crier) et la reconnaissance de mots viennent de l'intégration du mod de
+  chat vocal, dans son module `compat/`. Sans ce mod, la règle du micro reste : traité en local, le serveur ne reçoit
+  qu'un vrai ou faux.

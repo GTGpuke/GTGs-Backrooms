@@ -32,7 +32,9 @@ Elles priment sur le reste du guide.
    sans réécriture de sa logique. Toute refonte d'un module existant est proposée à l'auteur avec ses compromis, puis
    validée avant d'être entreprise.
 3. Le code est original. Aucun code ni aucune ressource d'un projet tiers n'est repris, traduit ou paraphrasé, quelle que
-   soit sa licence. Seule exception : lire l'API d'un autre mod pour écrire son module de compatibilité.
+   soit sa licence. Deux exceptions : lire l'API d'un autre mod pour écrire son module de compatibilité, et embarquer
+   telle quelle une bibliothèque du moteur natif, sous licence permissive, avec sa notice
+   ([décision du 6 novembre 2026](DECISIONS.md#6-novembre-2026)).
 4. Chaque monde a son profil, jamais d'état global. Le rendu d'un pixel dépend de la dimension qu'il montre, le
    traitement d'un son de la dimension où il est émis. Aucun comportement ne se décide sur la dimension du joueur.
 5. Aucune couture. Une fonctionnalité visuelle ou sonore est correcte à travers un portail, dans une vue imbriquée et

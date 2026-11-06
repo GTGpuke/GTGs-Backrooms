@@ -61,7 +61,9 @@ s'appliquent à tout le code. Checkstyle vérifie celles qu'un outil peut vérif
 5. Pas de dossier vide, pas de `.gitkeep`, pas de code écrit pour plus tard.
 6. Un autre mod ne se nomme que dans son module `compat/<mod>/`, ses clés de langue `compat.*` et la documentation de
    ce module.
-7. À l'exécution, aucune dépendance de mod hors Fabric Loader et Fabric API, et rien d'embarqué. Un module de
+7. À l'exécution, aucune dépendance de mod hors Fabric Loader et Fabric API, et rien d'embarqué hors des
+   bibliothèques du moteur natif ([décision du 6 novembre 2026](../DECISIONS.md#6-novembre-2026)). Un module de
    compatibilité compile contre son mod (`modCompileOnly`) et ne s'applique que si ce mod est présent.
-8. Aucun code ni aucune ressource repris d'un projet tiers, quelle que soit sa licence.
+8. Aucun code ni aucune ressource repris d'un projet tiers, quelle que soit sa licence. Une bibliothèque du moteur
+   natif s'embarque telle quelle, sous licence permissive, avec sa notice.
 9. Aucun `@Redirect` dans un mixin. `MixinTargetsTest` le refuse.

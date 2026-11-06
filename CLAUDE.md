@@ -68,7 +68,9 @@ Quatre paquets sous la racine (à côté des deux points d'entrée) : `core/` (l
 - Pas de couche d'abstraction sans deuxième implémentation réelle : pas d'interface/stage/builder spéculatif.
 - Pas de dossier vide ni de `.gitkeep`, pas de `package-info.java` d'une ligne.
 - Licence propriétaire, tous droits réservés (`LICENSE`, copiée dans les JAR) : aucun code ni aucune ressource repris
-  d'un projet tiers, quelle que soit sa licence.
+  d'un projet tiers, quelle que soit sa licence. Seule exception, le moteur natif en Rust (décision du 6 novembre
+  2026, `docs/interne/MOTEUR_NATIF_RUST.md`) : une bibliothèque y est embarquée telle quelle, jamais recopiée, sous
+  licence permissive (jamais copyleft), notice dans le JAR ; aucune dépendance ni aucun nom d'un autre mod Minecraft.
 
 ## Guide et nouveaux systèmes (rendu, audio)
 
